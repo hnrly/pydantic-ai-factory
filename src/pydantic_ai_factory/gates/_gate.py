@@ -12,17 +12,17 @@ from typing import Any, Generic, Literal, Self, TypeVar
 from pydantic import AwareDatetime, BaseModel, Field, model_validator
 
 from ..artifacts import Artifact, ArtifactRef
-from ..contracts import FactoryError, MethodologyRef, Name, Record, check_name
+from ..contracts import DefinitionError, MethodologyRef, Name, Record, check_name
 
 logger = logging.getLogger("pydantic_ai_factory")
 
 OutT = TypeVar("OutT", bound=BaseModel)
 EvidenceT = TypeVar("EvidenceT", bound=BaseModel)
 
-Judgement = Literal["pass", "fail", "needs_approval"]
+Judgement = Literal["passed", "failed", "needs_approval"]
 
 
-class GateDefinitionError(FactoryError):
+class GateDefinitionError(DefinitionError):
     """A gate was declared in a way that cannot work."""
 
 
@@ -39,12 +39,12 @@ class Verdict(Record):
 
 def passed(reason: str, *more: str) -> Verdict:
     """The work may move on."""
-    return Verdict(judgement="pass", reasons=(reason, *more))
+    return Verdict(judgement="passed", reasons=(reason, *more))
 
 
 def failed(reason: str, *more: str) -> Verdict:
     """The work was judged and is not good enough."""
-    return Verdict(judgement="fail", reasons=(reason, *more))
+    return Verdict(judgement="failed", reasons=(reason, *more))
 
 
 def needs_approval(reason: str, *more: str) -> Verdict:
@@ -96,13 +96,13 @@ class Gate(Generic[OutT]):
     """
 
     name: str
-    criteria_version: str
+    version: str
     check: Callable[[Artifact[OutT], Evidence], Verdict]
     requires: tuple[type[BaseModel], ...] = ()
 
     def __post_init__(self) -> None:
         problems: list[str] = []
-        for label, value in (("name", self.name), ("version", self.criteria_version)):
+        for label, value in (("name", self.name), ("version", self.version)):
             problem = check_name(value)
             if problem:
                 problems.append(f"the {label} {problem}")
@@ -118,7 +118,49 @@ class Gate(Generic[OutT]):
                 if not (inspect.isclass(required) and issubclass(required, BaseModel)):  # pyright: ignore[reportUnnecessaryIsInstance]
                     problems.append(f"requires must hold Pydantic model classes, not {required!r}")
         if problems:
-            raise GateDefinitionError(f"gate {self.name!r}: " + "; ".join(problems))
+            raise GateDefinitionError(f"gate {self.name!r}", problems)
+
+    def evaluate(
+        self,
+        output: Artifact[OutT],
+        evidence: Evidence,
+        *,
+        methodologies: Sequence[MethodologyRef] = (),
+        decided_at: datetime | None = None,
+    ) -> GateDecision | NotEvaluated:
+        """Judge ``output``, or say why it could not be judged.
+
+        The gate is not evaluated when required evidence is missing, when the check
+        raises, or when it returns something other than a :class:`Verdict`. A check that
+        raises is logged with its traceback on the ``pydantic_ai_factory`` logger.
+        """
+
+        def not_evaluated(reason: str, missing: tuple[str, ...] = ()) -> NotEvaluated:
+            return NotEvaluated(
+                gate=self.name, version=self.version, reason=reason, missing=missing
+            )
+
+        missing = tuple(r.__name__ for r in self.requires if not evidence.of(r))
+        if missing:
+            return not_evaluated(f"missing evidence: {', '.join(missing)}", missing)
+        try:
+            verdict: object = self.check(output, evidence)
+        except Exception as error:
+            logger.exception("gate %r raised while judging %s", self.name, output.ref)
+            return not_evaluated(f"the check raised {type(error).__name__}: {error}")
+        # The check is user code and may be untyped, so its result is checked at run time.
+        if not isinstance(verdict, Verdict):  # pyright: ignore[reportUnnecessaryIsInstance]
+            return not_evaluated(f"the check returned {type(verdict).__name__}, not a verdict")
+
+        return GateDecision(
+            gate=self.name,
+            version=self.version,
+            judgement=verdict.judgement,
+            reasons=verdict.reasons,
+            judged=tuple(dict.fromkeys((output.ref, *evidence.refs))),
+            methodologies=tuple(methodologies),
+            decided_at=decided_at or datetime.now(UTC),
+        )
 
 
 def gate(
@@ -129,20 +171,20 @@ def gate(
 ) -> Callable[[Callable[[Artifact[OutT], Evidence], Verdict]], Gate[OutT]]:
     """Turn a function into a :class:`Gate`.
 
-    ``version`` is the criteria version. Change it whenever the check's rules change, so
-    a decision always says which rules made it.
+    Change ``version`` whenever the check's rules change, so a decision always says
+    which rules made it.
     """
 
     def wrap(check: Callable[[Artifact[OutT], Evidence], Verdict]) -> Gate[OutT]:
         gate_name = getattr(check, "__name__", "") if name is None else name
         if gate_name == "<lambda>":
-            raise GateDefinitionError("a gate needs a name; pass name= when using a lambda")
+            raise GateDefinitionError("a lambda gate", ["it needs a name; pass name="])
         listed: object = requires
         if isinstance(listed, type):
             raise GateDefinitionError(
-                f"gate {gate_name!r}: requires must be a list, such as [{listed.__name__}]"
+                f"gate {gate_name!r}", [f"requires must be a list, such as [{listed.__name__}]"]
             )
-        return Gate(name=gate_name, criteria_version=version, check=check, requires=tuple(requires))
+        return Gate(name=gate_name, version=version, check=check, requires=tuple(requires))
 
     return wrap
 
@@ -150,12 +192,12 @@ def gate(
 class GateDecision(Record):
     """The record of one gate judging one output.
 
-    It names the gate, the version of its criteria, every artifact it was shown and the
+    It names the gate, its version, every artifact it was shown and the
     reasons for its judgement.
     """
 
     gate: Name
-    criteria_version: Name
+    version: Name
     judgement: Judgement
     reasons: tuple[str, ...] = Field(min_length=1)
     judged: tuple[ArtifactRef, ...] = Field(min_length=1)
@@ -170,7 +212,7 @@ class NotEvaluated(Record):
     """
 
     gate: Name
-    criteria_version: Name
+    version: Name
     reason: str
     missing: tuple[str, ...] = ()
 
@@ -179,46 +221,3 @@ class NotEvaluated(Record):
         if not self.reason.strip():
             raise ValueError("a gate that was not evaluated must say why")
         return self
-
-
-def evaluate_gate(
-    gate: Gate[OutT],
-    output: Artifact[OutT],
-    evidence: Evidence,
-    *,
-    methodologies: Sequence[MethodologyRef] = (),
-    decided_at: datetime | None = None,
-) -> GateDecision | NotEvaluated:
-    """Judge ``output`` with ``gate``, or say why it could not be judged.
-
-    The gate is not evaluated when required evidence is missing, when the check raises,
-    or when it returns something other than a :class:`Verdict`. A check that raises is
-    logged with its traceback on the ``pydantic_ai_factory`` logger.
-    """
-
-    def not_evaluated(reason: str, missing: tuple[str, ...] = ()) -> NotEvaluated:
-        return NotEvaluated(
-            gate=gate.name, criteria_version=gate.criteria_version, reason=reason, missing=missing
-        )
-
-    missing = tuple(required.__name__ for required in gate.requires if not evidence.of(required))
-    if missing:
-        return not_evaluated(f"missing evidence: {', '.join(missing)}", missing)
-    try:
-        verdict: object = gate.check(output, evidence)
-    except Exception as error:
-        logger.exception("gate %r raised while judging %s", gate.name, output.ref)
-        return not_evaluated(f"the check raised {type(error).__name__}: {error}")
-    # The check is user code and may be untyped, so its result is checked at run time.
-    if not isinstance(verdict, Verdict):  # pyright: ignore[reportUnnecessaryIsInstance]
-        return not_evaluated(f"the check returned {type(verdict).__name__}, not a verdict")
-
-    return GateDecision(
-        gate=gate.name,
-        criteria_version=gate.criteria_version,
-        judgement=verdict.judgement,
-        reasons=verdict.reasons,
-        judged=tuple(dict.fromkeys((output.ref, *evidence.refs))),
-        methodologies=tuple(methodologies),
-        decided_at=decided_at or datetime.now(UTC),
-    )

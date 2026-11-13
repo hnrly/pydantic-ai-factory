@@ -14,10 +14,9 @@ from .artifacts import (
     MemoryStore,
     Producer,
     Untyped,
-    decode_artifact,
-    encode_artifact,
 )
-from .contracts import FactoryError, MethodologyRef
+from .contracts import DefinitionError, FactoryError, MethodologyRef
+from .factory import Factory, FactoryDefinitionError, Rework, Run
 from .gates import (
     Evidence,
     Gate,
@@ -25,13 +24,11 @@ from .gates import (
     GateDefinitionError,
     NotEvaluated,
     Verdict,
-    evaluate_gate,
     failed,
     gate,
     needs_approval,
     passed,
 )
-from .lines import Line, LineDefinitionError, LineRun, Rework, run_line
 from .stations import (
     Station,
     StationClosed,
@@ -39,7 +36,6 @@ from .stations import (
     StationDefinitionError,
     StationInputInvalid,
     StationResult,
-    run_station,
     station,
 )
 
@@ -52,20 +48,21 @@ __all__ = [
     "ArtifactNotFound",
     "ArtifactRef",
     "ArtifactStore",
+    "DefinitionError",
     "Evidence",
+    "Factory",
+    "FactoryDefinitionError",
     "FactoryError",
     "Gate",
     "GateDecision",
     "GateDefinitionError",
-    "Line",
-    "LineDefinitionError",
-    "LineRun",
     "LocalStore",
     "MemoryStore",
     "MethodologyRef",
     "NotEvaluated",
     "Producer",
     "Rework",
+    "Run",
     "Station",
     "StationClosed",
     "StationContext",
@@ -75,14 +72,9 @@ __all__ = [
     "Untyped",
     "Verdict",
     "__version__",
-    "decode_artifact",
-    "encode_artifact",
-    "evaluate_gate",
     "failed",
     "gate",
     "needs_approval",
     "passed",
-    "run_line",
-    "run_station",
     "station",
 ]

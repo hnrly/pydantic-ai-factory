@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 __all__ = [
+    "DefinitionError",
     "Digest",
     "FactoryError",
     "MethodologyRef",
@@ -32,6 +34,19 @@ Digest = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
 
 class FactoryError(Exception):
     """Base class for every error this library raises on purpose."""
+
+
+class DefinitionError(FactoryError):
+    """Something was declared in a way that cannot work.
+
+    ``subject`` says what was being declared, such as ``station 'design'``. ``findings``
+    lists every problem found, so they can all be fixed in one go.
+    """
+
+    def __init__(self, subject: str, findings: Sequence[str]) -> None:
+        self.subject = subject
+        self.findings = list(findings)
+        super().__init__(f"{subject} is not valid: " + "; ".join(self.findings))
 
 
 def check_name(value: object) -> str | None:

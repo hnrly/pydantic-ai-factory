@@ -12,6 +12,7 @@ from pydantic import BaseModel, ValidationError
 
 from pydantic_ai_factory import (
     Artifact,
+    DefinitionError,
     Evidence,
     MemoryStore,
     MethodologyRef,
@@ -23,12 +24,10 @@ from pydantic_ai_factory import (
     StationInputInvalid,
     StationResult,
     Verdict,
-    evaluate_gate,
     failed,
     gate,
     needs_approval,
     passed,
-    run_station,
     station,
 )
 from pydantic_ai_factory.gates import GateDecision
@@ -70,7 +69,7 @@ def test_the_decorator_reads_the_name_and_types_from_the_function() -> None:
 async def test_a_station_that_passes_its_gate_ran_and_passed() -> None:
     store = MemoryStore()
 
-    result = await run_station(count_words, Text(body="one two three"), store=store, run_id="r1")
+    result = await count_words.run(Text(body="one two three"), store=store, run_id="r1")
 
     assert (result.outcome, result.ran, result.passed) == ("passed", True, True)
     assert (result.station, result.station_version, result.run_id, result.attempt) == (
@@ -87,7 +86,7 @@ async def test_a_station_that_passes_its_gate_ran_and_passed() -> None:
 
 
 async def test_a_station_that_fails_its_gate_ran_and_did_not_pass() -> None:
-    result = await run_station(count_words, Text(body="w " * 12), store=MemoryStore())
+    result = await count_words.run(Text(body="w " * 12), store=MemoryStore())
 
     assert (result.outcome, result.ran, result.passed) == ("failed", True, False)
     assert result.decision is not None
@@ -100,7 +99,7 @@ async def test_a_station_that_raises_did_not_run_and_did_not_fail() -> None:
     async def broken(ctx: StationContext, text: Text) -> Count:
         raise ConnectionError("the tool is unreachable")
 
-    result = await run_station(broken, Text(body="hello"), store=MemoryStore())
+    result = await broken.run(Text(body="hello"), store=MemoryStore())
 
     assert (result.outcome, result.ran, result.passed) == ("did_not_run", False, None)
     assert result.reason == "the station raised ConnectionError: the tool is unreachable"
@@ -112,7 +111,7 @@ async def test_a_station_that_returns_the_wrong_type_did_not_run() -> None:
     async def wrong(ctx: StationContext, text: Text) -> Count:
         return text  # type: ignore[return-value]
 
-    result = await run_station(wrong, Text(body="hello"), store=MemoryStore())
+    result = await wrong.run(Text(body="hello"), store=MemoryStore())
 
     assert (result.outcome, result.ran) == ("did_not_run", False)
     assert result.reason == "the station returned Text, not Count"
@@ -123,7 +122,7 @@ async def test_a_station_with_no_gate_ran_but_was_not_judged() -> None:
     async def ungated(ctx: StationContext, text: Text) -> Count:
         return Count(words=1)
 
-    result = await run_station(ungated, Text(body="hello"), store=MemoryStore())
+    result = await ungated.run(Text(body="hello"), store=MemoryStore())
 
     assert (result.outcome, result.ran, result.passed) == ("not_judged", True, None)
     assert result.output is not None and result.decision is None
@@ -138,7 +137,7 @@ async def test_missing_evidence_means_the_gate_did_not_run_and_nothing_passed() 
     async def forgetful(ctx: StationContext, text: Text) -> Count:
         return Count(words=1)
 
-    result = await run_station(forgetful, Text(body="hello"), store=MemoryStore())
+    result = await forgetful.run(Text(body="hello"), store=MemoryStore())
 
     assert (result.outcome, result.ran, result.passed) == ("did_not_run", True, None)
     assert result.reason == "gate 'needs_a_note' was not evaluated: missing evidence: Note"
@@ -154,7 +153,7 @@ async def test_a_gate_that_asks_for_a_person_leaves_passed_unanswered() -> None:
     async def drafted(ctx: StationContext, text: Text) -> Count:
         return Count(words=1)
 
-    result = await run_station(drafted, Text(body="hello"), store=MemoryStore())
+    result = await drafted.run(Text(body="hello"), store=MemoryStore())
 
     assert (result.outcome, result.ran, result.passed) == ("needs_approval", True, None)
     assert result.decision is not None and result.decision.judgement == "needs_approval"
@@ -174,8 +173,8 @@ async def test_recorded_evidence_is_stored_with_lineage_and_reaches_the_gate() -
     stamp = MethodologyRef(name="review", version="1")
     given = Artifact.create(Text(body="a b"))
 
-    result = await run_station(
-        careful, given, store=store, run_id="r9", mission_id="m-1", methodologies=[stamp]
+    result = await careful.run(
+        given, store=store, run_id="r9", mission_id="m-1", methodologies=[stamp]
     )
 
     assert result.outcome == "passed"
@@ -211,11 +210,10 @@ async def test_the_context_carries_deps_the_attempt_and_feedback() -> None:
         )
         return Count(words=0)
 
-    earlier = evaluate_gate(under_ten_words, Artifact.create(Count(words=12)), Evidence())
+    earlier = under_ten_words.evaluate(Artifact.create(Count(words=12)), Evidence())
     assert isinstance(earlier, GateDecision)
 
-    result = await run_station(
-        curious,
+    result = await curious.run(
         Text(body="hi"),
         store=MemoryStore(),
         deps=Deps(greeting="hello"),
@@ -251,8 +249,26 @@ async def test_the_wrong_input_type_is_refused_before_anything_runs() -> None:
     ]
     for given, arguments, message in bad_calls:
         with pytest.raises(StationInputInvalid, match=message):
-            await run_station(watched, given, store=store, **arguments)
+            await watched.run(given, store=store, **arguments)
     assert (ran, len(store)) == ([], 0)
+
+
+def test_a_definition_error_lists_every_finding() -> None:
+    with pytest.raises(StationDefinitionError) as caught:
+        Station(
+            name=" ",
+            function=count_words.function,
+            input_type=Text,
+            output_type=Count,
+            version="",
+        )
+
+    assert isinstance(caught.value, DefinitionError)
+    assert caught.value.subject == "station ' '"
+    assert caught.value.findings == [
+        "the name must be non-empty with no surrounding space",
+        "the version must be non-empty with no surrounding space",
+    ]
 
 
 def test_a_badly_declared_station_is_refused_with_the_reason() -> None:
@@ -282,7 +298,7 @@ def test_a_badly_declared_station_is_refused_with_the_reason() -> None:
         (unannotated, "annotate the input and the return type"),
         (no_input, "exactly two positional arguments"),
         (not_a_model, "input type must be a Pydantic model"),
-        (synchronous, "run must be an async function"),
+        (synchronous, "the function must be async"),
         (unresolvable, "cannot resolve the annotation 'Missing'"),
     ]
     for function, message in cases:
@@ -298,7 +314,7 @@ def test_a_badly_declared_station_is_refused_with_the_reason() -> None:
     for bad in bad_fields:
         fields: dict[str, Any] = {
             "name": "ok",
-            "run": count_words.run,
+            "function": count_words.function,
             "input_type": Text,
             "output_type": Count,
             **bad,
@@ -317,7 +333,7 @@ async def test_station_code_cannot_change_the_record_of_its_own_run() -> None:
         return Count(words=1)
 
     store = MemoryStore()
-    result = await run_station(tamper, Text(body="x"), store=store, run_id="real", attempt=2)
+    result = await tamper.run(Text(body="x"), store=store, run_id="real", attempt=2)
 
     assert (result.outcome, result.run_id, result.attempt, len(result.evidence)) == (
         "passed",
@@ -338,7 +354,7 @@ async def test_evidence_cannot_be_recorded_after_the_station_returns() -> None:
         kept.append(ctx)
         return Count(words=1)
 
-    await run_station(leaky, Text(body="x"), store=MemoryStore())
+    await leaky.run(Text(body="x"), store=MemoryStore())
 
     with pytest.raises(StationClosed, match="record evidence before returning"):
         await kept[0].record(Note(text="too late"))
@@ -352,7 +368,7 @@ async def test_a_bug_in_a_station_is_reported_with_its_type_traceback_and_a_log_
         return Count(words=text.nope)  # type: ignore[attr-defined]
 
     with caplog.at_level("ERROR", logger="pydantic_ai_factory"):
-        result = await run_station(buggy, Text(body="x"), store=MemoryStore())
+        result = await buggy.run(Text(body="x"), store=MemoryStore())
 
     assert (result.outcome, result.error_type) == ("did_not_run", "AttributeError")
     assert result.traceback is not None and "text.nope" in result.traceback
@@ -365,7 +381,7 @@ async def test_evidence_recorded_before_a_station_raises_is_kept() -> None:
         await ctx.record(Note(text="got this far"))
         raise TimeoutError("too slow")
 
-    result = await run_station(half_done, Text(body="x"), store=MemoryStore())
+    result = await half_done.run(Text(body="x"), store=MemoryStore())
 
     assert (result.outcome, result.error_type, len(result.evidence)) == (
         "did_not_run",
@@ -380,7 +396,7 @@ async def test_cancellation_is_not_swallowed() -> None:
         raise asyncio.CancelledError
 
     with pytest.raises(asyncio.CancelledError):
-        await run_station(cancelled, Text(body="x"), store=MemoryStore())
+        await cancelled.run(Text(body="x"), store=MemoryStore())
 
 
 async def test_an_output_that_cannot_be_recorded_did_not_run() -> None:
@@ -391,7 +407,7 @@ async def test_an_output_that_cannot_be_recorded_did_not_run() -> None:
     async def divide(ctx: StationContext, text: Text) -> Ratio:
         return Ratio(value=float("nan"))
 
-    result = await run_station(divide, Text(body="x"), store=MemoryStore())
+    result = await divide.run(Text(body="x"), store=MemoryStore())
 
     assert (result.outcome, result.ran, result.error_type) == (
         "did_not_run",
@@ -411,7 +427,7 @@ async def test_a_subclass_of_the_output_type_is_accepted() -> None:
         return DetailedCount(words=1, characters=len(text.body))
 
     store = MemoryStore()
-    result = await run_station(detailed, Text(body="hello"), store=store)
+    result = await detailed.run(Text(body="hello"), store=store)
 
     assert result.outcome == "passed" and result.output is not None
     assert (await store.get(result.output, DetailedCount)).payload.characters == 5
@@ -421,8 +437,8 @@ async def test_each_run_gets_its_own_id_and_names_its_input() -> None:
     store = MemoryStore()
     given = Artifact.create(Text(body="x"))
 
-    first = await run_station(count_words, given, store=store)
-    second = await run_station(count_words, given, store=store)
+    first = await count_words.run(given, store=store)
+    second = await count_words.run(given, store=store)
 
     assert first.run_id != second.run_id
     assert first.input == second.input == given.ref
@@ -437,7 +453,7 @@ async def test_recorded_evidence_keeps_its_type_label_and_extra_inputs() -> None
         return Count(words=1)
 
     store = MemoryStore()
-    result = await run_station(labelled, Text(body="x"), store=store)
+    result = await labelled.run(Text(body="x"), store=store)
 
     (ref,) = result.evidence
     assert ref.type == "ReviewNote"

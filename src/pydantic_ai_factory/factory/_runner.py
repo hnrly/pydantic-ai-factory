@@ -1,41 +1,43 @@
-"""The runner: moves one piece of work along a line and records every attempt."""
+"""The runner: moves one piece of work through a factory's stations and records every attempt."""
 
 from __future__ import annotations
 
 import uuid
 from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Any, Literal, Self, cast
+from typing import TYPE_CHECKING, Any, Literal, Self, cast
 
 from pydantic import BaseModel, model_validator
 
 from ..artifacts import Artifact, ArtifactRef, ArtifactStore
 from ..contracts import Digest, MethodologyRef, Name, Record, check_name
-from ..stations import StationInputInvalid, StationResult, run_station
-from ._line import Line
+from ..stations import StationInputInvalid, StationResult
 
-LineOutcome = Literal["running", "passed", "failed", "did_not_run", "needs_approval"]
+if TYPE_CHECKING:
+    from ._factory import Factory
 
-OnStep = Callable[["LineRun"], Awaitable[None]]
+RunOutcome = Literal["running", "passed", "failed", "did_not_run", "needs_approval"]
+
+OnStep = Callable[["Run"], Awaitable[None]]
 
 
-class LineRun(Record):
-    """The record of one piece of work moving along a line.
+class Run(Record):
+    """The record of one piece of work moving through a factory.
 
-    ``finished`` says whether the work reached the end of the line. ``outcome`` says how
-    it went. They are separate answers: a line can reach its end with a station whose
-    last attempt failed, if that station's rework rule says to carry on.
+    ``finished`` says whether the work reached the last station. ``outcome`` says how it
+    went. They are separate answers: work can reach the end with a station whose last
+    attempt failed, if that station's rework rule says to carry on.
 
     ``steps`` holds one result per attempt, in the order they happened. Together with
-    ``line_digest`` and the artifact store, that is everything needed to see where a run
+    ``factory_digest`` and the artifact store, that is everything needed to see where a run
     stopped and to carry it on.
     """
 
     run_id: Name
-    line: Name
-    line_version: Name
-    line_digest: Digest
-    outcome: LineOutcome
+    factory: Name
+    factory_version: Name
+    factory_digest: Digest
+    outcome: RunOutcome
     finished: bool
     stopped_at: Name | None = None
     input: ArtifactRef
@@ -69,8 +71,8 @@ class LineRun(Record):
         return sum(1 for step in self.steps if step.station == station)
 
 
-async def run_line(
-    line: Line,
+async def run_factory(
+    factory: Factory,
     input: BaseModel | Artifact[Any],
     *,
     store: ArtifactStore,
@@ -79,29 +81,21 @@ async def run_line(
     mission_id: str | None = None,
     methodologies: Sequence[MethodologyRef] = (),
     on_step: OnStep | None = None,
-) -> LineRun:
-    """Run ``input`` along ``line`` until it finishes or has to stop.
-
-    The line stops early when a station did not run, when a station fails with no rework
-    left, or when a gate asks for a person. Rework happens only after a failure. A
-    station that did not run is never retried by the line.
-
-    ``on_step`` is awaited after every attempt with the record so far, whose outcome is
-    ``"running"``. Use it to save progress: if the store raises, or the run is cancelled,
-    no record is returned.
-    """
+) -> Run:
+    """Do the work of :meth:`Factory.run`."""
     stamps = tuple(methodologies)
-    first = line.stations[0]
+    first = factory.stations[0]
     given: object = input
     payload: object = cast("Artifact[Any]", given).payload if isinstance(given, Artifact) else given
     if not isinstance(payload, first.input_type):
         raise StationInputInvalid(
-            f"line {line.name!r} takes {first.input_type.__name__}, not {type(payload).__name__}"
+            f"factory {factory.name!r} takes {first.input_type.__name__}, "
+            f"not {type(payload).__name__}"
         )
     identifier = uuid.uuid4().hex if run_id is None else run_id
     for label, value in (("run_id", identifier), ("mission_id", mission_id)):
         if value is not None and (problem := check_name(value)):
-            raise StationInputInvalid(f"line {line.name!r}: {label} {problem}")
+            raise StationInputInvalid(f"factory {factory.name!r}: {label} {problem}")
 
     incoming: Artifact[Any]
     if isinstance(given, Artifact):
@@ -116,17 +110,17 @@ async def run_line(
     reworked: Counter[str] = Counter()
 
     def record(
-        outcome: LineOutcome,
+        outcome: RunOutcome,
         *,
         finished: bool = False,
         stopped_at: str | None = None,
         output: ArtifactRef | None = None,
-    ) -> LineRun:
-        return LineRun(
+    ) -> Run:
+        return Run(
             run_id=identifier,
-            line=line.name,
-            line_version=line.version,
-            line_digest=line.digest,
+            factory=factory.name,
+            factory_version=factory.version,
+            factory_digest=factory.digest,
             outcome=outcome,
             finished=finished,
             stopped_at=stopped_at,
@@ -139,11 +133,10 @@ async def run_line(
 
     index = 0
     feedback = None
-    while index < len(line.stations):
-        station = line.stations[index]
+    while index < len(factory.stations):
+        station = factory.stations[index]
         attempts[station.name] += 1
-        result = await run_station(
-            station,
+        result = await station.run(
             inputs[index],
             store=store,
             deps=deps,
@@ -162,12 +155,12 @@ async def run_line(
             return record(result.outcome, stopped_at=station.name)
 
         if result.outcome == "failed":
-            rule = line.rework_for(station.name)
+            rule = factory.rework_for(station.name)
             if rule is not None and reworked[station.name] < rule.limit:
                 reworked[station.name] += 1
                 # The target is the very next station to run, so it alone gets the reasons.
                 feedback = result.decision
-                index = line.index_of(rule.target)
+                index = factory.index_of(rule.target)
                 continue
             if rule is None or rule.on_limit != "continue":
                 return record("failed", stopped_at=station.name)
@@ -182,5 +175,5 @@ async def run_line(
     return record(
         "failed" if "failed" in last.values() else "passed",
         finished=True,
-        output=inputs[len(line.stations)].ref,
+        output=inputs[len(factory.stations)].ref,
     )

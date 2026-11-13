@@ -1,37 +1,34 @@
-"""Lines: an ordered route through stations, with bounded rework."""
+"""Factories: the ordered stations that work moves through, with bounded rework."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from ..contracts import FactoryError, check_name, digest_of
+from pydantic import BaseModel
+
+from ..artifacts import Artifact, ArtifactStore
+from ..contracts import DefinitionError, MethodologyRef, check_name, digest_of
 from ..stations import Station
+from ._runner import OnStep, Run, run_factory
 
 OnLimit = Literal["halt", "continue"]
 
 
-class LineDefinitionError(FactoryError):
-    """A line was declared in a way that cannot work.
-
-    ``findings`` lists every problem, so they can all be fixed in one go.
-    """
-
-    def __init__(self, line: str, findings: list[str]) -> None:
-        self.line = line
-        self.findings = findings
-        super().__init__(f"line {line!r} is not valid: " + "; ".join(findings))
+class FactoryDefinitionError(DefinitionError):
+    """A factory was declared in a way that cannot work."""
 
 
 @dataclass(frozen=True)
 class Rework:
     """Send failed work back, a fixed number of times.
 
-    When ``from_station`` fails its gate, the line goes back to ``to_station`` and runs
-    forward again from there. ``limit`` is how many times that may happen in one run of
-    the line; it is not reset when another rule sends the work back past this station.
-    When the limit is reached, the line halts, or carries on to the next station if
-    ``on_limit`` is ``"continue"``.
+    When ``from_station`` fails its gate, the work goes back to ``to_station`` and runs
+    forward again from there. ``limit`` is how many times that may happen in one run; it
+    is not reset when another rule sends the work back past this station. When the limit
+    is reached, the run halts, or carries on to the next station if ``on_limit`` is
+    ``"continue"``.
     """
 
     from_station: str
@@ -46,11 +43,15 @@ class Rework:
 
 
 @dataclass(frozen=True)
-class Line:
-    """An ordered route through stations.
+class Factory:
+    """A named, ordered list of stations, with the rules for sending work back.
 
-    Each station's output is the next station's input, so their types must line up.
-    A badly formed line is refused when it is declared, with every finding at once.
+    The order is the route. Each station's output is the next station's input, so their
+    types must line up. A badly formed factory is refused when it is declared, with
+    every finding at once.
+
+    A factory is a declaration. It holds no runs, no store and no other live state:
+    :meth:`run` takes what one run needs and returns a record of it.
     """
 
     name: str
@@ -72,7 +73,7 @@ class Line:
         object.__setattr__(self, "version", version)
         findings = self._findings()
         if findings:
-            raise LineDefinitionError(str(name), findings)
+            raise FactoryDefinitionError(f"factory {name!r}", findings)
 
     def index_of(self, station: str) -> int:
         """Return the position of the station called ``station``."""
@@ -84,11 +85,11 @@ class Line:
 
     @property
     def digest(self) -> str:
-        """A digest of the line's shape.
+        """A digest of the factory's shape.
 
         It covers the stations in order, with their versions, types and gate versions,
         and the rework rules. A run records it, so a run that stopped can only be
-        resumed on a line of the same shape.
+        resumed on a factory of the same shape.
         """
         return digest_of(
             {
@@ -100,7 +101,7 @@ class Line:
                         "version": s.version,
                         "input": s.input_type.__name__,
                         "output": s.output_type.__name__,
-                        "gate": [s.gate.name, s.gate.criteria_version] if s.gate else None,
+                        "gate": [s.gate.name, s.gate.version] if s.gate else None,
                     }
                     for s in self.stations
                 ],
@@ -111,6 +112,38 @@ class Line:
             }
         )
 
+    async def run(
+        self,
+        input: BaseModel | Artifact[Any],
+        *,
+        store: ArtifactStore,
+        deps: Any = None,
+        run_id: str | None = None,
+        mission_id: str | None = None,
+        methodologies: Sequence[MethodologyRef] = (),
+        on_step: OnStep | None = None,
+    ) -> Run:
+        """Run ``input`` through the stations until the work finishes or has to stop.
+
+        The run stops early when a station did not run, when a station fails with no
+        rework left, or when a gate asks for a person. Rework happens only after a
+        failure. A station that did not run is never retried.
+
+        ``on_step`` is awaited after every attempt with the record so far, whose outcome
+        is ``"running"``. Use it to save progress: if the store raises, or the run is
+        cancelled, no record is returned.
+        """
+        return await run_factory(
+            self,
+            input,
+            store=store,
+            deps=deps,
+            run_id=run_id,
+            mission_id=mission_id,
+            methodologies=methodologies,
+            on_step=on_step,
+        )
+
     def _findings(self) -> list[str]:
         findings: list[str] = []
         for label, value in (("name", self.name), ("version", self.version)):
@@ -118,7 +151,7 @@ class Line:
             if problem:
                 findings.append(f"the {label} {problem}")
         if not self.stations:
-            findings.append("a line needs at least one station")
+            findings.append("a factory needs at least one station")
         strangers = [item for item in self.stations if not isinstance(item, Station)]  # pyright: ignore[reportUnnecessaryIsInstance]
         if strangers:
             findings.append(f"every item must be a Station, not {strangers[0]!r}")
@@ -154,7 +187,7 @@ class Line:
             if rule.target not in names:
                 findings.append(f"{label}: target {rule.target!r} is not a station")
             elif names.index(rule.target) > names.index(rule.from_station):
-                findings.append(f"{label}: target {rule.target!r} comes later in the line")
+                findings.append(f"{label}: target {rule.target!r} comes later in the factory")
             if self.stations[names.index(rule.from_station)].gate is None:
                 findings.append(f"{label}: the station has no gate, so it can never fail")
         return findings

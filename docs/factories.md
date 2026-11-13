@@ -1,30 +1,30 @@
 ---
-title: Lines and rework
-description: How to join stations into a line, send failed work back a bounded number of times, and read the record of a run.
+title: Factories and rework
+description: How to join stations into a factory, send failed work back a bounded number of times, and read the record of a run.
 ---
 
-# Lines and rework
+# Factories and rework
 
-A line is an ordered route through [stations](stations.md). Each station's output becomes the next station's input. When a station fails its [gate](gates.md), the line can send the work back a fixed number of times; this is rework. This page shows how to declare a line, run work along it and read the record of what happened.
+A factory is a named, ordered list of [stations](stations.md). Each station's output becomes the next station's input. When a station fails its [gate](gates.md), the factory can send the work back a fixed number of times; this is rework. This page shows how to declare a factory, run work through it and read the record of what happened.
 
-A line is plain data, and one function runs it. It runs in-process: there is no server to start and no engine to install.
+A factory is plain data, and its `run` method does the work. It runs in-process: there is no server to start and no engine to install.
 
 ## At a glance
 
-This is the line the first example builds. Work moves forward on a pass. A failure sends it back while rework is left. A station that did not run stops the line.
+This is the factory the first example builds. Work moves forward on a pass. A failure sends it back while rework is left. A station that did not run stops the run.
 
 ```mermaid
 flowchart LR
     W["write"] --> C["check"]
     C -->|"passed"| P["publish"]
     C -->|"failed, rework left"| W
-    C -.->|"failed, no rework left"| H["The line stops"]
+    C -.->|"failed, no rework left"| H["The run stops"]
     C -.->|"did not run"| H
 ```
 
-## Declare and run a line
+## Declare and run a factory
 
-This line has three stations and no model. `write` produces a draft. `check` fails drafts with fewer than three words. `publish` gives the checked draft an address.
+This factory has three stations and no model. `write` produces a draft. `check` fails drafts with fewer than three words. `publish` gives the checked draft an address.
 
 ```python
 import asyncio
@@ -34,7 +34,7 @@ from pydantic import BaseModel
 from pydantic_ai_factory import (
     Artifact,
     Evidence,
-    Line,
+    Factory,
     MemoryStore,
     Rework,
     StationContext,
@@ -42,7 +42,6 @@ from pydantic_ai_factory import (
     failed,
     gate,
     passed,
-    run_line,
     station,
 )
 
@@ -89,7 +88,7 @@ async def publish(ctx: StationContext, checked: Checked) -> Published:
     return Published(address=f"https://example.org/{checked.words}-words")
 
 
-guide = Line(
+guide = Factory(
     "guide",
     [write, check, publish],
     rework=[Rework("check", "write", limit=2)],
@@ -98,7 +97,7 @@ guide = Line(
 
 async def main() -> None:
     store = MemoryStore()
-    run = await run_line(guide, Brief(topic="tea"), store=store)
+    run = await guide.run(Brief(topic="tea"), store=store)
 
     print(run.outcome, run.finished)
     #> passed True
@@ -118,7 +117,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-The first draft was one word, so `check` failed it. The rework rule sent the work back to `write`, which received the gate's reasons in `ctx.feedback` and wrote a longer draft. The second check passed and the line carried on.
+The first draft was one word, so `check` failed it. The rework rule sent the work back to `write`, which received the gate's reasons in `ctx.feedback` and wrote a longer draft. The second check passed and the work carried on.
 
 ## Rework
 
@@ -134,34 +133,34 @@ This block shows the shape only; the full example above runs it.
 |---|---|
 | `from_station` | The station whose failure triggers the rule. |
 | `to_station` | Where the work goes back to. It may be the same station or an earlier one. Leave it out to redo the failing station itself. |
-| `limit` | How many times work may be sent back in one run of the line. The default is 1. |
+| `limit` | How many times work may be sent back in one run. The default is 1. |
 | `on_limit` | What to do when the limit is reached: `"halt"`, the default, or `"continue"`. |
 
-When work is sent back, the line runs forward again from the target. The target runs on the same input artifact it had before, and gets the failing gate's decision as `ctx.feedback`, so it can act on the reasons. Its `ctx.attempt` goes up by one. Stations between the target and the failing station run again too, with no feedback of their own.
+When work is sent back, the work runs forward again from the target. The target runs on the same input artifact it had before, and gets the failing gate's decision as `ctx.feedback`, so it can act on the reasons. Its `ctx.attempt` goes up by one. Stations between the target and the failing station run again too, with no feedback of their own.
 
 Three rules are worth knowing.
 
-1. **Rework is only for failures.** A station that did not run is never sent back. The line stops and reports it. An unreachable tool is not fixed by redoing the work.
-2. **A failure with no rule stops the line.** Nothing is retried unless you say so.
+1. **Rework is only for failures.** A station that did not run is never sent back. The run stops and reports it. An unreachable tool is not fixed by redoing the work.
+2. **A failure with no rule stops the run.** Nothing is retried unless you say so.
 3. **Rework is always bounded.** There is no unlimited setting, and a limit counts for the whole run. If another rule sends the work back past a station, that station's rework budget is not refilled. So the total number of reworks in a run can never exceed the sum of the limits.
 
 ### Carrying on at the limit
 
-With `on_limit="continue"`, a line that has used up its rework moves on to the next station anyway. The failure is not forgotten. The station's result stays `failed`, and the run's outcome is `failed` even though it finished. The exception is when later rework sends the work back and the station passes on a later attempt: the run is judged on each station's last attempt. Use this when a later station is worth running on imperfect work, such as one that reports what went wrong.
+With `on_limit="continue"`, work that has used up its rework moves on to the next station anyway. The failure is not forgotten. The station's result stays `failed`, and the run's outcome is `failed` even though it finished. The exception is when later rework sends the work back and the station passes on a later attempt: the run is judged on each station's last attempt. Use this when a later station is worth running on imperfect work, such as one that reports what went wrong.
 
 ## The record of a run
 
-`run_line` returns a `LineRun`. It is a plain record that holds refs, so it can be saved, compared and sent elsewhere.
+`Factory.run` returns a `Run`. It is a plain record that holds refs, so it can be saved, compared and sent elsewhere.
 
 | Field | Meaning |
 |---|---|
 | `outcome` | `passed`, `failed`, `did_not_run` or `needs_approval`. A record passed to `on_step` while the run is under way says `running`. |
-| `finished` | Whether the work reached the end of the line. |
-| `stopped_at` | The station where the line stopped early, if it did. |
+| `finished` | Whether the work reached the last station. |
+| `stopped_at` | The station where the run stopped early, if it did. |
 | `steps` | One station result per attempt, in the order they happened. |
 | `input`, `output` | The refs of the first input and the final output. `output` is set only when the run finished. |
-| `run_id`, `line`, `line_version` | Which run of which line this was. |
-| `line_digest` | A digest of the line's shape: its stations, gates and rework rules. |
+| `run_id`, `factory`, `factory_version` | Which run of which factory this was. |
+| `factory_digest` | A digest of the factory's shape: its stations, gates and rework rules. |
 | `mission_id`, `methodologies` | Where the run sits. These are stamped on every artifact it makes. |
 
 `outcome` and `finished` are separate answers, as `ran` and `passed` are for a station.
@@ -169,14 +168,14 @@ With `on_limit="continue"`, a line that has used up its rework moves on to the n
 | Outcome | `finished` | When |
 |---|---|---|
 | `passed` | `True` | The work reached the end and no station's last attempt failed. |
-| `failed` | `False` | A station failed with no rework left, and the line halted. |
+| `failed` | `False` | A station failed with no rework left, and the run halted. |
 | `failed` | `True` | A station's last attempt failed, its rule said to carry on, and the work reached the end. |
 | `did_not_run` | `False` | A station raised, returned the wrong type, or its gate could not be evaluated. |
-| `needs_approval` | `False` | A gate asked for a person. The line waits there. |
+| `needs_approval` | `False` | A gate asked for a person. The run waits there. |
 
 When a run stops early, the artifact it stopped on is `run.latest(run.stopped_at).output`.
 
-A station with no gate is `not_judged`, and the line moves past it. Such a line can end as `passed`: nothing failed. Give a station a gate when its output must be judged.
+A station with no gate is `not_judged`, and the work moves past it. Such a run can end as `passed`: nothing failed. Give a station a gate when its output must be judged.
 
 Two helpers read the steps for you.
 
@@ -191,14 +190,14 @@ Every station's output names its input, so a finished run is a chain you can wal
 
 All the artifacts a run makes carry the same `run_id` in `produced_by`, with the station and the attempt.
 
-## A badly formed line is refused
+## A badly formed factory is refused
 
-A line is checked when it is declared, not when it runs. If anything is wrong you get one `LineDefinitionError` whose `findings` list every problem at once.
+A factory is checked when it is declared, not when it runs. If anything is wrong you get one `FactoryDefinitionError` whose `findings` list every problem at once.
 
 ```python
 from pydantic import BaseModel
 
-from pydantic_ai_factory import Line, LineDefinitionError, Rework, StationContext, station
+from pydantic_ai_factory import Factory, FactoryDefinitionError, Rework, StationContext, station
 
 
 class Brief(BaseModel):
@@ -224,40 +223,40 @@ async def publish(ctx: StationContext, published: Published) -> Published:
 
 
 try:
-    Line("guide", [write, publish], rework=[Rework("review")])
-except LineDefinitionError as error:
+    Factory("guide", [write, publish], rework=[Rework("review")])
+except FactoryDefinitionError as error:
     for finding in error.findings:
         print(finding)
         #> 'write' hands on Draft but 'publish' takes Published
         #> rework from 'review': no such station
 ```
 
-A line is refused when:
+A factory is refused when:
 
 - its name or version is empty, it has no stations, or two stations share a name;
 - a station's output type is not the next station's input type;
-- a rework rule names a station that is not in the line, or a target that comes later;
+- a rework rule names a station that is not in the factory, or a target that comes later;
 - a rework rule has a limit below 1, an `on_limit` that is not `"halt"` or `"continue"`, or is declared twice for one station;
 - a rework rule starts from a station with no gate, which can never fail.
 
 ## Saving progress
 
-`run_line` returns its record when the line finishes or stops. If the store raises or the run is cancelled part-way, nothing is returned. To keep a record as you go, pass `on_step`. It is awaited after every attempt with the record so far.
+`Factory.run` returns its record when the run finishes or stops. If the store raises or the run is cancelled part-way, nothing is returned. To keep a record as you go, pass `on_step`. It is awaited after every attempt with the record so far.
 
 ```python test="skip"
-async def save(progress: LineRun) -> None:
+async def save(progress: Run) -> None:
     path.write_text(progress.model_dump_json())
 
 
-run = await run_line(guide, Brief(topic="tea"), store=store, on_step=save)
+run = await guide.run(Brief(topic="tea"), store=store, on_step=save)
 ```
 
-This block shows the shape only, because it writes a file. A record holds refs and plain data, so `model_dump_json` and `LineRun.model_validate_json` round-trip it exactly.
+This block shows the shape only, because it writes a file. A record holds refs and plain data, so `model_dump_json` and `Run.model_validate_json` round-trip it exactly.
 
 ## Passing dependencies
 
-`run_line` takes one `deps` object and gives it to every station as `ctx.deps`. Use it for clients, settings and agents, and pass a fake in tests.
+`Factory.run` takes one `deps` object and gives it to every station as `ctx.deps`. Use it for clients, settings and agents, and pass a fake in tests.
 
 ## What comes next
 
-A line that stops at `needs_approval` cannot yet be resumed. That is the next page: a person's decision, bound to the exact artifact they approved.
+A run that stops at `needs_approval` cannot yet be resumed. That is the next page: a person's decision, bound to the exact artifact they approved.

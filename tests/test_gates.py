@@ -17,7 +17,6 @@ from pydantic_ai_factory import (
     MethodologyRef,
     NotEvaluated,
     Verdict,
-    evaluate_gate,
     failed,
     gate,
     needs_approval,
@@ -53,13 +52,12 @@ def review_gate(output: Artifact[Design], evidence: Evidence) -> Verdict:
 
 
 def test_a_gate_takes_its_name_from_the_function() -> None:
-    assert (review_gate.name, review_gate.criteria_version) == ("review_gate", "2")
+    assert (review_gate.name, review_gate.version) == ("review_gate", "2")
     assert review_gate.requires == (Review,)
 
 
 def test_a_passing_decision_names_the_gate_its_version_reasons_and_what_it_judged() -> None:
-    decision = evaluate_gate(
-        review_gate,
+    decision = review_gate.evaluate(
         DESIGN,
         Evidence([CLEAN_REVIEW]),
         methodologies=[MethodologyRef(name="review", version="1")],
@@ -68,8 +66,8 @@ def test_a_passing_decision_names_the_gate_its_version_reasons_and_what_it_judge
 
     assert decision == GateDecision(
         gate="review_gate",
-        criteria_version="2",
-        judgement="pass",
+        version="2",
+        judgement="passed",
         reasons=("'Split the bill evenly' has no open blockers",),
         judged=(DESIGN.ref, CLEAN_REVIEW.ref),
         methodologies=(MethodologyRef(name="review", version="1"),),
@@ -78,10 +76,10 @@ def test_a_passing_decision_names_the_gate_its_version_reasons_and_what_it_judge
 
 
 def test_a_failing_decision_carries_every_reason() -> None:
-    decision = evaluate_gate(review_gate, DESIGN, Evidence([BLOCKED_REVIEW]))
+    decision = review_gate.evaluate(DESIGN, Evidence([BLOCKED_REVIEW]))
 
     assert isinstance(decision, GateDecision)
-    assert (decision.judgement, decision.reasons) == ("fail", ("no rounding rule",))
+    assert (decision.judgement, decision.reasons) == ("failed", ("no rounding rule",))
     assert decision.judged == (DESIGN.ref, BLOCKED_REVIEW.ref)
 
 
@@ -90,7 +88,7 @@ def test_a_gate_can_ask_for_a_person() -> None:
     def sign_off(output: Artifact[Design], evidence: Evidence) -> Verdict:
         return needs_approval("ready for sign-off")
 
-    decision = evaluate_gate(sign_off, DESIGN, Evidence())
+    decision = sign_off.evaluate(DESIGN, Evidence())
 
     assert isinstance(decision, GateDecision)
     assert decision.judgement == "needs_approval"
@@ -104,16 +102,16 @@ def test_missing_evidence_is_not_evaluated_and_the_check_is_never_called() -> No
         calls.append("called")
         return passed("ok")
 
-    result = evaluate_gate(strict, DESIGN, Evidence([CLEAN_REVIEW]))
+    result = strict.evaluate(DESIGN, Evidence([CLEAN_REVIEW]))
 
     assert result == NotEvaluated(
-        gate="strict", criteria_version="1", reason="missing evidence: Lint", missing=("Lint",)
+        gate="strict", version="1", reason="missing evidence: Lint", missing=("Lint",)
     )
     assert calls == []
 
 
 def test_a_check_that_raises_is_not_evaluated_rather_than_failed() -> None:
-    result = evaluate_gate(review_gate, DESIGN, Evidence([CLEAN_REVIEW, BLOCKED_REVIEW]))
+    result = review_gate.evaluate(DESIGN, Evidence([CLEAN_REVIEW, BLOCKED_REVIEW]))
 
     assert isinstance(result, NotEvaluated)
     assert result.reason == (
@@ -126,20 +124,20 @@ def test_a_check_that_returns_something_else_is_not_evaluated() -> None:
     def sloppy(output: Artifact[Design], evidence: Evidence) -> Verdict:
         return True  # type: ignore[return-value]
 
-    result = evaluate_gate(sloppy, DESIGN, Evidence())
+    result = sloppy.evaluate(DESIGN, Evidence())
 
     assert isinstance(result, NotEvaluated)
     assert result.reason == "the check returned bool, not a verdict"
 
 
 def test_every_verdict_and_decision_must_say_why() -> None:
-    for judgement in ("pass", "fail", "needs_approval"):
+    for judgement in ("passed", "failed", "needs_approval"):
         with pytest.raises(ValidationError):
             Verdict(judgement=judgement, reasons=())
         with pytest.raises(ValidationError):
             GateDecision(
                 gate="g",
-                criteria_version="1",
+                version="1",
                 judgement=judgement,
                 reasons=(),
                 judged=(DESIGN.ref,),
@@ -151,8 +149,8 @@ def test_a_decision_must_name_what_it_judged() -> None:
     with pytest.raises(ValidationError):
         GateDecision(
             gate="g",
-            criteria_version="1",
-            judgement="pass",
+            version="1",
+            judgement="passed",
             reasons=("ok",),
             judged=(),
             decided_at=WHEN,
@@ -183,7 +181,7 @@ def test_the_output_does_not_count_as_its_own_evidence() -> None:
     def needs_a_second_design(output: Artifact[Design], evidence: Evidence) -> Verdict:
         return passed("ok")
 
-    result = evaluate_gate(needs_a_second_design, DESIGN, Evidence())
+    result = needs_a_second_design.evaluate(DESIGN, Evidence())
 
     assert isinstance(result, NotEvaluated)
     assert result.missing == ("Design",)
@@ -195,10 +193,10 @@ def test_evidence_of_a_subclass_satisfies_a_requirement_for_its_base() -> None:
 
     deep = Artifact.create(DeepReview(), created_at=WHEN)
 
-    decision = evaluate_gate(review_gate, DESIGN, Evidence([deep]))
+    decision = review_gate.evaluate(DESIGN, Evidence([deep]))
 
     assert isinstance(decision, GateDecision)
-    assert decision.judgement == "pass"
+    assert decision.judgement == "passed"
 
 
 def test_a_badly_declared_gate_is_refused_with_the_reason() -> None:
@@ -225,7 +223,7 @@ def test_a_check_that_raises_is_logged_with_its_traceback(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     with caplog.at_level("ERROR", logger="pydantic_ai_factory"):
-        evaluate_gate(review_gate, DESIGN, Evidence([CLEAN_REVIEW, BLOCKED_REVIEW]))
+        review_gate.evaluate(DESIGN, Evidence([CLEAN_REVIEW, BLOCKED_REVIEW]))
 
     (record,) = caplog.records
     assert "gate 'review_gate' raised" in record.getMessage()

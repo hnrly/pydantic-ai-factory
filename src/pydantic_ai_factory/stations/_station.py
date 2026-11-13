@@ -14,8 +14,8 @@ from pydantic import BaseModel, Field, model_validator
 from typing_extensions import TypeVar as TypeVarWithDefault
 
 from ..artifacts import Artifact, ArtifactInvalid, ArtifactRef, ArtifactStore, Producer
-from ..contracts import FactoryError, MethodologyRef, Name, Record, check_name
-from ..gates import Evidence, Gate, GateDecision, NotEvaluated, evaluate_gate
+from ..contracts import DefinitionError, FactoryError, MethodologyRef, Name, Record, check_name
+from ..gates import Evidence, Gate, GateDecision, NotEvaluated
 
 logger = logging.getLogger("pydantic_ai_factory")
 
@@ -24,10 +24,10 @@ OutT = TypeVar("OutT", bound=BaseModel)
 RecordedT = TypeVar("RecordedT", bound=BaseModel)
 DepsT = TypeVarWithDefault("DepsT", default=None)
 
-Outcome = Literal["passed", "failed", "needs_approval", "not_judged", "did_not_run"]
+StationOutcome = Literal["passed", "failed", "needs_approval", "not_judged", "did_not_run"]
 
 
-class StationDefinitionError(FactoryError):
+class StationDefinitionError(DefinitionError):
     """A station was declared in a way that cannot work."""
 
 
@@ -118,12 +118,13 @@ class StationContext(Generic[DepsT]):
 class Station(Generic[InT, OutT]):
     """One bounded job: typed input in, typed output out, judged by an optional gate.
 
-    ``run`` may use an agent, several agents or none. Declare a station with the
-    :func:`station` decorator, which reads the types from the function's signature.
+    ``function`` is the station's own code. It may use an agent, several agents or none.
+    Declare a station with the :func:`station` decorator, which reads the types from the
+    function's signature. :meth:`run` runs it once and records what happened.
     """
 
     name: str
-    run: Callable[[StationContext[Any], InT], Awaitable[OutT]]
+    function: Callable[[StationContext[Any], InT], Awaitable[OutT]]
     input_type: type[InT]
     output_type: type[OutT]
     gate: Gate[OutT] | None = None
@@ -141,10 +142,47 @@ class Station(Generic[InT, OutT]):
                 inspect.isclass(model) and issubclass(model, BaseModel)  # pyright: ignore[reportUnnecessaryIsInstance]
             ):
                 problems.append(f"the {label} type must be a Pydantic model, not {model!r}")
-        if not inspect.iscoroutinefunction(self.run):
-            problems.append("run must be an async function")
+        if not inspect.iscoroutinefunction(self.function):
+            problems.append("the function must be async")
         if problems:
-            raise StationDefinitionError(f"station {self.name!r}: " + "; ".join(problems))
+            raise StationDefinitionError(f"station {self.name!r}", problems)
+
+    async def run(
+        self,
+        input: InT | Artifact[InT],
+        *,
+        store: ArtifactStore,
+        deps: Any = None,
+        run_id: str | None = None,
+        attempt: int = 1,
+        mission_id: str | None = None,
+        methodologies: Sequence[MethodologyRef] = (),
+        feedback: GateDecision | None = None,
+    ) -> StationResult:
+        """Run this station once and record what happened.
+
+        The input may be a payload or an artifact that holds one. The output and anything
+        the station recorded are stored as artifacts, then the station's gate judges them.
+
+        A station that raises, or returns something that cannot be recorded as its output
+        type, did not run: that is reported in the result, with the traceback, and is
+        never a failure. Only a gate can fail a station. Cancellation is not caught.
+
+        Raises :class:`StationInputInvalid` before anything runs if the input or an
+        argument is wrong. An error from the store while saving the input or the output
+        is raised as it is.
+        """
+        return await _attempt(
+            self,
+            input,
+            store=store,
+            deps=deps,
+            run_id=run_id,
+            attempt=attempt,
+            mission_id=mission_id,
+            methodologies=methodologies,
+            feedback=feedback,
+        )
 
 
 StationFn = Callable[[StationContext[Any], InT], Awaitable[OutT]]
@@ -170,7 +208,7 @@ def _annotation(run: Callable[..., Any], label: str, station_name: str) -> Any:
     annotations = _annotations(run)
     if label not in annotations:
         raise StationDefinitionError(
-            f"station {station_name!r}: annotate the input and the return type"
+            f"station {station_name!r}", ["annotate the input and the return type"]
         )
     annotation = annotations[label]
     if inspect.isclass(annotation):
@@ -185,8 +223,11 @@ def _annotation(run: Callable[..., Any], label: str, station_name: str) -> Any:
         return eval(text, scope)
     except Exception as error:
         raise StationDefinitionError(
-            f"station {station_name!r}: cannot resolve the annotation {text!r}; "
-            "define the type at module level, or build the Station directly"
+            f"station {station_name!r}",
+            [
+                f"cannot resolve the annotation {text!r}; define the type at module "
+                "level, or build the Station directly"
+            ],
         ) from error
 
 
@@ -223,7 +264,9 @@ def station(
     def wrap(run: StationFn[InT, OutT]) -> Station[InT, OutT]:
         station_name = getattr(run, "__name__", "") if name is None else name
         if not callable(run):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise StationDefinitionError(f"a station is declared from a function, not {run!r}")
+            raise StationDefinitionError(
+                "a station", [f"it is declared from a function, not {run!r}"]
+            )
         positional = (
             inspect.Parameter.POSITIONAL_ONLY,
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
@@ -231,12 +274,12 @@ def station(
         parameters = list(inspect.signature(run).parameters.values())
         if len(parameters) != 2 or any(p.kind not in positional for p in parameters):
             raise StationDefinitionError(
-                f"station {station_name!r}: run must take exactly two positional "
-                "arguments, a context and one input"
+                f"station {station_name!r}",
+                ["the function must take exactly two positional arguments: a context, one input"],
             )
         return Station(
             name=station_name,
-            run=run,
+            function=run,
             input_type=_annotation(run, parameters[1].name, station_name),
             output_type=_annotation(run, "return", station_name),
             gate=gate,
@@ -249,19 +292,18 @@ def station(
 class StationResult(Record):
     """The record of one attempt at one station.
 
-    ``ran`` is about the station's own code: did it complete and return its output type?
-    ``passed`` is the gate's answer, and is ``None`` whenever the output was not judged.
-    ``outcome`` sums up the attempt as a whole. So an attempt can have ``ran=True`` and
-    the outcome ``did_not_run``: the code ran, but its gate could not be evaluated.
+    ``outcome`` sums up the attempt as a whole. ``ran`` and ``passed`` are read from the
+    record, not stored beside it. ``ran`` is about the station's own code: did it complete
+    and return its output type? ``passed`` is the gate's answer, and is ``None`` whenever
+    the output was not judged. So an attempt can have ``ran`` true and the outcome
+    ``did_not_run``: the code ran, but its gate could not be evaluated.
     """
 
     station: Name
     station_version: Name
     run_id: Name
     attempt: int = Field(ge=1)
-    outcome: Outcome
-    ran: bool
-    passed: bool | None
+    outcome: StationOutcome
     input: ArtifactRef
     output: ArtifactRef | None = None
     evidence: tuple[ArtifactRef, ...] = ()
@@ -271,33 +313,35 @@ class StationResult(Record):
     error_type: str | None = None
     traceback: str | None = None
 
+    @property
+    def ran(self) -> bool:
+        """Whether the station's own code completed and returned its output type."""
+        return self.outcome != "did_not_run" or self.not_evaluated is not None
+
+    @property
+    def passed(self) -> bool | None:
+        """The gate's answer, or ``None`` when the output was not judged."""
+        return {"passed": True, "failed": False}.get(self.outcome)
+
     @model_validator(mode="after")
     def _is_consistent(self) -> Self:
         judgement = self.decision.judgement if self.decision else None
-        expected: dict[str, tuple[bool | None, bool | None, str | None]] = {
-            "passed": (True, True, "pass"),
-            "failed": (True, False, "fail"),
-            "needs_approval": (True, None, "needs_approval"),
-            "not_judged": (True, None, None),
-        }
-        if self.outcome in expected:
-            if (self.ran, self.passed, judgement) != expected[self.outcome]:
-                raise ValueError(
-                    f"outcome {self.outcome!r} does not match ran, passed and decision"
-                )
-            if self.output is None:
-                raise ValueError(f"outcome {self.outcome!r} needs an output")
-        else:
-            if self.passed is not None or self.decision is not None:
+        if self.outcome == "did_not_run":
+            if self.decision is not None:
                 raise ValueError("an attempt that did not run was not judged")
             if not self.reason:
                 raise ValueError("an attempt that did not run must say why")
-            if self.ran != (self.not_evaluated is not None):
-                raise ValueError("ran must be true exactly when the gate was not evaluated")
+            return self
+        if self.not_evaluated is not None:
+            raise ValueError("a gate that was not evaluated means the attempt did not run")
+        if judgement != (None if self.outcome == "not_judged" else self.outcome):
+            raise ValueError(f"outcome {self.outcome!r} does not match the gate's decision")
+        if self.output is None:
+            raise ValueError(f"outcome {self.outcome!r} needs an output")
         return self
 
 
-async def run_station(
+async def _attempt(
     station: Station[InT, OutT],
     input: InT | Artifact[InT],
     *,
@@ -309,19 +353,7 @@ async def run_station(
     methodologies: Sequence[MethodologyRef] = (),
     feedback: GateDecision | None = None,
 ) -> StationResult:
-    """Run one station once and record what happened.
-
-    The input may be a payload or an artifact that holds one. The output and anything
-    the station recorded are stored as artifacts, then the station's gate judges them.
-
-    A station that raises, or returns something that cannot be recorded as its output
-    type, did not run: that is reported in the result, with the traceback, and is never
-    a failure. Only a gate can fail a station. Cancellation is not caught.
-
-    Raises :class:`StationInputInvalid` before anything runs if the input or an argument
-    is wrong. An error from the store while saving the input or the output is raised
-    as it is.
-    """
+    """Do the work of :meth:`Station.run`."""
     stamps = tuple(methodologies)
     given: object = input
     payload: object = cast("Artifact[Any]", given).payload if isinstance(given, Artifact) else given
@@ -360,15 +392,13 @@ async def run_station(
     )
     recording = context._recording  # pyright: ignore[reportPrivateUsage]
 
-    def result(outcome: Outcome, *, ran: bool, passed: bool | None, **more: Any) -> StationResult:
+    def result(outcome: StationOutcome, **more: Any) -> StationResult:
         return StationResult(
             station=producer.station,
             station_version=producer.station_version,
             run_id=producer.run_id,
             attempt=producer.attempt,
             outcome=outcome,
-            ran=ran,
-            passed=passed,
             input=incoming.ref,
             evidence=tuple(artifact.ref for artifact in recording.artifacts),
             **more,
@@ -377,15 +407,13 @@ async def run_station(
     def did_not_run(reason: str, error: BaseException | None = None) -> StationResult:
         return result(
             "did_not_run",
-            ran=False,
-            passed=None,
             reason=reason,
             error_type=type(error).__name__ if error else None,
             traceback="".join(traceback.format_exception(error)) if error else None,
         )
 
     try:
-        produced: object = await station.run(context, incoming.payload)
+        produced: object = await station.function(context, incoming.payload)
     except Exception as error:
         logger.exception("station %r raised on attempt %d", station.name, attempt)
         return did_not_run(f"the station raised {type(error).__name__}: {error}", error)
@@ -409,25 +437,14 @@ async def run_station(
     await store.put(output)
 
     if station.gate is None:
-        return result("not_judged", ran=True, passed=None, output=output.ref)
+        return result("not_judged", output=output.ref)
 
-    judged = evaluate_gate(
-        station.gate, output, Evidence(recording.artifacts), methodologies=stamps
-    )
+    judged = station.gate.evaluate(output, Evidence(recording.artifacts), methodologies=stamps)
     if isinstance(judged, NotEvaluated):
         return result(
             "did_not_run",
-            ran=True,
-            passed=None,
             output=output.ref,
             not_evaluated=judged,
             reason=f"gate {judged.gate!r} was not evaluated: {judged.reason}",
         )
-    outcome: Outcome = {"pass": "passed", "fail": "failed"}.get(judged.judgement, "needs_approval")  # type: ignore[assignment]
-    return result(
-        outcome,
-        ran=True,
-        passed={"passed": True, "failed": False}.get(outcome),
-        output=output.ref,
-        decision=judged,
-    )
+    return result(judged.judgement, output=output.ref, decision=judged)
