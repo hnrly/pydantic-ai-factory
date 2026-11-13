@@ -6,8 +6,8 @@ This file tells a coding agent, or a new contributor, how to work here. The libr
 
 - `src/pydantic_ai_factory/` is the generic core. It holds no software words and never imports a domain package.
 - `packages/software/` is the software domain: stations such as Design. It may import the core.
-- Core layers import downwards only: `cli`, `run`, `factory`, `lines`, `methodology`, `stations`, `gates`, `artifacts`, `contracts`. `uv run lint-imports` checks both rules.
-- Definitions are frozen data. Running is a function that returns a serialisable record. Do not keep live state in objects or module globals.
+- Core layers import downwards only: `cli`, `factory`, `methodology`, `stations`, `gates`, `artifacts`, `contracts`. `uv run lint-imports` checks both rules.
+- Definitions are frozen data. Running is a method that returns a serialisable record. Do not keep live state in objects or module globals.
 
 ## Pydantic AI first
 
