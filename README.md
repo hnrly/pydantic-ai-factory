@@ -12,7 +12,7 @@ An agent finishing a task is not the same as the work being right. A factory sep
 |---|---|
 | Signal | The one typed way in: a piece of data from a person or a system. |
 | Mission | What the factory commits to, with measurable success criteria. |
-| Line | An ordered route through stations, with bounded rework. |
+| Factory | A named, ordered list of stations, with bounded rework. |
 | Station | One bounded job with typed input and output. An agent is optional. |
 | Gate | Plain code that judges recorded evidence. A model never decides a gate. |
 | Artifact | An unchangeable, content-addressed record of what a station handed on. |
