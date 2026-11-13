@@ -7,6 +7,24 @@ description: How to declare a station, run it once and read what happened.
 
 A station is one bounded job with a typed input and a typed output. It is the unit a factory is built from. A station may use one agent, several agents or none: the first example below uses no model at all. This page shows how to declare a station, run it, and read a result that keeps "did it run" apart from "did it pass".
 
+## At a glance
+
+One attempt at a station ends in one of five outcomes. Only a gate's verdict can be `passed` or `failed`.
+
+```mermaid
+flowchart TD
+    I["Typed input"] --> S["The station's code"]
+    S -->|"raised, or returned the wrong type"| DNR["did_not_run"]
+    S -->|"returned its output"| G{"Is there a gate?"}
+    G -->|"no"| NJ["not_judged"]
+    G -->|"yes"| E{"Could the gate be evaluated?"}
+    E -->|"no"| DNR
+    E -->|"yes"| V{"The gate's verdict"}
+    V --> P["passed"]
+    V --> F["failed"]
+    V --> NA["needs_approval"]
+```
+
 ## Your first station
 
 A station is an async function with a decorator. It takes a context and one input, and returns one output. The input and the output must each be a Pydantic model; the decorator reads their types from the annotations.
