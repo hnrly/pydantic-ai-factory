@@ -1,0 +1,21 @@
+---
+// Starlight's footer, followed by the hnrly byline and the Pydantic attribution.
+import Default from '@astrojs/starlight/components/Footer.astro';
+---
+
+<Default><slot /></Default>
+
+<div class="hn-footer not-content">
+  <p>
+    Built in public by <a class="hn-mark" href="https://hnrly.com">hnrly<i>.</i></a>
+  </p>
+  <p>
+    An independent open-source project. Not affiliated with or endorsed by Pydantic.
+    Pydantic AI is the work of the Pydantic team.
+  </p>
+  <p class="hn-links">
+    <a href="https://pydantic.dev/docs/ai/">Pydantic AI docs</a>
+    <a href="https://github.com/hnrly/pydantic_ai_factory">GitHub</a>
+    <a href="https://hnrly.com">hnrly.com</a>
+  </p>
+</div>

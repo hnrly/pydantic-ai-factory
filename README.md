@@ -24,6 +24,7 @@ An agent finishing a task is not the same as the work being right. A factory sep
 
 - Two distributions in one workspace: `pydantic-ai-factory` (the generic core) and `pydantic-ai-factory-software` (software stations). The core never imports a domain package.
 - Formatting, linting, strict typing, tests and an import-rule check, run in CI on Python 3.11 to 3.14.
+- A documentation site in `docs/` and `site/`. Start with [Concepts](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/concepts.md) and [Decisions](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/decisions.md).
 - A keep-out scan that stops credentials, personal paths and private terms from being published.
 
 ## Develop
@@ -38,6 +39,7 @@ uv run pyright
 uv run lint-imports
 uv run pytest
 uv run python scripts/keep_out_scan.py
+npm --prefix site ci && npm --prefix site run build   # the docs site; needs Node 22
 ```
 
 See [Contributing](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/contributing.md) for how changes are shaped and reviewed.
