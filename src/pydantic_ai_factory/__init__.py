@@ -31,6 +31,7 @@ from .gates import (
     needs_approval,
     passed,
 )
+from .lines import Line, LineDefinitionError, LineRun, Rework, run_line
 from .stations import (
     Station,
     StationContext,
@@ -55,11 +56,15 @@ __all__ = [
     "Gate",
     "GateDecision",
     "GateDefinitionError",
+    "Line",
+    "LineDefinitionError",
+    "LineRun",
     "LocalStore",
     "MemoryStore",
     "MethodologyRef",
     "NotEvaluated",
     "Producer",
+    "Rework",
     "Station",
     "StationContext",
     "StationDefinitionError",
@@ -75,6 +80,7 @@ __all__ = [
     "gate",
     "needs_approval",
     "passed",
+    "run_line",
     "run_station",
     "station",
 ]

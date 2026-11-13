@@ -95,7 +95,7 @@ Three things happened. The station ran. Its output was stored as an [artifact](a
 | `not_judged` | `True` | `None` | The station has no gate. Nothing judged the output. |
 | `did_not_run` | either | `None` | The station raised, returned the wrong type, or its gate could not be evaluated. |
 
-Only a gate can fail a station. A station that raises has not failed: it did not run. This matters once stations are joined into a line, because a failure can send work back for rework and "did not run" never does.
+Only a gate can fail a station. A station that raises has not failed: it did not run. This matters once stations are joined into a [line](lines.md), because a failure can send work back for rework and "did not run" never does.
 
 ```python
 import asyncio
