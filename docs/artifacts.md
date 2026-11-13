@@ -270,7 +270,7 @@ The first three derive from `FactoryError`.
 
 ## Write your own store
 
-A store is anything with three async methods: `put`, `get` and `exists`. `ArtifactStore` is a protocol, so no base class is needed. Two functions do the integrity checks for you. `encode_artifact` checks an artifact and returns the bytes to keep. `decode_artifact` checks stored bytes against a ref and returns the artifact.
+A store is anything with three async methods: `put`, `get` and `exists`. `ArtifactStore` is a protocol, so no base class is needed. Two functions in `pydantic_ai_factory.artifacts` do the integrity checks for you. `encode_artifact` checks an artifact and returns the bytes to keep. `decode_artifact` checks stored bytes against a ref and returns the artifact.
 
 ```python
 import asyncio
@@ -278,13 +278,8 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from pydantic_ai_factory import (
-    Artifact,
-    ArtifactNotFound,
-    ArtifactRef,
-    decode_artifact,
-    encode_artifact,
-)
+from pydantic_ai_factory import Artifact, ArtifactNotFound, ArtifactRef
+from pydantic_ai_factory.artifacts import decode_artifact, encode_artifact
 
 T = TypeVar("T", bound=BaseModel)
 
