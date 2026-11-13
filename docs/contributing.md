@@ -37,7 +37,7 @@ Report what you ran and what each command returned. Do not report a check you sk
 The import check enforces two rules. They are part of the design, not style.
 
 1. **The core never imports a domain package.** `pydantic_ai_factory` is generic. `pydantic_ai_factory_software` depends on it, never the reverse.
-2. **Core layers import downwards only.** From highest to lowest: `cli`, `factory`, `methodology`, `stations`, `gates`, `artifacts`, `contracts`. A layer may use the ones below it.
+2. **Core layers import downwards only.** From highest to lowest: `cli`, `methodologies`, `capabilities`, `factory`, `_methodology`, `stations`, `gates`, `artifacts`, `contracts`. A layer may use the ones below it.
 
 If a change needs to break a rule, the design is wrong somewhere. Raise it before writing the code.
 
