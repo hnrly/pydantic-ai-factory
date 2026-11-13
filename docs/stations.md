@@ -118,7 +118,7 @@ Three things happened. The station ran. Its output was stored as an [artifact](a
 
 `ran` is about the station's own code. `outcome` is about the attempt as a whole. Only `outcome` is stored: `ran` and `passed` are read from the record. That is why `did_not_run` appears twice: an attempt whose gate could not be evaluated did not run to a judgement, even though its code ran.
 
-Only a gate can fail a station. A station that raises has not failed: it did not run. The exception is not lost. Its type and traceback are on the result, and it is logged on the `pydantic_ai_factory` logger. This matters once stations are joined into a line, because a failure can send work back for rework and "did not run" never does.
+Only a gate can fail a station. A station that raises has not failed: it did not run. The exception is not lost. Its type and traceback are on the result, and it is logged on the `pydantic_ai_factory` logger. This matters once stations are joined into a factory, because a failure can send work back for rework and "did not run" never does.
 
 ```python
 import asyncio

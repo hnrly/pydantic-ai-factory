@@ -35,6 +35,8 @@ Intake is opt-in. A factory can also run a plain input with no mission. Nothing 
 
 Intake is opt-in. A factory can also run a plain input with no mission. Nothing then records why the work was taken on, and no outcome signal is emitted.
 
+Intake is opt-in. A factory can also run a plain input with no mission. Nothing then records why the work was taken on, and no outcome signal is emitted.
+
 ## Two questions, kept apart
 
 An agent saying "done" tells you very little. So every station answers two separate questions.
