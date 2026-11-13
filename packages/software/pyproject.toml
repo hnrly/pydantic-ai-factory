@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pydantic-ai-factory-software"
+version = "0.1.0"
+description = "Software stations for Pydantic AI Factory, starting with Design."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Typing :: Typed",
+]
+dependencies = ["pydantic-ai-factory==0.1.0"]
+
+[project.urls]
+Homepage = "https://github.com/hnrly/pydantic_ai_factory"
+Repository = "https://github.com/hnrly/pydantic_ai_factory"
+Changelog = "https://github.com/hnrly/pydantic_ai_factory/blob/main/CHANGELOG.md"
+
+[tool.uv.sources]
+pydantic-ai-factory = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pydantic_ai_factory_software"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src/pydantic_ai_factory_software/", "/pyproject.toml", "/README.md", "/LICENSE"]

@@ -1,0 +1,106 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pydantic-ai-factory"
+version = "0.1.0"
+description = "Composable, evidence-driven AI factories built on Pydantic AI."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["pydantic-ai", "agents", "factory", "methodology"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Typing :: Typed",
+]
+dependencies = [
+  "pydantic-ai-slim>=2.68,<3",
+  "pydantic>=2.14,<3",
+]
+
+[project.urls]
+Homepage = "https://github.com/hnrly/pydantic_ai_factory"
+Repository = "https://github.com/hnrly/pydantic_ai_factory"
+Changelog = "https://github.com/hnrly/pydantic_ai_factory/blob/main/CHANGELOG.md"
+
+[tool.uv.workspace]
+members = ["packages/software"]
+
+[tool.uv.sources]
+pydantic-ai-factory-software = { workspace = true }
+
+[dependency-groups]
+dev = [
+  "pydantic-ai-factory-software",
+  "import-linter>=2.16,<3",
+  "pyright>=1.1.410,<2",
+  "pytest>=9,<10",
+  "ruff>=0.17,<0.18",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pydantic_ai_factory"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src/pydantic_ai_factory/", "/README.md", "/CHANGELOG.md", "/LICENSE", "/pyproject.toml"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pydantic_ai_factory", "pydantic_ai_factory_software"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"packages/*/tests/**" = ["S101"]
+
+[tool.pyright]
+include = ["src", "packages/software/src", "tests", "scripts"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-config --strict-markers"
+filterwarnings = ["error"]
+
+# The package boundaries are part of the design, so they are checked on every change.
+[tool.importlinter]
+root_packages = ["pydantic_ai_factory", "pydantic_ai_factory_software"]
+
+[[tool.importlinter.contracts]]
+name = "The generic core never imports a domain package"
+type = "forbidden"
+source_modules = ["pydantic_ai_factory"]
+forbidden_modules = ["pydantic_ai_factory_software"]
+
+[[tool.importlinter.contracts]]
+name = "Core layers import downwards only"
+type = "layers"
+containers = ["pydantic_ai_factory"]
+# Highest layer first. A layer in brackets may not exist yet; it is added by a later change.
+layers = [
+  "(cli)",
+  "(run)",
+  "(factory)",
+  "(lines)",
+  "(methodology)",
+  "(stations)",
+  "(gates)",
+  "(artifacts)",
+  "(contracts)",
+]
