@@ -95,7 +95,7 @@ assert design.inputs == (brief.ref,)
 assert str(design.methodologies[0]) == "elephant-goldfish@1"
 ```
 
-You will rarely fill these fields in by hand. Once stations and lines arrive, the runner does it for you.
+You will rarely fill these fields in by hand. Once stations and factories arrive, the runner does it for you.
 
 ## Correct an artifact
 

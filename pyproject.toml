@@ -100,9 +100,7 @@ containers = ["pydantic_ai_factory"]
 # Highest layer first. A layer in brackets may not exist yet; it is added by a later change.
 layers = [
   "(cli)",
-  "(run)",
   "(factory)",
-  "(lines)",
   "(methodology)",
   "(stations)",
   "(gates)",
