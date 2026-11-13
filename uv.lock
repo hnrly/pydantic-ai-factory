@@ -413,6 +413,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "anyio" },
     { name = "import-linter" },
     { name = "pydantic-ai-factory-software" },
     { name = "pyright" },
@@ -429,6 +430,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "anyio", specifier = ">=4,<5" },
     { name = "import-linter", specifier = ">=2.16,<3" },
     { name = "pydantic-ai-factory-software", editable = "packages/software" },
     { name = "pyright", specifier = ">=1.1.410,<2" },

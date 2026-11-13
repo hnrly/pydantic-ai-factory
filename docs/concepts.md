@@ -7,7 +7,7 @@ description: The model behind Pydantic AI Factory, and the exact meaning of each
 
 This page explains what an AI factory is and defines every word the library uses. A factory is a repeatable production system: signals come in, validated outcomes go out, and outcomes feed back as new signals. The library gives that loop a small set of typed parts. Read this page first; every other page builds on these definitions.
 
-None of these types ships yet. Each one lands in its own pull request, with its own page, and this page links to them as they arrive.
+The types land one pull request at a time, each with its own page. So far: [artifacts](artifacts.md). The rest of this page describes what is still to come.
 
 The page describes the design in the present tense. Where it says the library "enforces" or "records" something, read that as what each part does once it has landed.
 
@@ -65,7 +65,7 @@ Two exits are not drawn. If required evidence is missing, the line stops as "did
 
 A **station** is one bounded job with a typed input and a typed output. It may use one agent, several agents, or none. A station that only runs a formatter is as much a station as one that drafts a design. A station's gate is where its output is judged.
 
-What a station hands on is an **artifact**. An artifact is never edited. It carries a digest of its content, the station that produced it and the artifacts it was made from. A correction is a new artifact that names the one it replaces.
+What a station hands on is an [**artifact**](artifacts.md). An artifact is never edited. It carries a digest of its content, the station that produced it and the artifacts it was made from. A correction is a new artifact that names the one it replaces.
 
 When a gate fails, the line may send work back, a fixed number of times. This is **rework**. At the limit the line either halts or carries on, as the line declares. If it carries on, the station is still recorded as failed; later stations simply get the chance to run.
 
