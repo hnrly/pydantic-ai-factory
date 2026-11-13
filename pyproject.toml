@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
   "pydantic-ai-slim>=2.68,<3",
   "pydantic>=2.14,<3",
+  "typing-extensions>=4.12",
 ]
 
 [project.urls]

@@ -409,6 +409,7 @@ source = { editable = "." }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-ai-slim" },
+    { name = "typing-extensions" },
 ]
 
 [package.dev-dependencies]
@@ -426,6 +427,7 @@ dev = [
 requires-dist = [
     { name = "pydantic", specifier = ">=2.14,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.68,<3" },
+    { name = "typing-extensions", specifier = ">=4.12" },
 ]
 
 [package.metadata.requires-dev]

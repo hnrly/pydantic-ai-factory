@@ -7,7 +7,7 @@ description: The model behind Pydantic AI Factory, and the exact meaning of each
 
 This page explains what an AI factory is and defines every word the library uses. A factory is a repeatable production system: signals come in, validated outcomes go out, and outcomes feed back as new signals. The library gives that loop a small set of typed parts. Read this page first; every other page builds on these definitions.
 
-The types land one pull request at a time, each with its own page. So far: [artifacts](artifacts.md). The rest of this page describes what is still to come.
+The types land one pull request at a time, each with its own page. So far: [artifacts](artifacts.md), [stations](stations.md) and [gates](gates.md). The rest of this page describes what is still to come.
 
 The page describes the design in the present tense. Where it says the library "enforces" or "records" something, read that as what each part does once it has landed.
 
@@ -36,9 +36,9 @@ An agent saying "done" tells you very little. So every station answers two separ
 | Question | Who answers | Possible answers |
 |---|---|---|
 | Did it run? | The station, or the runner when required evidence is missing | It ran, or it did not run. |
-| Did it pass? | The station's gate | Pass, fail, or needs approval. |
+| Did it pass? | The station's gate | Pass, fail, or needs approval. With no gate, the output is not judged. |
 
-A **gate** is plain code. It reads recorded evidence and returns a decision with its reasons. A model may produce the evidence, for example a review report. A model never makes the decision.
+A [**gate**](gates.md) is plain code. It reads recorded evidence and returns a decision with its reasons. A model may produce the evidence, for example a review report. A model never makes the decision.
 
 Three rules follow, and the library enforces all of them.
 
@@ -63,7 +63,7 @@ flowchart LR
 
 Two exits are not drawn. If required evidence is missing, the line stops as "did not run". If rework reaches its limit, the line halts or carries on, as described below.
 
-A **station** is one bounded job with a typed input and a typed output. It may use one agent, several agents, or none. A station that only runs a formatter is as much a station as one that drafts a design. A station's gate is where its output is judged.
+A [**station**](stations.md) is one bounded job with a typed input and a typed output. It may use one agent, several agents, or none. A station that only runs a formatter is as much a station as one that drafts a design. A station's gate is where its output is judged.
 
 What a station hands on is an [**artifact**](artifacts.md). An artifact is never edited. It carries a digest of its content, the station that produced it and the artifacts it was made from. A correction is a new artifact that names the one it replaces.
 

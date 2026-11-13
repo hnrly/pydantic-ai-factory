@@ -18,6 +18,28 @@ from .artifacts import (
     encode_artifact,
 )
 from .contracts import FactoryError, MethodologyRef
+from .gates import (
+    Evidence,
+    Gate,
+    GateDecision,
+    GateDefinitionError,
+    NotEvaluated,
+    Verdict,
+    evaluate_gate,
+    failed,
+    gate,
+    needs_approval,
+    passed,
+)
+from .stations import (
+    Station,
+    StationContext,
+    StationDefinitionError,
+    StationInputInvalid,
+    StationResult,
+    run_station,
+    station,
+)
 
 __version__ = "0.1.0"
 
@@ -28,13 +50,31 @@ __all__ = [
     "ArtifactNotFound",
     "ArtifactRef",
     "ArtifactStore",
+    "Evidence",
     "FactoryError",
+    "Gate",
+    "GateDecision",
+    "GateDefinitionError",
     "LocalStore",
     "MemoryStore",
     "MethodologyRef",
+    "NotEvaluated",
     "Producer",
+    "Station",
+    "StationContext",
+    "StationDefinitionError",
+    "StationInputInvalid",
+    "StationResult",
     "Untyped",
+    "Verdict",
     "__version__",
     "decode_artifact",
     "encode_artifact",
+    "evaluate_gate",
+    "failed",
+    "gate",
+    "needs_approval",
+    "passed",
+    "run_station",
+    "station",
 ]
