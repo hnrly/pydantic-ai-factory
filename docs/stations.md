@@ -294,4 +294,4 @@ An error from the store while saving the input or the output is raised as it is:
 
 ## Where agents fit
 
-A station's function is ordinary async Python, so it can call a Pydantic AI agent like any other code. Nothing on this page needs one. The Design station, later in the series, shows a station built around agents and a kit of capabilities.
+A station's function is ordinary async Python, so it can call a Pydantic AI agent like any other code. Nothing on this page needs one. The Design station, later in the series, shows a station built around agents and their capabilities.
