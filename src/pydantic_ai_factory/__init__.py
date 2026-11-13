@@ -15,7 +15,7 @@ from .artifacts import (
     Producer,
     Untyped,
 )
-from .contracts import FactoryError, MethodologyRef
+from .contracts import DefinitionError, FactoryError, MethodologyRef
 from .gates import (
     Evidence,
     Gate,
@@ -23,7 +23,6 @@ from .gates import (
     GateDefinitionError,
     NotEvaluated,
     Verdict,
-    evaluate_gate,
     failed,
     gate,
     needs_approval,
@@ -36,7 +35,6 @@ from .stations import (
     StationDefinitionError,
     StationInputInvalid,
     StationResult,
-    run_station,
     station,
 )
 
@@ -49,6 +47,7 @@ __all__ = [
     "ArtifactNotFound",
     "ArtifactRef",
     "ArtifactStore",
+    "DefinitionError",
     "Evidence",
     "FactoryError",
     "Gate",
@@ -68,11 +67,9 @@ __all__ = [
     "Untyped",
     "Verdict",
     "__version__",
-    "evaluate_gate",
     "failed",
     "gate",
     "needs_approval",
     "passed",
-    "run_station",
     "station",
 ]

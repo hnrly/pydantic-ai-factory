@@ -30,7 +30,7 @@ A gate is a function with a decorator. It takes two arguments and returns a verd
 ```python
 from pydantic import BaseModel
 
-from pydantic_ai_factory import Artifact, Evidence, Verdict, evaluate_gate, failed, gate, passed
+from pydantic_ai_factory import Artifact, Evidence, Verdict, failed, gate, passed
 
 
 class Design(BaseModel):
@@ -46,13 +46,13 @@ def has_steps(output: Artifact[Design], evidence: Evidence) -> Verdict:
 
 
 design = Artifact.create(Design(summary="Split the bill evenly", steps=["add", "divide"]))
-decision = evaluate_gate(has_steps, design, Evidence())
+decision = has_steps.evaluate(design, Evidence())
 
 print(decision.judgement, decision.reasons)
-#> pass ('2 steps listed',)
+#> passed ('2 steps listed',)
 ```
 
-You will rarely call `evaluate_gate` yourself. Attach the gate to a [station](stations.md) with `@station(gate=has_steps)` and the station evaluates it after every run.
+You will rarely call `Gate.evaluate` yourself. Attach the gate to a [station](stations.md) with `@station(gate=has_steps)` and the station evaluates it after every run.
 
 Keep a gate pure. It should do no I/O and call no model. Anything slow or uncertain belongs in the station, which records the result as evidence for the gate to read.
 
@@ -78,7 +78,6 @@ from pydantic_ai_factory import (
     Evidence,
     NotEvaluated,
     Verdict,
-    evaluate_gate,
     failed,
     gate,
     passed,
@@ -102,11 +101,11 @@ def no_open_blockers(output: Artifact[Design], evidence: Evidence) -> Verdict:
 design = Artifact.create(Design(summary="Split the bill evenly"))
 report = Artifact.create(ReviewReport(blockers=["no rounding rule"]))
 
-decision = evaluate_gate(no_open_blockers, design, Evidence([report]))
+decision = no_open_blockers.evaluate(design, Evidence([report]))
 print(decision.judgement, decision.reasons)
-#> fail ('no rounding rule',)
+#> failed ('no rounding rule',)
 
-without_report = evaluate_gate(no_open_blockers, design, Evidence())
+without_report = no_open_blockers.evaluate(design, Evidence())
 assert isinstance(without_report, NotEvaluated)
 print(without_report.reason, without_report.missing)
 #> missing evidence: ReviewReport ('ReviewReport',)
@@ -121,7 +120,7 @@ print(without_report.reason, without_report.missing)
 
 ## When a gate cannot be evaluated
 
-Sometimes a gate cannot give an answer. Then `evaluate_gate` returns `NotEvaluated`, with a reason. It is never a pass and never a fail.
+Sometimes a gate cannot give an answer. Then `Gate.evaluate` returns `NotEvaluated`, with a reason. It is never a pass and never a fail.
 
 | Cause | Reason reported |
 |---|---|
@@ -140,8 +139,8 @@ When a gate is evaluated, the result is a `GateDecision`.
 | Field | Meaning |
 |---|---|
 | `gate` | The gate's name. |
-| `criteria_version` | The version you gave the gate. |
-| `judgement` | `pass`, `fail` or `needs_approval`. |
+| `version` | The version you gave the gate. |
+| `judgement` | `passed`, `failed` or `needs_approval`. |
 | `reasons` | The reasons the check gave. |
 | `judged` | The ref of every artifact the gate was shown, the output first. |
 | `methodologies` | The methodologies in force. |
@@ -149,7 +148,7 @@ When a gate is evaluated, the result is a `GateDecision`.
 
 A decision always names at least one artifact. Because it holds refs, you can always tell exactly which content was judged, by which rules.
 
-Change the gate's `version` whenever its rules change. Two decisions with different criteria versions are not comparable, and the record should say so.
+Change the gate's `version` whenever its rules change. Two decisions with different versions are not comparable, and the record should say so.
 
 ## Naming a gate
 
@@ -166,6 +165,6 @@ always: Gate[BaseModel] = gate(version="1", name="always")(
     lambda output, evidence: passed("nothing to check")
 )
 
-print(always.name, always.criteria_version)
+print(always.name, always.version)
 #> always 1
 ```

@@ -4,8 +4,8 @@ Every change a user can see is listed here, newest first.
 
 ## Unreleased
 
-- Add gates: the `@gate` decorator, `passed`, `failed` and `needs_approval` verdicts, required evidence, and `GateDecision` records. A gate that cannot be evaluated is reported as such, never as a pass or a fail.
-- Add stations: the `@station` decorator, `StationContext`, `run_station` and `StationResult`, which keeps "ran" apart from "passed" and carries the traceback of a station that raised.
+- Add gates: the `@gate` decorator, `passed`, `failed` and `needs_approval` verdicts, required evidence, `Gate.evaluate` and `GateDecision` records. A gate that cannot be evaluated is reported as such, never as a pass or a fail.
+- Add stations: the `@station` decorator, `StationContext`, `Station.run` and `StationResult`, which keeps "ran" apart from "passed" and carries the traceback of a station that raised. Every definition error is a `DefinitionError` whose `findings` list each problem.
 - Add artifacts: `Artifact`, `ArtifactRef` and `Producer`, with SHA-256 content digests, lineage and superseding. Add the `ArtifactStore` protocol with `MemoryStore` and `LocalStore`, which check every artifact against its digest. `Untyped` reads an artifact without its payload class, and `encode_artifact` and `decode_artifact`, in `pydantic_ai_factory.artifacts`, let you write your own store.
 - Add the documentation site, with Overview, Concepts and Decisions pages, diagrams, a check that every diagram parses, and a test that runs every Python sample in the docs.
 - Add a keep-out scan that stops credentials, personal paths and private terms from being published.

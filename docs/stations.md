@@ -45,7 +45,6 @@ from pydantic_ai_factory import (
     failed,
     gate,
     passed,
-    run_station,
     station,
 )
 
@@ -72,7 +71,7 @@ async def count_words(ctx: StationContext, text: Text) -> Count:
 
 async def main() -> None:
     store = MemoryStore()
-    result = await run_station(count_words, Text(body="one two three"), store=store)
+    result = await count_words.run(Text(body="one two three"), store=store)
 
     print(result.outcome, result.ran, result.passed)
     #> passed True True
@@ -90,7 +89,7 @@ Three things happened. The station ran. Its output was stored as an [artifact](a
 
 ## Reading a result
 
-`run_station` returns a `StationResult`. It is a plain record that holds refs, so it can be saved and compared.
+`Station.run` returns a `StationResult`. It is a plain record that holds refs, so it can be saved and compared.
 
 | Field | Meaning |
 |---|---|
@@ -117,7 +116,7 @@ Three things happened. The station ran. Its output was stored as an [artifact](a
 | `did_not_run` | `False` | `None` | The station raised, or returned something that is not its output type. |
 | `did_not_run` | `True` | `None` | The station's code ran, but its gate could not be evaluated. |
 
-`ran` is about the station's own code. `outcome` is about the attempt as a whole. That is why `did_not_run` appears twice: an attempt whose gate could not be evaluated did not run to a judgement, even though its code ran.
+`ran` is about the station's own code. `outcome` is about the attempt as a whole. Only `outcome` is stored: `ran` and `passed` are read from the record. That is why `did_not_run` appears twice: an attempt whose gate could not be evaluated did not run to a judgement, even though its code ran.
 
 Only a gate can fail a station. A station that raises has not failed: it did not run. The exception is not lost. Its type and traceback are on the result, and it is logged on the `pydantic_ai_factory` logger. This matters once stations are joined into a line, because a failure can send work back for rework and "did not run" never does.
 
@@ -126,7 +125,7 @@ import asyncio
 
 from pydantic import BaseModel
 
-from pydantic_ai_factory import MemoryStore, StationContext, run_station, station
+from pydantic_ai_factory import MemoryStore, StationContext, station
 
 
 class Text(BaseModel):
@@ -143,7 +142,7 @@ async def unreachable(ctx: StationContext, text: Text) -> Count:
 
 
 async def main() -> None:
-    result = await run_station(unreachable, Text(body="hello"), store=MemoryStore())
+    result = await unreachable.run(Text(body="hello"), store=MemoryStore())
 
     print(result.outcome, result.ran, result.passed)
     #> did_not_run False None
@@ -174,7 +173,6 @@ from pydantic_ai_factory import (
     failed,
     gate,
     passed,
-    run_station,
     station,
 )
 
@@ -205,9 +203,7 @@ async def summarise(ctx: StationContext, text: Text) -> Summary:
 
 
 async def main() -> None:
-    result = await run_station(
-        summarise, Text(body="Split teh bill. Then pay."), store=MemoryStore()
-    )
+    result = await summarise.run(Text(body="Split teh bill. Then pay."), store=MemoryStore())
 
     print(result.outcome)
     #> failed
@@ -229,7 +225,7 @@ The first argument to a station is a `StationContext`.
 
 | Attribute | What it gives you |
 |---|---|
-| `ctx.deps` | Whatever you passed as `deps=` to `run_station`: clients, settings, an agent. |
+| `ctx.deps` | Whatever you passed as `deps=` to `Station.run`: clients, settings, an agent. |
 | `ctx.input` | The input as an artifact, with its ref. |
 | `ctx.record(payload)` | Records evidence beside the output. |
 | `ctx.attempt` | Which attempt this is, starting at 1. |
@@ -240,7 +236,7 @@ The first argument to a station is a `StationContext`.
 
 The context cannot be changed, so a station cannot alter the record of its own run. Evidence must be recorded before the station returns; recording later raises `StationClosed`.
 
-Give `deps` a type by writing `StationContext[MyDeps]`. This is how a station is tested: pass a fake in `deps`. The type guides your editor inside the station. It is not checked where `run_station` is called, so passing the wrong `deps` shows up when the station uses it.
+Give `deps` a type by writing `StationContext[MyDeps]`. This is how a station is tested: pass a fake in `deps`. The type guides your editor inside the station. It is not checked where `Station.run` is called, so passing the wrong `deps` shows up when the station uses it.
 
 ```python
 import asyncio
@@ -248,7 +244,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from pydantic_ai_factory import MemoryStore, StationContext, run_station, station
+from pydantic_ai_factory import MemoryStore, StationContext, station
 
 
 class City(BaseModel):
@@ -270,8 +266,8 @@ async def forecast(ctx: StationContext[Deps], city: City) -> Forecast:
 
 
 async def main() -> None:
-    result = await run_station(
-        forecast, City(name="Leeds"), store=MemoryStore(), deps=Deps(weather={"Leeds": "rain"})
+    result = await forecast.run(
+        City(name="Leeds"), store=MemoryStore(), deps=Deps(weather={"Leeds": "rain"})
     )
     print(result.outcome)
     #> not_judged
@@ -290,7 +286,7 @@ The decorator takes three optional arguments.
 | `version` | `"0"` | The version of the station's code. Change it when behaviour changes. |
 | `gate` | none | The gate that judges the output. |
 
-A station is refused when it is declared, not when it runs, if it is not async, does not take exactly two positional arguments, has an empty name or version, or its input or output type is not a Pydantic model. The error is a `StationDefinitionError` that says which rule was broken.
+A station is refused when it is declared, not when it runs, if it is not async, does not take exactly two positional arguments, has an empty name or version, or its input or output type is not a Pydantic model. The error is a `StationDefinitionError`. Like every definition error in the library it is a `DefinitionError`, and its `findings` list every rule that was broken.
 
 Passing the wrong input, or a bad `attempt`, `run_id` or `mission_id`, raises `StationInputInvalid` before anything runs.
 
