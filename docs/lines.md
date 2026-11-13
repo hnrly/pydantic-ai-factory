@@ -9,6 +9,19 @@ A line is an ordered route through [stations](stations.md). Each station's outpu
 
 A line is plain data, and one function runs it. It runs in-process: there is no server to start and no engine to install.
 
+## At a glance
+
+This is the line the first example builds. Work moves forward on a pass. A failure sends it back while rework is left. A station that did not run stops the line.
+
+```mermaid
+flowchart LR
+    W["write"] --> C["check"]
+    C -->|"passed"| P["publish"]
+    C -->|"failed, rework left"| W
+    C -.->|"failed, no rework left"| H["The line stops"]
+    C -.->|"did not run"| H
+```
+
 ## Declare and run a line
 
 This line has three stations and no model. `write` produces a draft. `check` fails drafts with fewer than three words. `publish` gives the checked draft an address.
