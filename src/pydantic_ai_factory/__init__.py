@@ -6,12 +6,16 @@ The public contract arrives layer by layer. Each layer is exported from here as 
 from .artifacts import (
     Artifact,
     ArtifactCorrupt,
+    ArtifactInvalid,
     ArtifactNotFound,
     ArtifactRef,
     ArtifactStore,
     LocalStore,
     MemoryStore,
     Producer,
+    Untyped,
+    decode_artifact,
+    encode_artifact,
 )
 from .contracts import FactoryError, MethodologyRef
 
@@ -20,6 +24,7 @@ __version__ = "0.1.0"
 __all__ = [
     "Artifact",
     "ArtifactCorrupt",
+    "ArtifactInvalid",
     "ArtifactNotFound",
     "ArtifactRef",
     "ArtifactStore",
@@ -28,5 +33,8 @@ __all__ = [
     "MemoryStore",
     "MethodologyRef",
     "Producer",
+    "Untyped",
     "__version__",
+    "decode_artifact",
+    "encode_artifact",
 ]
