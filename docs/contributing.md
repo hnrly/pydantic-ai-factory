@@ -19,7 +19,7 @@ This installs both packages in the workspace and the development tools.
 
 ## The checks
 
-Run these before you ask for review. CI runs the first five on Python 3.11 to 3.14, and the keep-out scan and the site build once each.
+Run these before you ask for review. CI runs the first five on Python 3.11 to 3.14, and the keep-out scan and the two site commands once each.
 
 | Command | What it proves |
 |---|---|
@@ -29,6 +29,7 @@ Run these before you ask for review. CI runs the first five on Python 3.11 to 3.
 | `uv run lint-imports` | The package boundaries hold. |
 | `uv run pytest` | The tests pass, with warnings treated as errors. |
 | `uv run python scripts/keep_out_scan.py` | Nothing private is about to be published. |
+| `npm --prefix site run check` | The docs site type-checks. Run `npm --prefix site ci` once first. |
 | `npm --prefix site run build` | The docs site builds and every internal link resolves. |
 
 Report what you ran and what each command returned. Do not report a check you skipped as passed.
@@ -70,7 +71,7 @@ npm --prefix site run dev   # preview at http://localhost:4321/pydantic_ai_facto
 Four rules keep the docs honest.
 
 1. **Open with a plain summary.** A reader should be able to stop after the first paragraph.
-2. **Every Python sample runs.** `uv run pytest` executes each fenced `python` block in `docs/` and the READMEs. A block that is only a sketch opts out with `python test="skip"` on its opening fence, and the page says why.
+2. **Every Python sample runs.** `uv run pytest` executes each fenced `python` block in `docs/` and the READMEs. A block that is only a sketch opts out with `python test="skip"` on its opening fence, and the page says why. Samples are found in `.md` pages only, so keep Python out of `.mdx` pages; a test fails if one appears.
 3. **Link by file path.** Write `[concepts](concepts.md)`. The site turns it into a route, and the link also works on GitHub.
 4. **Draw with Mermaid.** A fenced `mermaid` block becomes a diagram.
 

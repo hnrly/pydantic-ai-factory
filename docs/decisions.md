@@ -5,7 +5,7 @@ description: The design decisions behind Pydantic AI Factory, with the reason fo
 
 # Decisions
 
-This page records the decisions that shape the library, why each was made and what was turned down. They were settled before any code was written, so that the foundations are designed whole. A decision here is not rewritten later. If one changes, a new entry replaces it and says so.
+This page records the decisions that shape the library and why each was made. Where there was a real alternative, it says what was turned down. They were settled before any code was written, so that the foundations are designed whole. A decision here is not rewritten later. If one changes, a new entry replaces it and says so.
 
 The words used below are defined on the [concepts](concepts.md) page.
 
@@ -19,15 +19,15 @@ The words used below are defined on the [concepts](concepts.md) page.
 
 ## A line is declared data, run by one small runner
 
-**Decided.** A line is an ordered list of stations plus bounded rework. The library owns one runner for it. A graph library may still be used inside a station that needs a state machine.
+**Decided.** A line is an ordered list of stations plus bounded rework. The library owns one runner for it. A graph library such as `pydantic-graph` may still be used inside a station that needs a state machine.
 
 **Why.** There must be one orchestration mechanism, not one per concept. A line that is plain data can later be mapped onto a durable workflow by an adapter.
 
-**Rejected.** Making a graph the line. Graphs keep no state of their own, and durable replay across graph changes is a known weak point. Also rejected: shipping stations with no line at all.
+**Rejected.** Making a graph the line. A graph run keeps its state in memory, so resuming one after a crash needs an engine underneath, and that would bring an engine into the core. Also rejected: shipping stations with no line at all.
 
 ## A station is a typed contract
 
-**Decided.** A station has a typed input, a typed output, a run function and a gate. An agent is optional. "Capability" means Pydantic AI's `AbstractCapability` and nothing else.
+**Decided.** A station has a typed input, a typed output, a run function and a gate. It may also name a kit of capabilities for its agents. An agent is optional. "Capability" means Pydantic AI's `AbstractCapability` and nothing else.
 
 **Why.** A station with no agent must be first class. And one word must have one meaning.
 
@@ -39,13 +39,13 @@ The words used below are defined on the [concepts](concepts.md) page.
 
 **Why.** State lives in the record and the artifact store, never in a live object. A durability adapter can then take over without changing any type.
 
-**Rejected.** A factory object that owns its runs and its store. It is friendlier at first glance and becomes a god object.
+**Rejected.** A factory object that owns its runs and its store. It is friendlier at first glance, and it grows into one object that everything depends on.
 
 ## Signals come in; missions are committed to
 
 **Decided.** `Signal` is the one typed way into a factory. An intent is a signal that a person wrote. Intake accepts or declines signals and produces a `Mission`, which records the signals it came from. An outcome is emitted as a signal.
 
-**Why.** There is one way in, and every result traces back to what triggered it. The feedback loop is a real path through the types, not a diagram.
+**Why.** There is one way in, and every result traces back to what triggered it. The feedback loop is a real path through the types.
 
 **Rejected.** Using "intent" for both the raw request and the commitment: a vague ask and a measurable promise would share one type. Also rejected: three chained types (signal, intent, mission), which adds a step and little else.
 
@@ -59,7 +59,7 @@ The words used below are defined on the [concepts](concepts.md) page.
 
 ## A methodology is a versioned bundle, stamped on every record
 
-**Decided.** A methodology has a kit, required evidence and criteria. Its name and version are stamped on each artifact and gate decision. Review and repair is ordinary bounded rework, driven by the gate.
+**Decided.** A methodology has a kit, required evidence and gate criteria. Its name and version are stamped on each artifact and gate decision. Review and repair is ordinary bounded rework, driven by the gate.
 
 **Why.** A methodology that can demand evidence and shape a gate is more than a prompt. The stamp makes two methodologies comparable later without changing the record.
 

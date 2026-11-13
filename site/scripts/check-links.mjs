@@ -9,8 +9,9 @@ async function walk(dir) {
     if (entry.isDirectory()) { await walk(file); continue; }
     if (!file.endsWith('.html')) continue;
     const html = await readFile(file, 'utf8');
-    for (const match of html.matchAll(/(?:href|src)="([^"#]+)"/g)) {
+    for (const match of html.matchAll(/(?:href|src)="([^"]+)"/g)) {
       const url = match[1].split(/[?#]/)[0];
+      if (!url) continue; // a link to a heading on the same page
       if (/^(?:[a-z]+:|\/\/)/i.test(url)) continue;
       if (url.startsWith('/') && !url.startsWith(prefix)) {
         errors.push(`${file}: missing site prefix: ${url}`); continue;

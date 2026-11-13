@@ -20,12 +20,12 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 
 Pydantic AI Factory is a Python library for building AI factories. A factory is a repeatable production system. It takes a signal, commits to a mission, moves work through stations, and proves each result with evidence before a person approves it.
 
-The library is not released yet. These pages grow with the code: each pull request adds the page for what it builds, and every code sample on the site is run by the test suite.
+The library is not released yet. These pages grow with the code: each pull request adds the page for what it builds, and every Python sample is run by the test suite.
 
 <CardGrid>
   <Card title="Ran is not passed" icon="approve-check">
     A station finishing is one fact. Its output passing a gate is another. The
-    library records both, and never lets a check that did not run count as a pass.
+    design records both, and never lets a check that did not run count as a pass.
   </Card>
   <Card title="Agents are optional" icon="puzzle">
     A station is a typed contract. It may use one agent, several, or none. Plain
@@ -36,8 +36,8 @@ The library is not released yet. These pages grow with the code: each pull reque
     produce, and how that evidence is judged. It has a name and a version.
   </Card>
   <Card title="One meaning per word" icon="pencil">
-    "Capability" means Pydantic AI's own capability, nothing else. The factory
-    adds only the words it needs, listed on the [concepts](concepts.md) page.
+    Pydantic AI already has a "capability". Here the word means that and nothing
+    else. Every word the factory adds is defined on the [concepts](concepts.md) page.
   </Card>
 </CardGrid>
 

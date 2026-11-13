@@ -25,3 +25,5 @@ The site carries the hnrly look: black ground, Inter Tight and Geist Mono, and o
 ## Publishing
 
 `.github/workflows/docs.yml` deploys to GitHub Pages from `main`, and only while the repository is public. Pull requests build the site and check its links but publish nothing.
+
+Before the first public push, switch GitHub Pages on in the repository settings and set its source to GitHub Actions. The deploy job fails until that is done.

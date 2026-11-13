@@ -9,6 +9,8 @@ This page explains what an AI factory is and defines every word the library uses
 
 None of these types ships yet. Each one lands in its own pull request, with its own page, and this page links to them as they arrive.
 
+The page describes the design in the present tense. Where it says the library "enforces" or "records" something, read that as what each part does once it has landed.
+
 ## The loop
 
 ```mermaid
@@ -23,7 +25,7 @@ flowchart LR
 
 Work enters a factory one way only: as a **signal**. A signal is a piece of data from a person or a system. A request typed at a terminal is a signal. So is a failing health check.
 
-**Intake** reads signals and decides. It either commits to a **mission** or declines, with a reason. A mission is what the factory promises to do, written so that success can be measured.
+**Intake** is the step that reads signals and decides. It either commits to a **mission** or declines, with a reason. A mission is what the factory promises to do, written so that success can be measured.
 
 A mission runs along a **line** of **stations**. When the line ends, the **outcome** is emitted as a new signal. That closes the loop: what a factory produces can become what it works on next.
 
@@ -33,7 +35,7 @@ An agent saying "done" tells you very little. So every station answers two separ
 
 | Question | Who answers | Possible answers |
 |---|---|---|
-| Did it run? | The station | It ran, or it did not run. |
+| Did it run? | The station, or the runner when required evidence is missing | It ran, or it did not run. |
 | Did it pass? | The station's gate | Pass, fail, or needs approval. |
 
 A **gate** is plain code. It reads recorded evidence and returns a decision with its reasons. A model may produce the evidence, for example a review report. A model never makes the decision.
@@ -42,7 +44,7 @@ Three rules follow, and the library enforces all of them.
 
 1. **Missing evidence is "did not run", never "pass".** If a check could not run, the line stops and says so.
 2. **"Did not run" never triggers rework.** Rework is for work that was judged and failed. An unreachable tool is not a failed design.
-3. **A person approves an exact thing.** An approval names one artifact by its digest. If the artifact changes, the approval is void.
+3. **A person approves an exact thing.** An approval is a named person's decision on one artifact. It names that artifact by its digest, a fingerprint of its content. If the artifact changes, the approval is void.
 
 ## Inside a line
 
@@ -55,14 +57,17 @@ flowchart LR
     G -->|"fail"| R["Rework, bounded"]
     R --> ST
     G -->|"needs approval"| H["A person decides"]
-    H --> N
+    H -->|"approves"| N
+    H -.->|"rejects"| X["Line stops"]
 ```
 
-A **station** is one bounded job with a typed input and a typed output. It may use one agent, several agents, or none. A station that only runs a formatter is as much a station as one that drafts a design.
+Two exits are not drawn. If required evidence is missing, the line stops as "did not run". If rework reaches its limit, the line halts or carries on, as described below.
+
+A **station** is one bounded job with a typed input and a typed output. It may use one agent, several agents, or none. A station that only runs a formatter is as much a station as one that drafts a design. A station's gate is where its output is judged.
 
 What a station hands on is an **artifact**. An artifact is never edited. It carries a digest of its content, the station that produced it and the artifacts it was made from. A correction is a new artifact that names the one it replaces.
 
-When a gate fails, the line may send work back, a fixed number of times. This is **rework**. At the limit the line either halts or carries on, as the line declares.
+When a gate fails, the line may send work back, a fixed number of times. This is **rework**. At the limit the line either halts or carries on, as the line declares. If it carries on, the station is still recorded as failed; later stations simply get the chance to run.
 
 ## Methodology
 
@@ -70,11 +75,11 @@ A **methodology** is a way of working, written down as data. It has a name, a ve
 
 | Part | What it does |
 |---|---|
-| Kit | The Pydantic AI capabilities a station's agents are given. |
+| Kit | The Pydantic AI capabilities it adds to a station's agents. |
 | Required evidence | What a station must produce, such as a review report. |
-| Criteria | Plain code that judges that evidence at the gate. |
+| Gate criteria | Plain code that judges that evidence. It runs as part of the station's gate. |
 
-Because it can require evidence and shape a gate, a methodology is more than a prompt. Its name and version are stamped on every artifact and every gate decision. That record is what later lets two methodologies be compared on the same work.
+A station's gate passes only if the station's own check and every methodology's gate criteria pass. Because it can require evidence and add to a gate, a methodology is more than a prompt. Its name and version are stamped on every artifact and every gate decision. That record is what later lets two methodologies be compared on the same work.
 
 ## The vocabulary
 
@@ -90,17 +95,18 @@ These are the public types. Each will have its own page.
 | Artifact | An unchangeable, content-addressed record of what a station handed on. |
 | Gate | Plain code that judges recorded evidence and gives reasons. |
 | Approval | A named person's decision on one exact artifact. |
-| Methodology | A named, versioned way of working: kit, required evidence, criteria. |
+| Methodology | A named, versioned way of working: kit, required evidence, gate criteria. |
 | Run | The serialisable record of one mission moving along a line. It may be waiting on an approval. |
 
 Some words are used in prose but are not types.
 
 | Word | Meaning |
 |---|---|
+| Intake | The step that turns signals into a mission or declines them. It is a function, not a type. |
 | Intent | A signal that a person wrote. It is a kind of signal, not a separate type. |
-| Evidence | An artifact when a gate reads it. Evidence and artifacts share one record. |
+| Evidence | An artifact in the role of being judged by a gate. Evidence and artifacts share one record. |
 | Outcome | The result of a run. It is emitted as a signal. |
-| Kit | The list of capabilities a methodology or station supplies. |
+| Kit | A list of capabilities for a station's agents. A station may have its own, and each methodology adds to it. |
 
 Two words come from Pydantic AI and keep its meaning exactly.
 

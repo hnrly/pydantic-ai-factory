@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: docs-${{ github.ref }}
-  cancel-in-progress: true
+  # A pull request build may be replaced by a newer one. A deploy from main is never cut short.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
@@ -35,7 +36,8 @@ jobs:
         with:
           path: site/dist
 
-  # Publishing starts by itself once the repository is public. Until then only the build runs.
+  # Runs only on main and only while the repository is public. Before the first public push,
+  # switch GitHub Pages on in the repository settings with the source set to GitHub Actions.
   deploy:
     needs: build
     if: github.ref == 'refs/heads/main' && github.event.repository.visibility == 'public'
