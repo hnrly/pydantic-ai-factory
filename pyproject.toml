@@ -58,6 +58,8 @@ include = ["/src/pydantic_ai_factory/", "/README.md", "/CHANGELOG.md", "/LICENSE
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+# Markdown is left alone: the formatter would rewrite the `#>` output comments in doc samples.
+extend-exclude = ["*.md", "*.mdx"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S101"]

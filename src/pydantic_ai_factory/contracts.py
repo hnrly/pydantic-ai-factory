@@ -19,6 +19,7 @@ __all__ = [
     "Name",
     "Record",
     "canonical_json",
+    "check_name",
     "digest_of",
 ]
 
@@ -31,6 +32,20 @@ Digest = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
 
 class FactoryError(Exception):
     """Base class for every error this library raises on purpose."""
+
+
+def check_name(value: object) -> str | None:
+    """Say what is wrong with ``value`` as a name, or return ``None`` if it is fine.
+
+    A name is one line of 1 to 200 characters with no leading or trailing space.
+    """
+    if not isinstance(value, str):
+        return f"must be a string, not {type(value).__name__}"
+    if not value or value != value.strip():
+        return "must be non-empty with no surrounding space"
+    if len(value) > 200 or "\n" in value or "\r" in value:
+        return "must be one line of at most 200 characters"
+    return None
 
 
 class Record(BaseModel):

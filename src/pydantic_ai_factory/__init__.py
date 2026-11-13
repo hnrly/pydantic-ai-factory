@@ -33,6 +33,7 @@ from .gates import (
 )
 from .stations import (
     Station,
+    StationClosed,
     StationContext,
     StationDefinitionError,
     StationInputInvalid,
@@ -61,6 +62,7 @@ __all__ = [
     "NotEvaluated",
     "Producer",
     "Station",
+    "StationClosed",
     "StationContext",
     "StationDefinitionError",
     "StationInputInvalid",

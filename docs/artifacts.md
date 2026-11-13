@@ -183,7 +183,7 @@ async def main() -> None:
     for ref in design.inputs:
         parent = await store.get(ref, Untyped)
         print(ref.type, parent.payload.model_extra)
-        # > Brief {'goal': 'Split a bill between friends'}
+        #> Brief {'goal': 'Split a bill between friends'}
 
 
 asyncio.run(main())
@@ -238,7 +238,7 @@ async def main() -> None:
         await MemoryStore().put(forged)
     except ArtifactCorrupt as error:
         print(type(error).__name__)
-        # > ArtifactCorrupt
+        #> ArtifactCorrupt
 
 
 asyncio.run(main())
@@ -301,7 +301,7 @@ async def main() -> None:
     store = DictStore()
     ref = await store.put(Artifact.create(Design(summary="Split the bill evenly")))
     print((await store.get(ref, Design)).payload)
-    # > summary='Split the bill evenly'
+    #> summary='Split the bill evenly'
 
 
 asyncio.run(main())
