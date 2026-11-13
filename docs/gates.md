@@ -7,6 +7,22 @@ description: How a gate judges a station's output from recorded evidence, and wh
 
 A gate decides whether a station's output may move on. It is plain code: a function that reads recorded evidence and returns a verdict with its reasons. A model may produce the evidence, but a model never makes the decision. This page shows how to write a gate, what its decision records, and what happens when a gate cannot be evaluated.
 
+## At a glance
+
+A gate reads the output and the recorded evidence. It gives one of three verdicts, or it cannot be evaluated, which is neither a pass nor a fail.
+
+```mermaid
+flowchart TD
+    O["The station's output"] --> Q{"Is the required evidence recorded?"}
+    EV["Recorded evidence"] --> Q
+    Q -->|"no"| NE["Not evaluated: the check is not called"]
+    Q -->|"yes"| C["The check, plain code"]
+    C -->|"raised, or returned no verdict"| NE
+    C --> P["passed"]
+    C --> F["failed"]
+    C --> NA["needs_approval"]
+```
+
 ## Write a gate
 
 A gate is a function with a decorator. It takes two arguments and returns a verdict. The first is the station's output, as an [artifact](artifacts.md). The second is the evidence: whatever else the station recorded.
