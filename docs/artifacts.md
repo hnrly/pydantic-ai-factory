@@ -9,6 +9,19 @@ An artifact is the record of what one station hands to the next. It wraps a type
 
 Evidence is not a separate type. An artifact is called evidence when a gate reads it. A review report and a design are the same kind of record.
 
+## At a glance
+
+Each artifact names what it was made from. A correction is a new artifact that names the one it replaces. Nothing is edited in place.
+
+```mermaid
+flowchart RL
+    D1["Draft"] -->|"inputs"| B["Brief"]
+    D2["Corrected draft"] -->|"inputs"| B
+    D2 -->|"supersedes"| D1
+```
+
+Read an arrow as "names". The first draft is still in the store, unchanged, after it is corrected.
+
 ## Create an artifact
 
 The payload is any Pydantic model. `Artifact.create` records it and computes its ref.

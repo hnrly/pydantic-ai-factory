@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "astro dev",
     "check": "astro check",
-    "build": "astro build && node scripts/check-links.mjs",
+    "diagrams": "node scripts/check-diagrams.mjs",
+    "build": "node scripts/check-diagrams.mjs && astro build && node scripts/check-links.mjs",
     "preview": "astro preview"
   },
   "dependencies": {
@@ -20,5 +21,8 @@
     "astro-mermaid": "2.2.0",
     "mermaid": "12.3.0",
     "typescript": "6.0.3"
+  },
+  "devDependencies": {
+    "jsdom": "31.0.1"
   }
 }
