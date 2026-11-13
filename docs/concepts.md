@@ -29,6 +29,8 @@ Work enters a factory one way only: as a **signal**. A signal is a piece of data
 
 A mission runs through the factory's **stations**, in order. When the run ends, the **outcome** is emitted as a new signal. That closes the loop: what a factory produces can become what it works on next.
 
+Intake is opt-in. A factory can also run a plain input with no mission. Nothing then records why the work was taken on, and no outcome signal is emitted.
+
 ## Two questions, kept apart
 
 An agent saying "done" tells you very little. So every station answers two separate questions.
@@ -75,11 +77,11 @@ A **methodology** is a way of working, written down as data. It has a name, a ve
 
 | Part | What it does |
 |---|---|
-| Kit | The Pydantic AI capabilities it adds to a station's agents. |
+| Capabilities | The Pydantic AI capabilities it adds to a station's agents. |
 | Required evidence | What a station must produce, such as a review report. |
-| Gate criteria | Plain code that judges that evidence. It runs as part of the station's gate. |
+| Gates | Plain code that judges that evidence. They run as part of the station's gate. |
 
-A station's gate passes only if the station's own check and every methodology's gate criteria pass. Because it can require evidence and add to a gate, a methodology is more than a prompt. Its name and version are stamped on every artifact and every gate decision. That record is what later lets two methodologies be compared on the same work.
+A station's gate passes only if the station's own check and every methodology's gates pass. Because it can require evidence and add to a gate, a methodology is more than a prompt. Its name and version are stamped on every artifact and every gate decision. That record is what later lets two methodologies be compared on the same work.
 
 ## The vocabulary
 
@@ -101,7 +103,7 @@ Some words are used in prose but are not types.
 
 | Word | Meaning |
 |---|---|
-| Intake | The step that turns signals into a mission or declines them. It is a function, not a type. |
+| Intake | The step that turns signals into a mission or declines them. It is a method of the factory, not a type. |
 | Intent | A signal that a person wrote. It is a kind of signal, not a separate type. |
 | Evidence | An artifact in the role of being judged by a gate. Evidence and artifacts share one record. |
 | Outcome | The result of a run. It is emitted as a signal. |

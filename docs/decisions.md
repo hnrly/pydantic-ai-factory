@@ -43,11 +43,11 @@ The words used below are defined on the [concepts](concepts.md) page.
 
 ## Signals come in; missions are committed to
 
-**Decided.** `Signal` is the one typed way into a factory. An intent is a signal that a person wrote. Intake accepts or declines signals and produces a `Mission`, which records the signals it came from. An outcome is emitted as a signal.
+**Decided.** `Signal` is the one typed way into a factory. An intent is a signal that a person wrote. Intake accepts or declines signals and produces a `Mission`, which records the signals it came from. An outcome is emitted as a signal. A mission is optional: a factory can run a plain input, and then nothing records why the work was taken on and no outcome is emitted.
 
 **Why.** There is one way in, and every result traces back to what triggered it. The feedback loop is a real path through the types.
 
-**Rejected.** Using "intent" for both the raw request and the commitment: a vague ask and a measurable promise would share one type. Also rejected: three chained types (signal, intent, mission), which adds a step and little else.
+**Rejected.** Using "intent" for both the raw request and the commitment: a vague ask and a measurable promise would share one type. Also rejected: three chained types (signal, intent, mission), which adds a step and little else. Also rejected: making a mission compulsory. When a person asks and a factory runs, wrapping the request in a signal and a mission is ceremony. Intake earns its place when it really decides.
 
 ## The human gate is a gate outcome
 
@@ -59,7 +59,7 @@ The words used below are defined on the [concepts](concepts.md) page.
 
 ## A methodology is a versioned bundle, stamped on every record
 
-**Decided.** A methodology has a kit, required evidence and gate criteria. Its name and version are stamped on each artifact and gate decision. Review and repair is ordinary bounded rework, driven by the gate.
+**Decided.** A methodology has capabilities, required evidence and gates. Its name and version are stamped on each artifact and gate decision. Review and repair is ordinary bounded rework, driven by the gate.
 
 **Why.** A methodology that can demand evidence and shape a gate is more than a prompt. The stamp makes two methodologies comparable later without changing the record.
 
