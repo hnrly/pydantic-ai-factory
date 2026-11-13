@@ -7,18 +7,20 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from pydantic_ai_factory import (
     Artifact,
     Evidence,
     Line,
     LineDefinitionError,
+    LineRun,
     MemoryStore,
     MethodologyRef,
     Rework,
     StationContext,
     StationInputInvalid,
+    Untyped,
     Verdict,
     failed,
     gate,
@@ -207,16 +209,20 @@ async def test_at_the_rework_limit_the_line_halts_by_default() -> None:
 async def test_at_the_limit_a_line_may_carry_on_but_the_failure_stays_on_the_record() -> None:
     deps = Deps(problems=[["a"], ["b"]])
 
+    store = MemoryStore()
     run = await run_line(
         line(Rework("check", "draft", limit=1, on_limit="continue")),
         Brief(goal="x"),
-        store=MemoryStore(),
+        store=store,
         deps=deps,
     )
 
     assert (run.outcome, run.finished, run.stopped_at) == ("failed", True, None)
     assert outcomes(run)[-2:] == [("check", 2, "failed"), ("publish", 1, "not_judged")]
     assert run.output is not None
+    failed_check = run.latest("check")
+    assert failed_check is not None
+    assert (await store.get(run.output, Published)).inputs == (failed_check.output,)
 
 
 async def test_a_station_that_did_not_run_stops_the_line_and_is_never_reworked() -> None:
@@ -275,6 +281,7 @@ def test_a_badly_formed_line_is_refused_with_every_finding_at_once() -> None:
                 Rework("check", "nowhere"),
                 Rework("check", "draft"),
                 Rework("publish", "check", limit=0),
+                Rework("nowhere", limit=0, on_limit="stop"),  # type: ignore[arg-type]
             ],
         )
 
@@ -287,15 +294,36 @@ def test_a_badly_formed_line_is_refused_with_every_finding_at_once() -> None:
         "rework from 'missing': no such station",
         "rework from 'check': target 'nowhere' is not a station",
         "rework from 'check': declared more than once",
+        "rework from 'publish': the limit must be a whole number, at least 1",
         "rework from 'publish': target 'check' comes later in the line",
-        "rework from 'publish': the limit must be at least 1",
         "rework from 'publish': the station has no gate, so it can never fail",
+        "rework from 'nowhere': the limit must be a whole number, at least 1",
+        "rework from 'nowhere': on_limit must be 'halt' or 'continue'",
+        "rework from 'nowhere': no such station",
     ]
 
 
 def test_an_empty_line_is_refused() -> None:
     with pytest.raises(LineDefinitionError, match="a line needs at least one station"):
         Line("empty", [])
+
+
+def test_other_malformed_lines_are_refused_with_a_finding_not_a_crash() -> None:
+    text_limit: Any = "2"
+    cases: list[tuple[dict[str, Any], str]] = [
+        ({"version": ""}, "the version must be non-empty"),
+        ({"name": "x" * 201}, "the name must be one line"),
+        ({"stations": [draft, "check"]}, "every item must be a Station"),
+        ({"rework": [Rework("check", limit=True)]}, "the limit must be a whole number"),
+        ({"rework": [Rework("check", limit=text_limit)]}, "the limit must be a whole number"),
+        ({"rework": ["check"]}, "every rework rule must be a Rework"),
+    ]
+    for change, message in cases:
+        arguments: dict[str, Any] = {"name": "document", "stations": [draft, check, publish]}
+        arguments.update(change)
+        name, stations = arguments.pop("name"), arguments.pop("stations")
+        with pytest.raises(LineDefinitionError, match=message):
+            Line(name, stations, **arguments)
 
 
 def test_a_line_knows_its_stations_and_rules() -> None:
@@ -307,3 +335,153 @@ def test_a_line_knows_its_stations_and_rules() -> None:
     assert built.rework_for("check") is rule
     assert built.rework_for("draft") is None
     assert (Rework("check").target, rule.target) == ("check", "draft")
+
+
+# --- two rework rules in one line
+
+
+@gate(version="1")
+def publishable(output: Artifact[Published], evidence: Evidence) -> Verdict:
+    return failed("bad address") if output.payload.url.endswith("/bad") else passed("ok")
+
+
+@station(gate=publishable, name="publish")
+async def fussy_publish(ctx: StationContext[Deps], checked: Checked) -> Published:
+    ctx.deps.seen.append(("publish", ctx.attempt, ()))
+    return Published(url="https://example.org/" + ("bad" if ctx.attempt == 1 else "good"))
+
+
+def two_rule_line(check_rule: Rework) -> Line:
+    return Line(
+        "document",
+        [draft, check, fussy_publish],
+        rework=[check_rule, Rework("publish", "draft", limit=1)],
+    )
+
+
+async def test_a_failure_that_later_rework_put_right_does_not_fail_the_run() -> None:
+    deps = Deps(problems=[["a"], ["b"]])
+
+    run = await run_line(
+        two_rule_line(Rework("check", limit=1, on_limit="continue")),
+        Brief(goal="x"),
+        store=MemoryStore(),
+        deps=deps,
+    )
+
+    assert outcomes(run) == [
+        ("draft", 1, "not_judged"),
+        ("check", 1, "failed"),
+        ("check", 2, "failed"),
+        ("publish", 1, "failed"),
+        ("draft", 2, "not_judged"),
+        ("check", 3, "passed"),
+        ("publish", 2, "passed"),
+    ]
+    assert (run.outcome, run.finished) == ("passed", True)
+    assert [seen for seen in deps.seen if seen[0] == "draft"] == [
+        ("draft", 1, ()),
+        ("draft", 2, ("bad address",)),
+    ]
+
+
+async def test_a_rework_limit_counts_for_the_whole_run() -> None:
+    deps = Deps(problems=[["a"], [], ["b"]])
+
+    run = await run_line(
+        two_rule_line(Rework("check", limit=1)), Brief(goal="x"), store=MemoryStore(), deps=deps
+    )
+
+    assert outcomes(run) == [
+        ("draft", 1, "not_judged"),
+        ("check", 1, "failed"),
+        ("check", 2, "passed"),
+        ("publish", 1, "failed"),
+        ("draft", 2, "not_judged"),
+        ("check", 3, "failed"),
+    ]
+    assert (run.outcome, run.stopped_at) == ("failed", "check")
+
+
+# --- the record
+
+
+async def test_the_record_survives_json_and_names_the_shape_of_its_line() -> None:
+    built = line(Rework("check", "draft"))
+
+    run = await run_line(built, Brief(goal="x"), store=MemoryStore(), deps=Deps())
+
+    assert type(run).model_validate_json(run.model_dump_json()) == run
+    assert run.line_digest == built.digest
+    assert built.digest == line(Rework("check", "draft")).digest
+    assert built.digest != line(Rework("check", "draft", limit=2)).digest
+    assert built.digest != line().digest
+
+
+async def test_every_artifact_a_run_makes_carries_its_mission_and_methodologies() -> None:
+    store = MemoryStore()
+    stamp = MethodologyRef(name="review", version="1")
+
+    run = await run_line(
+        line(), Brief(goal="x"), store=store, deps=Deps(), mission_id="m-1", methodologies=[stamp]
+    )
+
+    refs = [run.input, *(step.output for step in run.steps if step.output)]
+    for ref in refs:
+        artifact = await store.get(ref, Untyped)
+        assert (artifact.mission_id, artifact.methodologies) == ("m-1", (stamp,))
+
+
+async def test_a_run_that_stops_early_has_no_output() -> None:
+    run = await run_line(line(), Brief(goal="x"), store=MemoryStore(), deps=Deps(break_check=True))
+
+    assert (run.output, run.finished) == (None, False)
+
+
+async def test_progress_can_be_saved_after_every_attempt() -> None:
+    saved: list[LineRun] = []
+
+    async def save(progress: LineRun) -> None:
+        saved.append(progress)
+
+    run = await run_line(line(), Brief(goal="x"), store=MemoryStore(), deps=Deps(), on_step=save)
+
+    assert [(s.outcome, s.finished, len(s.steps)) for s in saved] == [
+        ("running", False, 1),
+        ("running", False, 2),
+        ("running", False, 3),
+    ]
+    assert saved[-1].steps == run.steps
+
+
+async def test_bad_run_arguments_are_refused_before_any_station_runs() -> None:
+    deps = Deps()
+
+    bad: list[dict[str, Any]] = [{"run_id": " x"}, {"run_id": ""}, {"mission_id": " "}]
+    for arguments in bad:
+        with pytest.raises(StationInputInvalid, match=r"(run_id|mission_id) must be non-empty"):
+            await run_line(line(), Brief(goal="x"), store=MemoryStore(), deps=deps, **arguments)
+    assert deps.seen == []
+
+
+def test_a_record_that_contradicts_itself_is_refused() -> None:
+    ref = Artifact.create(Brief(goal="x")).ref
+    common: dict[str, Any] = {
+        "run_id": "r",
+        "line": "l",
+        "line_version": "0",
+        "line_digest": line().digest,
+        "input": ref,
+    }
+    contradictions: list[dict[str, Any]] = [
+        {"outcome": "passed", "finished": False, "stopped_at": "check"},
+        {"outcome": "passed", "finished": True},
+        {"outcome": "failed", "finished": False},
+        {"outcome": "failed", "finished": True, "output": ref, "stopped_at": "check"},
+        {"outcome": "did_not_run", "finished": True, "output": ref},
+        {"outcome": "running", "finished": False, "stopped_at": "check"},
+        {"outcome": "needs_approval", "finished": False, "stopped_at": "check", "output": ref},
+    ]
+    for wrong in contradictions:
+        with pytest.raises(ValidationError):
+            LineRun(**common, **wrong)

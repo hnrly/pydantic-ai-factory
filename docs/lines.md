@@ -88,18 +88,18 @@ async def main() -> None:
     run = await run_line(guide, Brief(topic="tea"), store=store)
 
     print(run.outcome, run.finished)
-    # > passed True
+    #> passed True
     for step in run.steps:
         print(step.station, step.attempt, step.outcome)
-        # > write 1 not_judged
-        # > check 1 failed
-        # > write 2 not_judged
-        # > check 2 passed
-        # > publish 1 not_judged
+        #> write 1 not_judged
+        #> check 1 failed
+        #> write 2 not_judged
+        #> check 2 passed
+        #> publish 1 not_judged
 
     assert run.output is not None
     print((await store.get(run.output, Published)).payload.address)
-    # > https://example.org/5-words
+    #> https://example.org/5-words
 
 
 asyncio.run(main())
@@ -121,20 +121,20 @@ This block shows the shape only; the full example above runs it.
 |---|---|
 | `from_station` | The station whose failure triggers the rule. |
 | `to_station` | Where the work goes back to. It may be the same station or an earlier one. Leave it out to redo the failing station itself. |
-| `limit` | How many times work may be sent back. The default is 1. |
+| `limit` | How many times work may be sent back in one run of the line. The default is 1. |
 | `on_limit` | What to do when the limit is reached: `"halt"`, the default, or `"continue"`. |
 
-When work is sent back, the line runs forward again from the target. The target station gets the failing gate's decision as `ctx.feedback`, so it can act on the reasons. Its `ctx.attempt` goes up by one.
+When work is sent back, the line runs forward again from the target. The target runs on the same input artifact it had before, and gets the failing gate's decision as `ctx.feedback`, so it can act on the reasons. Its `ctx.attempt` goes up by one. Stations between the target and the failing station run again too, with no feedback of their own.
 
 Three rules are worth knowing.
 
 1. **Rework is only for failures.** A station that did not run is never sent back. The line stops and reports it. An unreachable tool is not fixed by redoing the work.
 2. **A failure with no rule stops the line.** Nothing is retried unless you say so.
-3. **Rework is always bounded.** There is no unlimited setting.
+3. **Rework is always bounded.** There is no unlimited setting, and a limit counts for the whole run. If another rule sends the work back past a station, that station's rework budget is not refilled. So the total number of reworks in a run can never exceed the sum of the limits.
 
 ### Carrying on at the limit
 
-With `on_limit="continue"`, a line that has used up its rework moves on to the next station anyway. The failure is not forgotten. The station's result stays `failed`, and the run's outcome is `failed` even though it finished. Use this when a later station is worth running on imperfect work, such as one that reports what went wrong.
+With `on_limit="continue"`, a line that has used up its rework moves on to the next station anyway. The failure is not forgotten. The station's result stays `failed`, and the run's outcome is `failed` even though it finished. The exception is when later rework sends the work back and the station passes on a later attempt: the run is judged on each station's last attempt. Use this when a later station is worth running on imperfect work, such as one that reports what went wrong.
 
 ## The record of a run
 
@@ -142,23 +142,26 @@ With `on_limit="continue"`, a line that has used up its rework moves on to the n
 
 | Field | Meaning |
 |---|---|
-| `outcome` | `passed`, `failed`, `did_not_run` or `needs_approval`. |
+| `outcome` | `passed`, `failed`, `did_not_run` or `needs_approval`. A record passed to `on_step` while the run is under way says `running`. |
 | `finished` | Whether the work reached the end of the line. |
 | `stopped_at` | The station where the line stopped early, if it did. |
 | `steps` | One station result per attempt, in the order they happened. |
-| `input`, `output` | The refs of the first input and the final output. |
+| `input`, `output` | The refs of the first input and the final output. `output` is set only when the run finished. |
 | `run_id`, `line`, `line_version` | Which run of which line this was. |
+| `line_digest` | A digest of the line's shape: its stations, gates and rework rules. |
 | `mission_id`, `methodologies` | Where the run sits. These are stamped on every artifact it makes. |
 
 `outcome` and `finished` are separate answers, as `ran` and `passed` are for a station.
 
 | Outcome | `finished` | When |
 |---|---|---|
-| `passed` | `True` | The work reached the end and no station failed. |
+| `passed` | `True` | The work reached the end and no station's last attempt failed. |
 | `failed` | `False` | A station failed with no rework left, and the line halted. |
-| `failed` | `True` | A station failed, its rule said to carry on, and the work reached the end. |
+| `failed` | `True` | A station's last attempt failed, its rule said to carry on, and the work reached the end. |
 | `did_not_run` | `False` | A station raised, returned the wrong type, or its gate could not be evaluated. |
 | `needs_approval` | `False` | A gate asked for a person. The line waits there. |
+
+When a run stops early, the artifact it stopped on is `run.latest(run.stopped_at).output`.
 
 A station with no gate is `not_judged`, and the line moves past it. Such a line can end as `passed`: nothing failed. Give a station a gate when its output must be judged.
 
@@ -212,17 +215,31 @@ try:
 except LineDefinitionError as error:
     for finding in error.findings:
         print(finding)
-        # > 'write' hands on Draft but 'publish' takes Published
-        # > rework from 'review': no such station
+        #> 'write' hands on Draft but 'publish' takes Published
+        #> rework from 'review': no such station
 ```
 
 A line is refused when:
 
-- it has no stations, or two stations share a name;
+- its name or version is empty, it has no stations, or two stations share a name;
 - a station's output type is not the next station's input type;
 - a rework rule names a station that is not in the line, or a target that comes later;
-- a rework rule has a limit below 1, or is declared twice for one station;
+- a rework rule has a limit below 1, an `on_limit` that is not `"halt"` or `"continue"`, or is declared twice for one station;
 - a rework rule starts from a station with no gate, which can never fail.
+
+## Saving progress
+
+`run_line` returns its record when the line finishes or stops. If the store raises or the run is cancelled part-way, nothing is returned. To keep a record as you go, pass `on_step`. It is awaited after every attempt with the record so far.
+
+```python test="skip"
+async def save(progress: LineRun) -> None:
+    path.write_text(progress.model_dump_json())
+
+
+run = await run_line(guide, Brief(topic="tea"), store=store, on_step=save)
+```
+
+This block shows the shape only, because it writes a file. A record holds refs and plain data, so `model_dump_json` and `LineRun.model_validate_json` round-trip it exactly.
 
 ## Passing dependencies
 
