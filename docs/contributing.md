@@ -30,7 +30,7 @@ Run these before you ask for review. CI runs the first five on Python 3.11 to 3.
 | `uv run pytest` | The tests pass, with warnings treated as errors. |
 | `uv run python scripts/keep_out_scan.py` | Nothing private is about to be published. |
 | `npm --prefix site run check` | The docs site type-checks. Run `npm --prefix site ci` once first. |
-| `npm --prefix site run build` | The docs site builds and every internal link resolves. |
+| `npm --prefix site run build` | Every diagram parses, the docs site builds and every internal link resolves. |
 
 Report what you ran and what each command returned. Do not report a check you skipped as passed.
 
@@ -73,7 +73,7 @@ Four rules keep the docs honest.
 1. **Open with a plain summary.** A reader should be able to stop after the first paragraph.
 2. **Every Python sample runs.** `uv run pytest` executes each fenced `python` block in `docs/` and the READMEs. A block that is only a sketch opts out with `python test="skip"` on its opening fence, and the page says why. Samples are found in `.md` pages only, so keep Python out of `.mdx` pages; a test fails if one appears.
 3. **Link by file path.** Write `[concepts](concepts.md)`. The site turns it into a route, and the link also works on GitHub.
-4. **Draw with Mermaid.** A fenced `mermaid` block becomes a diagram.
+4. **Draw with Mermaid, where a picture helps.** A fenced `mermaid` block becomes a diagram. Use one when a page describes a flow, a set of states or a lineage, and put it before the first code sample, so the reader sees the shape before the detail. A page that only lists options or commands needs none. The build parses every diagram and fails on one that would not draw; `npm --prefix site run diagrams` runs that check alone.
 
 A new page needs a `title` and `description` in its front matter, and an entry in the sidebar in `site/astro.config.mjs`.
 
