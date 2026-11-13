@@ -3,6 +3,7 @@
 from ._station import (
     Outcome,
     Station,
+    StationClosed,
     StationContext,
     StationDefinitionError,
     StationInputInvalid,
@@ -14,6 +15,7 @@ from ._station import (
 __all__ = [
     "Outcome",
     "Station",
+    "StationClosed",
     "StationContext",
     "StationDefinitionError",
     "StationInputInvalid",

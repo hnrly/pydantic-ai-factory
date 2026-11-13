@@ -9,7 +9,7 @@ A station is one bounded job with a typed input and a typed output. It is the un
 
 ## Your first station
 
-A station is an async function with a decorator. It takes a context and one input, and returns one output. Both must be Pydantic models; the decorator reads them from the type annotations.
+A station is an async function with a decorator. It takes a context and one input, and returns one output. The input and the output must each be a Pydantic model; the decorator reads their types from the annotations.
 
 This station counts words. Its [gate](gates.md) passes short texts and fails long ones.
 
@@ -57,12 +57,12 @@ async def main() -> None:
     result = await run_station(count_words, Text(body="one two three"), store=store)
 
     print(result.outcome, result.ran, result.passed)
-    # > passed True True
+    #> passed True True
 
     assert result.output is not None
     output = await store.get(result.output, Count)
     print(output.payload)
-    # > words=3
+    #> words=3
 
 
 asyncio.run(main())
@@ -77,12 +77,15 @@ Three things happened. The station ran. Its output was stored as an [artifact](a
 | Field | Meaning |
 |---|---|
 | `outcome` | One of the five outcomes below. |
-| `ran` | Whether the station's code completed and returned its output type. |
+| `ran` | Whether the station's own code completed and returned its output type. |
 | `passed` | `True`, `False`, or `None` when the output was not judged. |
+| `input` | The ref of the input artifact. |
 | `output` | The ref of the output artifact, if there is one. |
 | `evidence` | The refs of anything else the station recorded. |
 | `decision` | The gate's decision, when the gate was evaluated. |
-| `reason` | Why the station did not run, in plain words. |
+| `not_evaluated` | Why the gate could not be evaluated, with the evidence that was missing. |
+| `reason` | Why the attempt did not run, in plain words. |
+| `error_type`, `traceback` | The exception a station raised, kept as text so the record can be saved. |
 | `station`, `station_version`, `run_id`, `attempt` | Which attempt this was. |
 
 ## The five outcomes
@@ -93,9 +96,12 @@ Three things happened. The station ran. Its output was stored as an [artifact](a
 | `failed` | `True` | `False` | The gate judged the output and failed it. |
 | `needs_approval` | `True` | `None` | The gate is satisfied and a person must decide. |
 | `not_judged` | `True` | `None` | The station has no gate. Nothing judged the output. |
-| `did_not_run` | either | `None` | The station raised, returned the wrong type, or its gate could not be evaluated. |
+| `did_not_run` | `False` | `None` | The station raised, or returned something that is not its output type. |
+| `did_not_run` | `True` | `None` | The station's code ran, but its gate could not be evaluated. |
 
-Only a gate can fail a station. A station that raises has not failed: it did not run. This matters once stations are joined into a [line](lines.md), because a failure can send work back for rework and "did not run" never does.
+`ran` is about the station's own code. `outcome` is about the attempt as a whole. That is why `did_not_run` appears twice: an attempt whose gate could not be evaluated did not run to a judgement, even though its code ran.
+
+Only a gate can fail a station. A station that raises has not failed: it did not run. The exception is not lost. Its type and traceback are on the result, and it is logged on the `pydantic_ai_factory` logger. This matters once stations are joined into a [line](lines.md), because a failure can send work back for rework and "did not run" never does.
 
 ```python
 import asyncio
@@ -122,9 +128,9 @@ async def main() -> None:
     result = await run_station(unreachable, Text(body="hello"), store=MemoryStore())
 
     print(result.outcome, result.ran, result.passed)
-    # > did_not_run False None
+    #> did_not_run False None
     print(result.reason)
-    # > the station raised ConnectionError: the tool is unreachable
+    #> the station raised ConnectionError: the tool is unreachable
 
 
 asyncio.run(main())
@@ -186,12 +192,12 @@ async def main() -> None:
     )
 
     print(result.outcome)
-    # > failed
+    #> failed
     assert result.decision is not None
     print(result.decision.reasons)
-    # > ('misspelt: teh',)
+    #> ('misspelt: teh',)
     print(len(result.evidence))
-    # > 1
+    #> 1
 
 
 asyncio.run(main())
@@ -209,11 +215,14 @@ The first argument to a station is a `StationContext`.
 | `ctx.input` | The input as an artifact, with its ref. |
 | `ctx.record(payload)` | Records evidence beside the output. |
 | `ctx.attempt` | Which attempt this is, starting at 1. |
+| `ctx.producer` | The station, version, run and attempt, as stamped on what this run makes. |
 | `ctx.feedback` | The gate decision that failed the previous attempt, when this is rework. |
 | `ctx.store` | The artifact store. |
 | `ctx.run_id`, `ctx.mission_id`, `ctx.methodologies` | Where this run sits. |
 
-Give `deps` a type by writing `StationContext[MyDeps]`. This is how a station is tested: pass a fake in `deps`.
+The context cannot be changed, so a station cannot alter the record of its own run. Evidence must be recorded before the station returns; recording later raises `StationClosed`.
+
+Give `deps` a type by writing `StationContext[MyDeps]`. This is how a station is tested: pass a fake in `deps`. The type guides your editor inside the station. It is not checked where `run_station` is called, so passing the wrong `deps` shows up when the station uses it.
 
 ```python
 import asyncio
@@ -247,7 +256,7 @@ async def main() -> None:
         forecast, City(name="Leeds"), store=MemoryStore(), deps=Deps(weather={"Leeds": "rain"})
     )
     print(result.outcome)
-    # > not_judged
+    #> not_judged
 
 
 asyncio.run(main())
@@ -263,9 +272,11 @@ The decorator takes three optional arguments.
 | `version` | `"0"` | The version of the station's code. Change it when behaviour changes. |
 | `gate` | none | The gate that judges the output. |
 
-A station is refused when it is declared, not when it runs, if it is not async, does not take exactly a context and one input, or its input or output type is not a Pydantic model. The error is a `StationDefinitionError` that says which rule was broken.
+A station is refused when it is declared, not when it runs, if it is not async, does not take exactly two positional arguments, has an empty name or version, or its input or output type is not a Pydantic model. The error is a `StationDefinitionError` that says which rule was broken.
 
-Passing the wrong input type to `run_station` raises `StationInputInvalid` before anything runs.
+Passing the wrong input, or a bad `attempt`, `run_id` or `mission_id`, raises `StationInputInvalid` before anything runs.
+
+An error from the store while saving the input or the output is raised as it is: a store that cannot write is not something a result can record.
 
 ## Where agents fit
 

@@ -71,7 +71,7 @@ npm --prefix site run dev   # preview at http://localhost:4321/pydantic_ai_facto
 Four rules keep the docs honest.
 
 1. **Open with a plain summary.** A reader should be able to stop after the first paragraph.
-2. **Every Python sample runs.** `uv run pytest` executes each fenced `python` block in `docs/` and the READMEs. A block that is only a sketch opts out with `python test="skip"` on its opening fence, and the page says why. Samples are found in `.md` pages only, so keep Python out of `.mdx` pages; a test fails if one appears.
+2. **Every Python sample runs, and its output is checked.** `uv run pytest` executes each fenced `python` block in `docs/` and the READMEs, and compares every `#>` comment with what the line above printed. Run `uv run pytest --update-examples` to rewrite those comments after an intended change. A block that is only a sketch opts out with `python test="skip"` on its opening fence, and the page says why. Samples are found in `.md` pages only, so keep Python out of `.mdx` pages; a test fails if one appears.
 3. **Link by file path.** Write `[concepts](concepts.md)`. The site turns it into a route, and the link also works on GitHub.
 4. **Draw with Mermaid.** A fenced `mermaid` block becomes a diagram.
 

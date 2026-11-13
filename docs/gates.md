@@ -9,7 +9,7 @@ A gate decides whether a station's output may move on. It is plain code: a funct
 
 ## Write a gate
 
-A gate is a function with a decorator. It takes the station's output as an [artifact](artifacts.md), plus the evidence, and returns a verdict.
+A gate is a function with a decorator. It takes two arguments and returns a verdict. The first is the station's output, as an [artifact](artifacts.md). The second is the evidence: whatever else the station recorded.
 
 ```python
 from pydantic import BaseModel
@@ -30,10 +30,10 @@ def has_steps(output: Artifact[Design], evidence: Evidence) -> Verdict:
 
 
 design = Artifact.create(Design(summary="Split the bill evenly", steps=["add", "divide"]))
-decision = evaluate_gate(has_steps, design, Evidence([design]))
+decision = evaluate_gate(has_steps, design, Evidence())
 
 print(decision.judgement, decision.reasons)
-# > pass ('2 steps listed',)
+#> pass ('2 steps listed',)
 ```
 
 You will rarely call `evaluate_gate` yourself. Attach the gate to a [station](stations.md) with `@station(gate=has_steps)` and the station evaluates it after every run.
@@ -48,11 +48,11 @@ Keep a gate pure. It should do no I/O and call no model. Anything slow or uncert
 | `failed(*reasons)` | The work was judged and is not good enough. | `failed` |
 | `needs_approval(*reasons)` | The checks are satisfied, and a person must now decide. | `needs_approval` |
 
-`failed` needs at least one reason. A failure nobody can act on is not useful, so `failed()` raises `ValueError`.
+Every verdict needs at least one reason. A failure nobody can act on is not useful, and a pass that cannot say why is not a judgement.
 
 ## Requiring evidence
 
-A gate names the evidence it needs with `requires`. Evidence is found by its payload type.
+A gate names the evidence it needs with `requires`. Evidence is found by its payload type; a subclass counts as its base type. The station's output is not evidence for its own gate, so requiring the output's type asks for a second artifact of that type.
 
 ```python
 from pydantic import BaseModel
@@ -86,14 +86,14 @@ def no_open_blockers(output: Artifact[Design], evidence: Evidence) -> Verdict:
 design = Artifact.create(Design(summary="Split the bill evenly"))
 report = Artifact.create(ReviewReport(blockers=["no rounding rule"]))
 
-decision = evaluate_gate(no_open_blockers, design, Evidence([design, report]))
+decision = evaluate_gate(no_open_blockers, design, Evidence([report]))
 print(decision.judgement, decision.reasons)
-# > fail ('no rounding rule',)
+#> fail ('no rounding rule',)
 
-without_report = evaluate_gate(no_open_blockers, design, Evidence([design]))
+without_report = evaluate_gate(no_open_blockers, design, Evidence())
 assert isinstance(without_report, NotEvaluated)
-print(without_report.reason)
-# > missing evidence: ReviewReport
+print(without_report.reason, without_report.missing)
+#> missing evidence: ReviewReport ('ReviewReport',)
 ```
 
 `Evidence` has two lookups.
@@ -113,7 +113,7 @@ Sometimes a gate cannot give an answer. Then `evaluate_gate` returns `NotEvaluat
 | The check raised | `the check raised LookupError: …` |
 | The check returned something that is not a verdict | `the check returned bool, not a verdict` |
 
-When evidence is missing, the check function is not called at all.
+When evidence is missing, the check function is not called at all, and `missing` names what was absent. A check that raises is also logged, with its traceback, on the `pydantic_ai_factory` logger.
 
 A station whose gate was not evaluated reports `did_not_run`. This is the rule that keeps a factory honest. A review that never happened must not look like a review that found nothing. And a tool that was unreachable must not look like work that was judged and failed, because failed work may be sent back for rework and an unreachable tool is not fixed by redoing the work.
 
@@ -139,11 +139,17 @@ Change the gate's `version` whenever its rules change. Two decisions with differ
 
 A gate takes its name from its function. Pass `name=` to choose another, or when the check is a lambda.
 
-```python
-from pydantic_ai_factory import gate, passed
+A gate is refused when it is declared, with a `GateDefinitionError`, if its name or version is empty, its check is async, or `requires` is not a list of Pydantic models.
 
-always = gate(version="1", name="always")(lambda output, evidence: passed("nothing to check"))
+```python
+from pydantic import BaseModel
+
+from pydantic_ai_factory import Gate, gate, passed
+
+always: Gate[BaseModel] = gate(version="1", name="always")(
+    lambda output, evidence: passed("nothing to check")
+)
 
 print(always.name, always.criteria_version)
-# > always 1
+#> always 1
 ```

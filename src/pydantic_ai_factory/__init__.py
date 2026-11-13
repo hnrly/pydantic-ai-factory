@@ -34,6 +34,7 @@ from .gates import (
 from .lines import Line, LineDefinitionError, LineRun, Rework, run_line
 from .stations import (
     Station,
+    StationClosed,
     StationContext,
     StationDefinitionError,
     StationInputInvalid,
@@ -66,6 +67,7 @@ __all__ = [
     "Producer",
     "Rework",
     "Station",
+    "StationClosed",
     "StationContext",
     "StationDefinitionError",
     "StationInputInvalid",
