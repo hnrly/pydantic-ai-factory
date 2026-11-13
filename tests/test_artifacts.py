@@ -25,9 +25,8 @@ from pydantic_ai_factory import (
     MethodologyRef,
     Producer,
     Untyped,
-    decode_artifact,
-    encode_artifact,
 )
+from pydantic_ai_factory.artifacts import decode_artifact, encode_artifact
 from pydantic_ai_factory.contracts import canonical_json, digest_of
 
 pytestmark = pytest.mark.anyio

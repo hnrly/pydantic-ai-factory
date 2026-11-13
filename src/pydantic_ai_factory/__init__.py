@@ -14,8 +14,6 @@ from .artifacts import (
     MemoryStore,
     Producer,
     Untyped,
-    decode_artifact,
-    encode_artifact,
 )
 from .contracts import FactoryError, MethodologyRef
 from .gates import (
@@ -70,8 +68,6 @@ __all__ = [
     "Untyped",
     "Verdict",
     "__version__",
-    "decode_artifact",
-    "encode_artifact",
     "evaluate_gate",
     "failed",
     "gate",
