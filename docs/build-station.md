@@ -13,3 +13,5 @@ description: Coming soon. The station that implements an approved design in an i
 - Run a coding agent with Pydantic AI's workspace and tools, in a copy of the repository it cannot escape.
 - Ask a person before any action that needs sign-off, as a [tool-call wait](approvals.md#tool-calls).
 - Hand on the change itself: a diff of the workspace against where it started, with the results of the tests it ran. That diff, not a description of it, is what [Quality](quality-station.md) checks and Release delivers.
+
+The [roadmap](roadmap.md) says where it sits in the order of work.

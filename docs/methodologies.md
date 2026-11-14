@@ -7,7 +7,7 @@ description: A methodology is a capability whose work the factory can check.
 
 A [capability](https://pydantic.dev/docs/ai/capabilities/) changes what an agent does: it can give the agent tools, instructions and hooks. A methodology is a capability that can also be checked. While the agent works, it records evidence of what it did. A [gate](gates.md) then reads that evidence and decides whether the method was really followed.
 
-That is the whole difference. On an agent of its own, a methodology behaves exactly like any other capability. Inside a [station](stations.md), the factory stores its evidence, runs its gate, and stamps its name and version on every record, so two ways of working can be compared later.
+That is the whole difference. On an agent of its own, a methodology behaves exactly like any other capability. Inside a [station](stations.md), the factory stores its evidence, runs its gate, and stamps its name and version on every record, so two ways of working can be [measured](measuring.md) against each other.
 
 Methodologies here are established ways of working with a name and a history outside this library. A one-off check, such as "the design mentions blank tasks", is a gate, not a methodology.
 
