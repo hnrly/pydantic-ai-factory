@@ -78,4 +78,8 @@ print(result.outcome, result.reason)
 
 If the evidence is missing, the gate is not evaluated and the station did not run. A test suite that never ran must not look like one that passed.
 
+## One gate per station
+
+A station's output is judged by one combined gate: its own, plus the gate of every [methodology](methodologies.md) on its agents. Any failure fails the station. Any escalation, with no failure, asks a person. Each reason names the gate it came from.
+
 Change a gate's `version` whenever its rules change, so records judged by the old rules can be told apart.

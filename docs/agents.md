@@ -36,6 +36,8 @@ It returns Pydantic AI's own `AgentRunResult`, and passes any other argument, su
 
 - **The conversation.** It stores the agent's Pydantic AI `Conversation`, keyed by the agent's `name`, and passes it back on a later attempt.
 - **Questions to a person.** When the agent calls a tool that waits for a person, the run waits. The answer is passed back as Pydantic AI's `DeferredToolResults`. See [approvals](approvals.md#tool-calls).
+- **Methodologies.** It collects the evidence each [methodology](methodologies.md) on the agent records, and adds the methodology's gate to the station's.
+- **Retries.** It sizes the agent's output retry budget so a methodology's review rounds and ordinary validation retries do not starve each other.
 
 Give every agent a distinct `name`. It is how the factory keeps each agent's conversation apart.
 
@@ -80,7 +82,7 @@ So the station's code is the same on every attempt. `ctx.feedback` holds the sam
 
 ## When a run resumes
 
-A station cannot pause in the middle of a line. When an agent waits for a person, the station stops; when the person answers, the station function runs again from the top. Calls to `ctx.run_agent` that already finished in this attempt return their stored result at once, without calling the model. They are matched by agent and order.
+A station cannot pause in the middle of a line. When an agent waits for a person, the station stops; when the person answers, the station function runs again from the top. Calls to `ctx.run_agent` that already finished in this attempt return their stored result at once, without calling the model. They are matched by agent and order, and give back the evidence their methodologies recorded.
 
 So keep the code between `ctx.run_agent` calls deterministic: it should do the same thing each time it runs. Put anything else, such as reading the clock or calling an outside service, inside an agent's tool or a separate station.
 

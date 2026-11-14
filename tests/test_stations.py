@@ -16,7 +16,6 @@ from pydantic_ai_factory import (
     Evidence,
     Feedback,
     MemoryStore,
-    MethodologyRef,
     Producer,
     Station,
     StationClosed,
@@ -176,17 +175,14 @@ async def test_recorded_evidence_is_stored_with_lineage_and_reaches_the_gate() -
         return Count(words=len(text.body.split()))
 
     store = MemoryStore()
-    stamp = MethodologyRef(name="review", version="1")
     given = Artifact.create(Text(body="a b"))
 
-    result = await careful.run(
-        given, store=store, run_id="r9", mission_id="m-1", methodologies=[stamp]
-    )
+    result = await careful.run(given, store=store, run_id="r9", mission_id="m-1")
 
     assert result.outcome == "passed"
     assert result.decision is not None and result.output_ref is not None
     assert result.decision.reasons == ("counted by splitting on spaces",)
-    assert result.decision.methodologies == (stamp,)
+    assert result.decision.methodologies == ()
     (note_ref,) = result.evidence
     assert result.decision.judged == (result.output_ref, note_ref)
 
@@ -195,7 +191,7 @@ async def test_recorded_evidence_is_stored_with_lineage_and_reaches_the_gate() -
         artifact = await store.get(ref, payload_type)
         assert artifact.produced_by == producer
         assert artifact.inputs == (given.ref,)
-        assert (artifact.mission_id, artifact.methodologies) == ("m-1", (stamp,))
+        assert (artifact.mission_id, artifact.methodologies) == ("m-1", ())
     assert await store.exists(given.ref)
 
 

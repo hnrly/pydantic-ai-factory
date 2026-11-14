@@ -69,6 +69,7 @@ DESIGN = (
 )
 DESIGN_WITH_BLANK = DESIGN + " Pressing Enter on a blank task adds nothing."
 REVIEW = "The page matches the design. Nothing is wrong."
+SCENARIO = "Given an empty list, when I press Enter on a blank task, then nothing is added."
 
 
 def call(tool: str, **args: Any) -> ModelResponse:
@@ -90,4 +91,13 @@ SCRIPTS: dict[str, Script] = {
     },
     "docs/stores.md": {"designer": [DESIGN]},
     "docs/missions.md": {"designer": [DESIGN], "builder": ["Built index.html."]},
+    "docs/methodologies.md": {
+        "designer": [
+            {"summary": DESIGN, "acceptance_criteria": ["Blank tasks are not added."]},
+            {
+                "summary": DESIGN_WITH_BLANK,
+                "acceptance_criteria": [SCENARIO],
+            },
+        ]
+    },
 }

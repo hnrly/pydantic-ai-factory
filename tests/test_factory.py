@@ -15,12 +15,10 @@ from pydantic_ai_factory import (
     Factory,
     FactoryDefinitionError,
     MemoryStore,
-    MethodologyRef,
     Rework,
     Run,
     StationContext,
     StationInputInvalid,
-    Untyped,
     Verdict,
     escalate,
     failed,
@@ -96,19 +94,12 @@ def outcomes(run: Any) -> list[tuple[str, int, str]]:
 
 async def test_work_moves_through_every_station_in_order() -> None:
     store = MemoryStore()
-    stamp = MethodologyRef(name="review", version="1")
 
-    run = await factory().run(
-        Brief(goal="Split a bill"),
-        store=store,
-        deps=Deps(),
-        run_id="run-1",
-        methodologies=[stamp],
-    )
+    run = await factory().run(Brief(goal="Split a bill"), store=store, deps=Deps(), run_id="run-1")
 
     assert (run.outcome, run.finished, run.stopped_at) == ("passed", True, None)
     assert (run.run_id, run.factory, run.factory_version) == ("run-1", "document", "0")
-    assert (run.mission_id, run.methodologies) == (None, (stamp,))
+    assert run.mission_id is None
     assert outcomes(run) == [
         ("draft", 1, "not_judged"),
         ("check", 1, "passed"),
@@ -421,18 +412,6 @@ async def test_the_record_survives_json_and_names_the_shape_of_its_factory() -> 
     assert built.digest == factory(Rework(check, draft)).digest
     assert built.digest != factory(Rework(check, draft, limit=2)).digest
     assert built.digest != factory().digest
-
-
-async def test_every_artifact_a_run_makes_carries_its_methodologies() -> None:
-    store = MemoryStore()
-    stamp = MethodologyRef(name="review", version="1")
-
-    run = await factory().run(Brief(goal="x"), store=store, deps=Deps(), methodologies=[stamp])
-
-    refs = [run.input_ref, *(step.output_ref for step in run.steps if step.output_ref)]
-    for ref in refs:
-        artifact = await store.get(ref, Untyped)
-        assert (artifact.mission_id, artifact.methodologies) == (None, (stamp,))
 
 
 async def test_a_run_that_stops_early_has_no_output() -> None:

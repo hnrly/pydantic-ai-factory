@@ -35,9 +35,9 @@ The words used below each have a page under Concepts, starting with [factories](
 
 ## Stations run agents through the context
 
-**Decided.** A station runs an agent with `ctx.run_agent(agent, prompt)`, and the station finds the agents it may run by reading the names its function refers to when it is declared. `@station(agents=[...])` names them explicitly where inference cannot see them. `ctx.run_agent` stores the agent's Pydantic AI `Conversation` as an artifact keyed by the agent's name, and carries it on at a later attempt with what went wrong. It refuses an agent the station did not name.
+**Decided.** A station runs an agent with `ctx.run_agent(agent, prompt)`, and the station finds the agents it may run by reading the names its function refers to when it is declared. `@station(agents=[...])` names them explicitly where inference cannot see them. `ctx.run_agent` stores the agent's Pydantic AI `Conversation` as an artifact keyed by the agent's name, carries it on at a later attempt with what went wrong, records the evidence of each methodology on the agent, joins each methodology's gate to the station's, and turns deferred tool calls into a waiting run. It refuses an agent the station did not name.
 
-**Why.** An agent is the thing a station most often does, and an earlier draft left every station to wire it by hand: a fresh run on every attempt with no conversation carried, capabilities passed in by convention and review found by type. Naming the agents lets a factory list every agent before a run.
+**Why.** An agent is the thing a station most often does, and an earlier draft left every station to wire it by hand: a fresh run on every attempt with no conversation carried, capabilities passed in by convention and review found by type. Naming the agents lets a factory list every agent and methodology before a run, and lets a resumed run check it is the same work.
 
 **Rejected.** A required `agents=[...]` list on every station: it repeated what the code already said, and forgetting an entry only failed at run time. Inference reads the same names Pydantic AI reads when it infers an agent's name. Also rejected: leaving agent runs to station code, with capabilities handed in through the context. It kept the core small but made the flagship station the most complicated thing on the site. Also rejected: building the agent inside the station, which hides it from the factory.
 
@@ -65,13 +65,13 @@ The words used below each have a page under Concepts, starting with [factories](
 
 **Rejected.** A hand-written gate returning "needs approval", which every station had to repeat. Also rejected: keeping Pydantic AI's deferred tools out of the factory. They are how an agent waits for a person. Also rejected: more kinds of wait, or more verbs.
 
-## A methodology is a versioned bundle, stamped on every record
+## A methodology is a capability
 
-**Decided.** A methodology has capabilities, required evidence and gates. Its name and version are stamped on each artifact and gate decision. Review and repair is ordinary bounded rework, driven by the gate.
+**Decided.** `Methodology` subclasses Pydantic AI's `AbstractCapability`, and adds a name, a version, the evidence it records and a gate that judges it. It is attached to an agent with `capabilities=[...]`. On a bare agent it shapes behaviour only. In a station, `ctx.run_agent` stores its evidence, joins its gate to the station's and stamps its name and version on every record.
 
-**Why.** A methodology that can demand evidence and shape a gate is more than a prompt. The stamp makes two methodologies comparable later without changing the record.
+**Why.** An earlier draft had a `Methodology` data type, a separate `Review` capability found by type, a `review_output` call and a `review=False` switch: four things to learn for one idea. A capability is what Pydantic AI already calls a reusable way of working, and the stamp still makes methodologies measurable.
 
-**Rejected.** Middleware that wraps a station's run function: it can express anything, but it hides the loop from the factory. Also rejected: a capability with a naming convention, which is a prompt bundle in practice.
+**Rejected.** Methodologies as data attached to stations, which left the agent unaware of the method it was held to. Also rejected: review as rework between attempts, which started the author from scratch each time and lost the conversation. Also rejected: middleware around a station's function, which hides the loop.
 
 ## The foundations are designed whole
 
