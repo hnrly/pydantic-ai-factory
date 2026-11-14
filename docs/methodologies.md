@@ -13,7 +13,47 @@ Methodologies here are established ways of working with a name and a history out
 
 ## Use one
 
-Attach it to an agent, like any capability. This designer works by behaviour-driven development, as Dan North described it: every acceptance criterion is a scenario, "Given … when … then …", so anyone can check it. The methodology itself is explained [below](#write-your-own).
+Attach it to an agent, like any capability.
+
+```python
+from pydantic import BaseModel
+from pydantic_ai import Agent
+
+from pydantic_ai_factory import MemoryStore, station
+from pydantic_ai_factory.methodologies import ElephantGoldfish, Goldfish
+
+
+class Design(BaseModel):
+    summary: str
+    acceptance_criteria: list[str]
+
+
+page_goldfish = (
+    Goldfish("newcomer", stage="comprehension", job="Explain what this does, in your own words."),
+    Goldfish("builder", stage="readiness", job="Say whether you could build this page without asking anything."),
+)
+
+designer = Agent(
+    "anthropic:claude-opus-5-5",
+    name="designer",
+    output_type=Design,
+    instructions="Write a short design.",
+    capabilities=[ElephantGoldfish(goldfish=page_goldfish)],
+)
+
+mission = "A to-do list web page where I can add tasks and tick them off."
+result = station(designer).run_sync(mission, store=MemoryStore())
+print(result.outcome, result.decision.reasons)
+#> passed ('round 2 was clean: 2 goldfish found nothing blocking',)
+```
+
+[Elephant Goldfish](elephant-goldfish.md), Google's method for design-driven development, ships with the library. Run `designer` in a station and its designs cannot pass until fresh reviewers have read them and found nothing blocking.
+
+`factory.methodologies()` lists each station's methodologies before anything runs.
+
+## Write your own
+
+This one is behaviour-driven development, as Dan North described it: every acceptance criterion is a scenario, "Given … when … then …", so anyone can check it.
 
 ```python
 import re
@@ -78,11 +118,7 @@ print(len(result.evidence), [str(m) for m in result.decision.methodologies])
 
 The designer's first draft said "Blank tasks are not added.", which is not a scenario. The methodology asked it to try again in the same conversation, and recorded a `ScenarioCheck` each time. The station kept both, and its gate read the last.
 
-`factory.methodologies()` lists each station's methodologies before anything runs.
-
-## Write your own
-
-Subclass `Methodology`, as `BehaviourDriven` does above. The parts are ordinary Pydantic AI, plus three things:
+The parts are ordinary Pydantic AI, plus three things:
 
 | Part | What it is |
 |---|---|

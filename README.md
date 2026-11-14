@@ -28,6 +28,7 @@ An agent finishing a task is not the same as the work being right. A factory sep
 - [Stores](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/stores.md): unchangeable, content-addressed artifacts with lineage, and every run, kept in memory or in a folder.
 - [Missions and signals](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/missions.md): commit to a mission, or turn signals such as a bug report into one, and get each run's outcome back as a signal.
 - [Methodologies](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/methodologies.md): attach a named, versioned way of working to an agent as a capability; inside a station its evidence is stored, its gate is joined to the station's and its name is stamped on every record.
+- [Elephant Goldfish](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/elephant-goldfish.md), the methodology that ships: fresh goldfish review the author's draft inside its own run, the author revises in the same conversation, and anything contested or still open goes to a person.
 - Two distributions in one workspace: `pydantic-ai-factory` (the generic core) and `pydantic-ai-factory-software` (software stations). The core never imports a domain package.
 - Formatting, linting, strict typing, tests and an import-rule check, run in CI on Python 3.11 to 3.14.
 - A documentation site in `docs/` and `site/`. Start with [Factories](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/factories.md) and [Decisions](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/decisions.md).

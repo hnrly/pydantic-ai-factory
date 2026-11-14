@@ -67,7 +67,7 @@ The words used below each have a page under Concepts, starting with [factories](
 
 ## A methodology is a capability
 
-**Decided.** `Methodology` subclasses Pydantic AI's `AbstractCapability`, and adds a name, a version, the evidence it records and a gate that judges it. It is attached to an agent with `capabilities=[...]`. On a bare agent it shapes behaviour only. In a station, `ctx.run_agent` stores its evidence, joins its gate to the station's and stamps its name and version on every record.
+**Decided.** `Methodology` subclasses Pydantic AI's `AbstractCapability`, and adds a name, a version, the evidence it records and a gate that judges it. It is attached to an agent with `capabilities=[...]`. On a bare agent it shapes behaviour only. In a station, `ctx.run_agent` stores its evidence, joins its gate to the station's and stamps its name and version on every record. Elephant Goldfish is one capability whose review loop runs inside the author's own run.
 
 **Why.** An earlier draft had a `Methodology` data type, a separate `Review` capability found by type, a `review_output` call and a `review=False` switch: four things to learn for one idea. A capability is what Pydantic AI already calls a reusable way of working, and the stamp still makes methodologies measurable.
 
