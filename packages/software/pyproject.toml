@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pydantic-ai-factory-software"
 version = "0.1.0"
-description = "Software stations for Pydantic AI Factory, starting with Design."
+description = "The software factory for Pydantic AI Factory, starting with the Design station."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -21,6 +21,10 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = ["pydantic-ai-factory==0.1.0"]
+
+[project.optional-dependencies]
+# The model provider the samples name. Install another provider's extra to use its models.
+anthropic = ["pydantic-ai-slim[anthropic]>=2.68,<3"]
 
 [project.urls]
 Homepage = "https://github.com/hnrly/pydantic_ai_factory"

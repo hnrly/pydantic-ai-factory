@@ -20,7 +20,8 @@ from pydantic import BaseModel
 from pydantic_ai import Agent
 
 from pydantic_ai_factory import MemoryStore, station
-from pydantic_ai_factory.methodologies import ElephantGoldfish, Goldfish
+from pydantic_ai_factory.methodologies import ElephantGoldfish
+from pydantic_ai_factory_software import DESIGN_GOLDFISH
 
 
 class Design(BaseModel):
@@ -28,26 +29,21 @@ class Design(BaseModel):
     acceptance_criteria: list[str]
 
 
-page_goldfish = (
-    Goldfish("newcomer", stage="comprehension", job="Explain what this does, in your own words."),
-    Goldfish("builder", stage="readiness", job="Say whether you could build this page without asking anything."),
-)
-
 designer = Agent(
     "anthropic:claude-opus-5-5",
     name="designer",
     output_type=Design,
     instructions="Write a short design.",
-    capabilities=[ElephantGoldfish(goldfish=page_goldfish)],
+    capabilities=[ElephantGoldfish(goldfish=DESIGN_GOLDFISH)],
 )
 
 mission = "A to-do list web page where I can add tasks and tick them off."
 result = station(designer).run_sync(mission, store=MemoryStore())
 print(result.outcome, result.decision.reasons)
-#> passed ('round 2 was clean: 2 goldfish found nothing blocking',)
+#> passed ('round 2 was clean: 3 goldfish found nothing blocking',)
 ```
 
-[Elephant Goldfish](elephant-goldfish.md), Google's method for design-driven development, ships with the library. Run `designer` in a station and its designs cannot pass until fresh reviewers have read them and found nothing blocking.
+[Elephant Goldfish](elephant-goldfish.md), Google's method for design-driven development, ships with the library, and `DESIGN_GOLDFISH`, the reviewers for a software design, ship with the [software factory](software-factory.md). Run `designer` in a station and its designs cannot pass until fresh reviewers have read them and found nothing blocking.
 
 `factory.methodologies()` lists each station's methodologies before anything runs.
 
