@@ -16,6 +16,16 @@ models.ALLOW_MODEL_REQUESTS = False
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip tests marked ``live`` unless they were asked for with ``-m live``."""
+    if "live" in (config.getoption("markexpr") or ""):
+        return
+    skip = pytest.mark.skip(reason="makes real, paid model requests; select it with -m live")
+    for item in items:
+        if "live" in item.keywords:
+            item.add_marker(skip)
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     """Run async tests on asyncio only."""

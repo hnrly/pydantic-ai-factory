@@ -22,6 +22,9 @@ classifiers = [
 ]
 dependencies = ["pydantic-ai-factory==0.1.0"]
 
+[project.scripts]
+factory = "pydantic_ai_factory_software.cli:entry"
+
 [project.optional-dependencies]
 # The model provider the samples name. Install another provider's extra to use its models.
 anthropic = ["pydantic-ai-slim[anthropic]>=2.68,<3"]

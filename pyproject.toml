@@ -45,6 +45,9 @@ dev = [
   "anyio>=4,<5",
   "import-linter>=2.16,<3",
   "opentelemetry-sdk>=1.30,<2",
+  # The getting-started sample builds with Pydantic AI Harness. Its docs test needs
+  # `coder`; the `live` tests need `anthropic`, the provider the samples name.
+  "pydantic-ai-harness[coder,anthropic]>=0.68,<0.69",
   "pyright>=1.1.410,<2",
   "pytest>=9,<10",
   "pytest-examples>=0.0.18,<0.1",
@@ -83,6 +86,9 @@ venv = ".venv"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-config --strict-markers"
+markers = [
+  "live: makes real, paid model requests; skipped unless selected with -m live",
+]
 filterwarnings = ["error"]
 
 # The package boundaries are part of the design, so they are checked on every change.

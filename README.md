@@ -4,6 +4,15 @@ Pydantic AI Factory is a Python library for building AI factories on [Pydantic A
 
 ## Try it
 
+```bash
+git clone https://github.com/hnrly/pydantic_ai_factory
+cd pydantic_ai_factory
+uv sync
+uv run factory run "A to-do list web page where I can add tasks and tick them off." --offline
+```
+
+That drafts a design for a to-do list web page, has fresh reviewers check it, and asks you to approve it. It needs no model key. In Python it is four lines:
+
 ```python
 from pydantic_ai_factory import MemoryStore
 from pydantic_ai_factory_software import SoftwareFactory
@@ -12,7 +21,7 @@ software = SoftwareFactory("anthropic:claude-opus-5-5")
 run = software.run_sync("A to-do list web page where I can add tasks and tick them off.", store=MemoryStore())
 ```
 
-That drafts a design for a to-do list web page, has fresh reviewers check it, and waits for you to approve it. It needs `pip install "pydantic-ai-factory-software[anthropic]"` and an Anthropic key. [The software factory](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/software-factory.md) explains what it did, and how to approve.
+[Getting started](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/getting-started.md) builds a factory of your own; [the software factory](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/software-factory.md) explains what this command did.
 
 > **Status: pre-alpha.** Nothing is published to PyPI yet. The public contract lands layer by layer and may change until the first release.
 
@@ -33,6 +42,7 @@ An agent finishing a task is not the same as the work being right. A factory sep
 
 ## What is here today
 
+- [Getting started](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/getting-started.md): build a factory of your own, with a design station a person approves and a build station that hands on its change as a diff and a review.
 - [Factories and rework](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/factories.md): join stations into a factory, send failed work back a bounded number of times, and read the record of the run.
 - [Agents in stations](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/agents.md): run Pydantic AI agents inside a station with `ctx.run_agent`, which keeps each agent's conversation and carries it on when work comes back.
 - [Stations](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/stations.md) and [gates](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/gates.md): declare a typed station, run it once, and get a result that keeps "ran" apart from "passed".
@@ -42,9 +52,9 @@ An agent finishing a task is not the same as the work being right. A factory sep
 - [Methodologies](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/methodologies.md): attach a named, versioned way of working to an agent as a capability; inside a station its evidence is stored, its gate is joined to the station's and its name is stamped on every record.
 - [Elephant Goldfish](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/elephant-goldfish.md), the methodology that ships: fresh goldfish review the author's draft inside its own run, the author revises in the same conversation, and anything contested or still open goes to a person.
 - [Observability](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/observability.md): every run leaves an OpenTelemetry trace, with a span for the run, each station attempt, each agent run, each gate and each answer a person gave, viewable in Logfire or any other backend.
-- [The software factory](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/software-factory.md) and its first station, [Design](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/design-station.md): `SoftwareFactory(model)` turns a mission into a design that fresh goldfish have reviewed and a person approves. Build, Quality and Release are coming soon.
+- [The software factory](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/software-factory.md) and its first station, [Design](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/design-station.md): `SoftwareFactory(model)` turns a mission into a design that fresh goldfish have reviewed and a person approves. The `factory` command runs it from a terminal, with `--offline` for a scripted model and no key. Build, Quality and Release are coming soon.
 - Two distributions in one workspace: `pydantic-ai-factory` (the generic core) and `pydantic-ai-factory-software` (software stations). The core never imports a domain package.
-- Formatting, linting, strict typing, tests and an import-rule check, run in CI on Python 3.11 to 3.14.
+- Formatting, linting, strict typing, tests and an import-rule check, run in CI on Python 3.11 to 3.14. CI also runs the installed `factory` command offline. A `live` test marker runs the getting-started path against a real model by hand before each release.
 - A documentation site in `docs/` and `site/`. Start with [Factories](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/factories.md) and [Decisions](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/decisions.md).
 - A keep-out scan that stops credentials, personal paths and private terms from being published.
 
