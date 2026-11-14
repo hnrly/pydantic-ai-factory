@@ -1,6 +1,6 @@
 # Pydantic AI Factory
 
-Pydantic AI Factory is a Python library for building AI factories on [Pydantic AI](https://pydantic.dev/docs/ai/). A factory is a repeatable production system: it takes a signal, commits to a mission, moves work through stations, and proves each result with evidence before a person approves it. The library is being built in public, one small pull request at a time. The contract is landing layer by layer; the first runnable station, Design, arrives at the end of the first delivery.
+Pydantic AI Factory is a Python library for building AI factories on [Pydantic AI](https://pydantic.dev/docs/ai/). A factory is a repeatable production system: it takes a mission, moves the work through stations, and proves each result with evidence before a person approves it. The library is being built in public, one small pull request at a time. The contract is landing layer by layer; the first runnable station, Design, arrives at the end of the first delivery.
 
 > **Status: pre-alpha.** Nothing is published to PyPI yet. The public contract lands layer by layer and may change until the first release.
 
@@ -10,8 +10,7 @@ An agent finishing a task is not the same as the work being right. A factory sep
 
 | Idea | What it means here |
 |---|---|
-| Signal | The one typed way in: a piece of data from a person or a system. |
-| Mission | What the factory commits to, with measurable success criteria. |
+| Mission | What the factory commits to, with measurable success criteria. A string becomes one. |
 | Factory | A named, ordered list of stations, with bounded rework. |
 | Station | One bounded job with typed input and output. An agent is optional. |
 | Gate | Plain code that judges recorded evidence. A model never decides a gate. |
@@ -27,6 +26,7 @@ An agent finishing a task is not the same as the work being right. A factory sep
 - [Stations](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/stations.md) and [gates](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/gates.md): declare a typed station, run it once, and get a result that keeps "ran" apart from "passed".
 - [Approvals](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/approvals.md): a run waits for a person to approve work, settle an escalation or answer an agent's question, and carries on in any process.
 - [Stores](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/stores.md): unchangeable, content-addressed artifacts with lineage, and every run, kept in memory or in a folder.
+- [Missions and signals](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/missions.md): commit to a mission, or turn signals such as a bug report into one, and get each run's outcome back as a signal.
 - Two distributions in one workspace: `pydantic-ai-factory` (the generic core) and `pydantic-ai-factory-software` (software stations). The core never imports a domain package.
 - Formatting, linting, strict typing, tests and an import-rule check, run in CI on Python 3.11 to 3.14.
 - A documentation site in `docs/` and `site/`. Start with [Factories](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/factories.md) and [Decisions](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/decisions.md).

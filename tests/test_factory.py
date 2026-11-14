@@ -103,13 +103,12 @@ async def test_work_moves_through_every_station_in_order() -> None:
         store=store,
         deps=Deps(),
         run_id="run-1",
-        mission_id="m-1",
         methodologies=[stamp],
     )
 
     assert (run.outcome, run.finished, run.stopped_at) == ("passed", True, None)
     assert (run.run_id, run.factory, run.factory_version) == ("run-1", "document", "0")
-    assert (run.mission_id, run.methodologies) == ("m-1", (stamp,))
+    assert (run.mission_id, run.methodologies) == (None, (stamp,))
     assert outcomes(run) == [
         ("draft", 1, "not_judged"),
         ("check", 1, "passed"),
@@ -424,18 +423,16 @@ async def test_the_record_survives_json_and_names_the_shape_of_its_factory() -> 
     assert built.digest != factory().digest
 
 
-async def test_every_artifact_a_run_makes_carries_its_mission_and_methodologies() -> None:
+async def test_every_artifact_a_run_makes_carries_its_methodologies() -> None:
     store = MemoryStore()
     stamp = MethodologyRef(name="review", version="1")
 
-    run = await factory().run(
-        Brief(goal="x"), store=store, deps=Deps(), mission_id="m-1", methodologies=[stamp]
-    )
+    run = await factory().run(Brief(goal="x"), store=store, deps=Deps(), methodologies=[stamp])
 
     refs = [run.input_ref, *(step.output_ref for step in run.steps if step.output_ref)]
     for ref in refs:
         artifact = await store.get(ref, Untyped)
-        assert (artifact.mission_id, artifact.methodologies) == ("m-1", (stamp,))
+        assert (artifact.mission_id, artifact.methodologies) == (None, (stamp,))
 
 
 async def test_a_run_that_stops_early_has_no_output() -> None:
@@ -467,9 +464,9 @@ async def test_the_run_is_saved_after_every_step_and_on_step_watches_each_save()
 async def test_bad_run_arguments_are_refused_before_any_station_runs() -> None:
     deps = Deps()
 
-    bad: list[dict[str, Any]] = [{"run_id": " x"}, {"run_id": ""}, {"mission_id": " "}]
+    bad: list[dict[str, Any]] = [{"run_id": " x"}, {"run_id": ""}]
     for arguments in bad:
-        with pytest.raises(StationInputInvalid, match=r"(run_id|mission_id) must be non-empty"):
+        with pytest.raises(StationInputInvalid, match=r"run_id must be non-empty"):
             await factory().run(Brief(goal="x"), store=MemoryStore(), deps=deps, **arguments)
     assert deps.seen == []
 

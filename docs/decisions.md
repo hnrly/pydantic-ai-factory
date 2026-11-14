@@ -49,13 +49,13 @@ The words used below each have a page under Concepts, starting with [factories](
 
 **Rejected.** Leaving runs to the application to save: every app would write the same load, save and lock code. Also rejected: a factory object that owns its runs and its store. It is friendlier at first glance, and it grows into one object that everything depends on.
 
-## Signals come in; missions are committed to
+## A mission is the one noun; signals are the advanced path
 
-**Decided.** `Signal` is the one typed way into a factory. An intent is a signal that a person wrote. Intake accepts or declines signals and produces a `Mission`, which records the signals it came from. An outcome is emitted as a signal. A mission is optional: a factory can run a plain input, and then nothing records why the work was taken on and no outcome is emitted.
+**Decided.** `Mission(objective, success_criteria, constraints)` is built directly, and a string becomes one. `Factory.run` takes the first station's input and nothing else. `Signal(payload, source=None)` remains for work that arrives from people and systems: the payload's type is the kind of signal, and intake returns a `Mission` or a `Declined`. A mission made by intake records its signals; one built by hand records none.
 
-**Why.** There is one way in, and every result traces back to what triggered it. The feedback loop is a real path through the types.
+**Why.** One request passed through five types (`Request`, `Signal`, `Commit`, `Mission`, `Declined`) and two free strings (`kind="intent"`, `source="terminal"`) before any work began. Most callers just have a mission.
 
-**Rejected.** Using "intent" for both the raw request and the commitment: a vague ask and a measurable promise would share one type. Also rejected: three chained types (signal, intent, mission), which adds a step and little else. Also rejected: making a mission compulsory. When a person asks and a factory runs, wrapping the request in a signal and a mission is ceremony. Intake earns its place when it really decides.
+**Rejected.** Signals as the only way in, which made every first sample start with ceremony. Also rejected: a `kind` field beside a typed payload, which says the same thing twice. Also rejected, still: the word "intent", which named a vague ask and a measurable promise with one word.
 
 ## A run waits for a person in three ways
 
