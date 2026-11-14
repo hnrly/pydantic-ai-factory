@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from collections import Counter
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, Self, cast
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal, Self, cast
 from pydantic import AwareDatetime, Field, model_validator
 from pydantic_ai import DeferredToolResults
 
+from .. import _tracing as tracing
 from ..artifacts import Artifact, ArtifactRef
 from ..contracts import Digest, FactoryError, Name, Record, check_name
 from ..stations import Feedback, StationInputInvalid, StationResult, Waiting
@@ -257,6 +259,89 @@ class _Progress:
         return run.model_copy(update={"outcome_signal": emitted})
 
 
+def _trace_factory(factory: Factory, resumed: bool = False) -> AbstractContextManager[tracing.Span]:
+    """Open the span for one call to ``Factory.run`` or ``Factory.resume``."""
+    return tracing.span(
+        f"factory {factory.name}",
+        {
+            "factory.name": factory.name,
+            "factory.version": factory.version,
+            "factory.resumed": True if resumed else None,
+        },
+    )
+
+
+def _trace_mission(span: tracing.Span, run_id: str, mission: Mission | None) -> None:
+    """Put the run's id and its mission on the factory's span, as soon as they are known."""
+    tracing.annotate(
+        span,
+        {
+            "factory.run.id": run_id,
+            "factory.mission.id": mission.id if mission else None,
+            "factory.mission.objective": mission.objective if mission else None,
+        },
+    )
+
+
+def _trace_run(span: tracing.Span, run: Run) -> Run:
+    """Put how the call left the run on the factory's span, and hand the run back."""
+    waiting = run.waiting
+    tracing.annotate(
+        span,
+        {
+            "factory.outcome": run.outcome,
+            "factory.finished": run.finished,
+            # The run has ended when nothing more can happen to it: it is not still
+            # running and not waiting for a person. A waiting run ends this call, and
+            # this trace, but not the run.
+            "factory.ended": run.outcome not in ("running", "waiting"),
+            "factory.stopped_at": run.stopped_at,
+            "factory.attempts": len({(step.station, step.attempt) for step in run.steps}),
+            "factory.output": run.output_ref.digest if run.output_ref else None,
+            "factory.waiting.kind": waiting.kind if waiting else None,
+            "factory.waiting.artifact": (
+                waiting.artifact.digest if waiting and waiting.artifact else None
+            ),
+        },
+    )
+    if run.outcome == "did_not_run":
+        tracing.mark_error(span, f"stopped at {run.stopped_at!r}: a station did not run")
+    return run
+
+
+def _trace_answer(run: Run, waiting: Waiting, answer: Decision | DeferredToolResults) -> None:
+    """Put the answer a person gave on the trace, as a span of its own.
+
+    It records who answered, but never their note or the text of their reply.
+    """
+    if isinstance(answer, Decision):
+        decision: str = answer.decision
+        attributes: dict[str, object] = {
+            "factory.answer.by": answer.by,
+            "factory.answer.artifact": answer.artifact.digest if answer.artifact else None,
+            "factory.answer.overrode": answer.overrode,
+        }
+    else:
+        # Tool calls are answered as a whole; the answer is about the waiting conversation.
+        decision = "answered"
+        attributes = {
+            "factory.answer.artifact": (
+                waiting.conversation.digest if waiting.conversation else None
+            ),
+        }
+    with tracing.span(
+        f"answer {waiting.kind} {decision}",
+        {
+            "factory.answer.kind": waiting.kind,
+            "factory.answer.decision": decision,
+            **attributes,
+            "factory.station.name": waiting.station,
+            "factory.run.id": run.run_id,
+        },
+    ):
+        pass  # an answer takes no time; the span puts it on the trace's timeline
+
+
 async def run_factory(
     factory: Factory,
     input: Any,
@@ -266,7 +351,27 @@ async def run_factory(
     run_id: str | None = None,
     on_step: OnStep | None = None,
 ) -> Run:
-    """Do the work of :meth:`Factory.run`."""
+    """Do the work of :meth:`Factory.run`, traced as one span."""
+    with _trace_factory(factory) as span:
+        return _trace_run(
+            span,
+            await _run_factory(
+                factory, input, store=store, deps=deps, run_id=run_id, on_step=on_step, span=span
+            ),
+        )
+
+
+async def _run_factory(
+    factory: Factory,
+    input: Any,
+    *,
+    store: Store,
+    deps: Any,
+    run_id: str | None,
+    on_step: OnStep | None,
+    span: tracing.Span,
+) -> Run:
+    """Start a run: record its input and mission, then drive it."""
     first = factory.stations[0]
     given: object = input
     payload: object = cast("Artifact[Any]", given).payload if isinstance(given, Artifact) else given
@@ -290,6 +395,7 @@ async def run_factory(
     identifier = uuid.uuid4().hex if run_id is None else run_id
     if problem := check_name(identifier):
         raise StationInputInvalid(f"factory {factory.name!r}: run_id {problem}")
+    _trace_mission(span, identifier, mission)
 
     incoming: Artifact[Any]
     recorded: Artifact[Mission] | None = None
@@ -338,7 +444,29 @@ async def resume_factory(
     deps: Any = None,
     on_step: OnStep | None = None,
 ) -> Run:
-    """Do the work of :meth:`Factory.resume`."""
+    """Do the work of :meth:`Factory.resume`, traced as one span of its own."""
+    with _trace_factory(factory, resumed=True) as span:
+        # The mission's objective is added once the mission is read from the store.
+        tracing.annotate(span, {"factory.run.id": run.run_id, "factory.mission.id": run.mission_id})
+        return _trace_run(
+            span,
+            await _resume_factory(
+                factory, run, answer, store=store, deps=deps, on_step=on_step, span=span
+            ),
+        )
+
+
+async def _resume_factory(
+    factory: Factory,
+    run: Run,
+    answer: Decision | DeferredToolResults,
+    *,
+    store: Store,
+    deps: Any,
+    on_step: OnStep | None,
+    span: tracing.Span,
+) -> Run:
+    """Check the answer fits the waiting run, then carry the run on."""
     waiting = run.waiting
     if waiting is None or run.stopped_at is None:
         raise ApprovalRefused(f"run {run.run_id!r} is not waiting; its outcome is {run.outcome!r}")
@@ -373,6 +501,7 @@ async def resume_factory(
         approvals=list(run.approvals),
         reworked=Counter(run.reworked),
     )
+    _trace_mission(span, run.run_id, progress.mission)
     station_input = await store.get(step.input_ref, station.input_type)
 
     if isinstance(answer, DeferredToolResults):
@@ -381,6 +510,7 @@ async def resume_factory(
                 f"run {run.run_id!r} waits for a decision; use run.approve, "
                 "run.request_changes or run.reject"
             )
+        _trace_answer(run, waiting, answer)
         await _claim(progress)
         return await _drive(progress, index=index, input=station_input, resume=step, answer=answer)
 
@@ -403,6 +533,7 @@ async def resume_factory(
         update={"overrode": answer.decision == "approved" and waiting.kind == "escalation"}
     )
     progress.approvals.append(decided)
+    _trace_answer(run, waiting, decided)
 
     if decided.decision == "rejected":
         return await progress.save(progress.record("failed", stopped_at=station.name))

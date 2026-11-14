@@ -11,6 +11,7 @@ from typing import Any, Generic, Literal, Self, TypeVar
 
 from pydantic import AwareDatetime, Field, model_validator
 
+from .. import _tracing as tracing
 from ..artifacts import Artifact, ArtifactRef
 from ..contracts import DefinitionError, MethodologyRef, Name, Record, check_name
 
@@ -133,7 +134,54 @@ class Gate(Generic[OutT]):
         The gate is not evaluated when required evidence is missing, when the check
         raises, or when it returns something other than a :class:`Verdict`. A check that
         raises is logged with its traceback on the ``pydantic_ai_factory`` logger.
+
+        The evaluation is traced as a span named ``gate`` and the gate's name. A gate
+        that could not be evaluated marks it as an error; a gate that fails the work
+        does not.
         """
+        producer = output.produced_by
+        with tracing.span(
+            f"gate {self.name}",
+            {
+                "factory.gate.name": self.name,
+                "factory.gate.version": self.version,
+                "factory.gate.judged": list(
+                    dict.fromkeys(ref.digest for ref in (output.ref, *evidence.refs))
+                ),
+                "factory.run.id": producer.run_id if producer else None,
+            },
+        ) as current:
+            result = self._evaluate(
+                output, evidence, methodologies=methodologies, decided_at=decided_at
+            )
+            if isinstance(result, NotEvaluated):
+                tracing.annotate(
+                    current,
+                    {
+                        "factory.gate.not_evaluated": result.reason,
+                        "factory.gate.missing": result.missing,
+                    },
+                )
+                tracing.mark_error(current, result.reason)
+            else:
+                tracing.annotate(
+                    current,
+                    {
+                        "factory.gate.judgement": result.judgement,
+                        "factory.gate.reasons": result.reasons,
+                    },
+                )
+            return result
+
+    def _evaluate(
+        self,
+        output: Artifact[OutT],
+        evidence: Evidence,
+        *,
+        methodologies: Sequence[MethodologyRef],
+        decided_at: datetime | None,
+    ) -> GateDecision | NotEvaluated:
+        """Do the work of :meth:`evaluate`."""
 
         def not_evaluated(reason: str, missing: tuple[str, ...] = ()) -> NotEvaluated:
             return NotEvaluated(

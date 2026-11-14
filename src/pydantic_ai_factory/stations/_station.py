@@ -17,6 +17,7 @@ from pydantic_ai._agent_graph import GraphAgentState
 from pydantic_ai.agent import AbstractAgent, AgentRunResult
 from typing_extensions import TypeVar as TypeVarWithDefault
 
+from .. import _tracing as tracing
 from .._methodology import (
     EvidenceCollector,
     Methodology,
@@ -310,8 +311,30 @@ class StationContext(Generic[DepsT]):
                 f"station {session.station!r}: ctx.run_agent sets {', '.join(clashes)} itself"
             )
         name = cast(str, agent.name)
-        index = len(session.calls)
         methodologies = methodologies_of(agent)
+        with tracing.span(
+            f"agent {name}",
+            {
+                "factory.agent.name": name,
+                "factory.agent.attempt": self.attempt,
+                "factory.run.id": self.run_id,
+                "factory.methodologies": [str(m.ref) for m in methodologies],
+            },
+        ) as current:
+            return await self._run_agent(agent, name, methodologies, prompt, kwargs, current)
+
+    async def _run_agent(
+        self,
+        agent: AbstractAgent[Any, Any],
+        name: str,
+        methodologies: tuple[Methodology, ...],
+        prompt: str | None,
+        kwargs: dict[str, Any],
+        span: tracing.Span,
+    ) -> AgentRunResult[Any]:
+        """Do the work of :meth:`run_agent`, inside its span."""
+        session = self._session
+        index = len(session.calls)
         session.in_force.extend(methodologies)
 
         if index < len(session.replay):
@@ -339,6 +362,7 @@ class StationContext(Generic[DepsT]):
                 session.artifacts.append(await session.store.get(ref, kinds[ref.type]))
             session.conversations[name] = done.conversation
             session.calls.append(done)
+            tracing.annotate(span, {"factory.agent.conversation": done.conversation.digest})
             return replayed_result(output.payload, replayed.payload)
 
         conversation: Conversation | None = None
@@ -386,6 +410,7 @@ class StationContext(Generic[DepsT]):
         )
         await session.store.put(kept)
         session.conversations[name] = kept.ref
+        tracing.annotate(span, {"factory.agent.conversation": kept.ref.digest})
         produced: Any = result.output
         if isinstance(produced, DeferredToolRequests):
             raise _ToolCallsWait(name, produced, kept.ref)
@@ -489,20 +514,52 @@ class Station(Generic[InT, OutT]):
         Raises :class:`StationInputInvalid` before anything runs if the input or an
         argument is wrong. An error from the store while saving the input or the output
         is raised as it is.
+
+        The attempt is traced as a span named ``station`` and the station's name, marked
+        as an error when the attempt did not run. The spans of its agents and its gates
+        sit inside it.
         """
-        return await _attempt(
-            self,
-            input,
-            store=store,
-            deps=deps,
-            run_id=run_id,
-            attempt=attempt,
-            mission_id=mission_id,
-            feedback=feedback,
-            previous=conversations or {},
-            resume=resume,
-            answer=answer,
-        )
+        with tracing.span(
+            f"station {self.name}",
+            {
+                "factory.station.name": self.name,
+                "factory.station.version": self.version,
+                "factory.station.attempt": attempt,
+                "factory.run.id": run_id,
+                "factory.methodologies": [str(m.ref) for m in self.methodologies],
+            },
+        ) as current:
+            result = await _attempt(
+                self,
+                input,
+                store=store,
+                deps=deps,
+                run_id=run_id,
+                attempt=attempt,
+                mission_id=mission_id,
+                feedback=feedback,
+                previous=conversations or {},
+                resume=resume,
+                answer=answer,
+            )
+            tracing.annotate(
+                current,
+                {
+                    "factory.run.id": result.run_id,
+                    "factory.station.outcome": result.outcome,
+                    "factory.station.ran": result.ran,
+                    "factory.station.passed": result.passed,
+                    "factory.station.input": result.input_ref.digest,
+                    "factory.station.output": result.output_ref.digest
+                    if result.output_ref
+                    else None,
+                    "factory.station.evidence": [ref.digest for ref in result.evidence],
+                    "factory.station.error_type": result.error_type,
+                },
+            )
+            if result.outcome == "did_not_run":
+                tracing.mark_error(current, result.reason or "the attempt did not run")
+            return result
 
     def run_sync(
         self,
