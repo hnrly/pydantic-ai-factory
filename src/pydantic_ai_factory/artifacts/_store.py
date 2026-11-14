@@ -10,12 +10,10 @@ import tempfile
 from pathlib import Path
 from typing import Any, Protocol, TypeVar, cast
 
-from pydantic import BaseModel
-
 from ..contracts import FactoryError, canonical_json
 from ._artifact import Artifact, ArtifactCorrupt, ArtifactRef, verify_body
 
-PayloadT = TypeVar("PayloadT", bound=BaseModel)
+PayloadT = TypeVar("PayloadT")
 
 
 class ArtifactNotFound(FactoryError):

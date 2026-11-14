@@ -2,7 +2,9 @@
 
 A sample is a fenced ``python`` block in a Markdown page under ``docs/`` or in a README.
 It is executed as written, and every ``#>`` comment is checked against what the
-line above printed, so a page cannot show code or output that is not true. A block that is
+line above printed, so a page cannot show code or output that is not true. Samples name
+a real model; while one runs, each agent gets the scripted replies listed for its page in
+``tests/scripted.py``, so no sample calls a model. A block that is
 only a sketch opts out with ``python test="skip"`` on its opening fence, and the page
 should say why.
 
@@ -15,6 +17,7 @@ from pathlib import Path
 
 import pytest
 from pytest_examples import CodeExample, EvalExample, find_examples
+from scripted import SCRIPTS, sample_models
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ("docs", "README.md", "packages/software/README.md")
@@ -39,10 +42,12 @@ def test_a_documentation_sample_runs_and_prints_what_it_says(
 ) -> None:
     # Each `#>` comment in a sample is compared with what the line above really printed.
     # Run `uv run pytest --update-examples` to rewrite them after an intended change.
-    if eval_example.update_examples:
-        eval_example.run_print_update(example)
-    else:
-        eval_example.run_print_check(example)
+    page = Path(example.path).relative_to(ROOT).as_posix()
+    with sample_models(SCRIPTS.get(page, {})):
+        if eval_example.update_examples:
+            eval_example.run_print_update(example)
+        else:
+            eval_example.run_print_check(example)
 
 
 def test_the_harness_finds_runs_and_fails_samples(

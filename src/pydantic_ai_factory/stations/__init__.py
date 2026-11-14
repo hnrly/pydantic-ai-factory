@@ -1,6 +1,7 @@
 """Stations: one bounded job with a typed input, a typed output and a gate."""
 
 from ._station import (
+    Feedback,
     Station,
     StationClosed,
     StationContext,
@@ -12,6 +13,7 @@ from ._station import (
 )
 
 __all__ = [
+    "Feedback",
     "Station",
     "StationClosed",
     "StationContext",

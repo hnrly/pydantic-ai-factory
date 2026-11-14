@@ -4,6 +4,13 @@ Every change a user can see is listed here, newest first.
 
 ## Unreleased
 
+- Add agents in stations. `ctx.run_agent(agent, prompt)` runs a Pydantic AI agent, stores its `Conversation` keyed by the agent's name, and carries it on at a later attempt, sending the gate's reasons instead of the prompt. `@station` finds the agents its function refers to; `agents=` names them instead. `station(agent)` turns one agent into a station. `Factory.agents()` lists every agent before a run. `Factory.run_sync` and `Station.run_sync` run from code that is not async.
+- Change stations and artifacts to take any type Pydantic can serialise, such as `str` or `list[str]`, not only models.
+- Change `Rework` to take station objects: `Rework(design, limit=2)` and `Rework(build, to=design)`.
+- Change the `Run` record: `output` is now the final payload, and the refs are `input_ref` and `output_ref`. `StationResult` has `input_ref`, `output_ref` and `conversations`.
+- Change `StationContext` to `run_agent`, `record`, `deps`, `attempt`, `feedback` and `run_id`. `feedback` is a `Feedback` record of the reasons work came back.
+- Remove the Concepts page. Each concept has its own page.
+
 - Add factories: `Factory`, `Rework`, `Factory.run` and the `Run` record. A factory is a named, ordered list of stations; there is no separate line. Failed work can be sent back a bounded number of times with the gate's reasons; a station that did not run is never retried. A badly formed factory is refused with every finding at once. `on_step` saves progress after every attempt.
 - Add gates: the `@gate` decorator, `passed`, `failed` and `needs_approval` verdicts, required evidence, `Gate.evaluate` and `GateDecision` records. A gate that cannot be evaluated is reported as such, never as a pass or a fail.
 - Add stations: the `@station` decorator, `StationContext`, `Station.run` and `StationResult`, which keeps "ran" apart from "passed" and carries the traceback of a station that raised. Every definition error is a `DefinitionError` whose `findings` list each problem.

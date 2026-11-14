@@ -214,9 +214,22 @@ def test_a_correction_is_a_new_artifact_that_names_the_old_one() -> None:
 # --- what create refuses
 
 
-def test_a_payload_must_be_a_pydantic_model() -> None:
-    with pytest.raises(ArtifactInvalid, match="must be a Pydantic model, not dict"):
-        Artifact.create({"summary": "x"})  # type: ignore[type-var]
+class NotSerialisable:
+    """A plain class with no schema, which Pydantic cannot serialise."""
+
+
+def test_a_payload_pydantic_cannot_serialise_is_refused() -> None:
+    with pytest.raises(ArtifactInvalid, match="Pydantic cannot serialise a NotSerialisable"):
+        Artifact.create(NotSerialisable())
+
+
+async def test_a_str_payload_round_trips_through_a_store(store: ArtifactStore) -> None:
+    artifact = Artifact.create("a plain note")
+    await store.put(artifact)
+
+    loaded = await store.get(artifact.ref, str)
+
+    assert (artifact.ref.type, loaded.payload, loaded.ref) == ("str", "a plain note", artifact.ref)
 
 
 @pytest.mark.parametrize(

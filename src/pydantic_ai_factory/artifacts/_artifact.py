@@ -5,14 +5,24 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from functools import lru_cache
 from typing import Any, Generic, TypeVar
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PrivateAttr, ValidationError
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    PydanticSchemaGenerationError,
+    TypeAdapter,
+    ValidationError,
+)
 
 from ..contracts import Digest, FactoryError, MethodologyRef, Name, Record, digest_of
 
-PayloadT = TypeVar("PayloadT", bound=BaseModel)
-NewPayloadT = TypeVar("NewPayloadT", bound=BaseModel)
+PayloadT = TypeVar("PayloadT")
+NewPayloadT = TypeVar("NewPayloadT")
 
 SCHEMA_VERSION = 1
 _PLACEHOLDER = "sha256:" + "0" * 64
@@ -81,12 +91,15 @@ class Artifact(Record, Generic[PayloadT]):
     _body: dict[str, Any] | None = PrivateAttr(default=None)
     # True when a store loaded this artifact, possibly through a newer payload model.
     _loaded: bool = PrivateAttr(default=False)
+    # The type the payload was recorded as, so verify() can dump it again.
+    _payload_type: Any = PrivateAttr(default=None)
 
     @classmethod
     def create(
         cls,
         payload: NewPayloadT,
         *,
+        payload_type: Any = None,
         type: str | None = None,
         produced_by: Producer | None = None,
         inputs: Sequence[ArtifactRef] = (),
@@ -97,18 +110,18 @@ class Artifact(Record, Generic[PayloadT]):
     ) -> Artifact[NewPayloadT]:
         """Record ``payload`` as an artifact and compute its digest.
 
-        ``type`` labels the kind of artifact and defaults to the payload's class name.
-        ``inputs`` are the artifacts this one was made from. The payload is copied, so
-        changing your object afterwards does not change the artifact.
+        The payload may be any value Pydantic can serialise: a model, a dataclass, a
+        ``str`` or a list. ``payload_type`` is the type to record it as, such as
+        ``list[str]``, and defaults to the payload's class. ``type`` labels the kind of
+        artifact and defaults to the payload's class name. ``inputs`` are the artifacts
+        this one was made from. The payload is copied, so changing your object afterwards
+        does not change the artifact.
 
-        Raises :class:`ArtifactInvalid` if the payload is not a Pydantic model, or would
-        not read back from JSON as the same data.
+        Raises :class:`ArtifactInvalid` if Pydantic cannot serialise the payload, or it
+        would not read back from JSON as the same data.
         """
-        if not isinstance(payload, BaseModel):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise ArtifactInvalid(
-                f"an artifact payload must be a Pydantic model, not {payload.__class__.__name__}"
-            )
-        payload_json = _round_trip(payload)
+        recorded_as: Any = payload.__class__ if payload_type is None else payload_type
+        payload_json, copy = _round_trip(payload, recorded_as)
         try:
             draft = Artifact[Any].model_validate(
                 {
@@ -116,7 +129,7 @@ class Artifact(Record, Generic[PayloadT]):
                         "type": payload.__class__.__name__ if type is None else type,
                         "digest": _PLACEHOLDER,
                     },
-                    "payload": payload.model_copy(deep=True),
+                    "payload": copy,
                     "produced_by": produced_by,
                     "inputs": tuple(inputs),
                     "supersedes": supersedes,
@@ -143,6 +156,7 @@ class Artifact(Record, Generic[PayloadT]):
             }
         )
         artifact._body = body
+        artifact._payload_type = recorded_as
         return artifact
 
     def supersede(
@@ -160,6 +174,7 @@ class Artifact(Record, Generic[PayloadT]):
         """
         return Artifact.create(
             payload,
+            payload_type=self._payload_type,
             type=self.ref.type,
             produced_by=produced_by,
             inputs=self.inputs,
@@ -171,8 +186,8 @@ class Artifact(Record, Generic[PayloadT]):
 
     @classmethod
     def from_stored(
-        cls, ref: ArtifactRef, body: dict[str, Any], payload_type: type[NewPayloadT]
-    ) -> Artifact[NewPayloadT]:
+        cls, ref: ArtifactRef, body: dict[str, Any], payload_type: Any
+    ) -> Artifact[Any]:
         """Build an artifact from a body that has already been checked against ``ref``.
 
         This is for stores. Use :func:`decode_artifact`, which does the check first.
@@ -182,6 +197,7 @@ class Artifact(Record, Generic[PayloadT]):
         )
         artifact._body = body
         artifact._loaded = True
+        artifact._payload_type = payload_type
         return artifact
 
     def body(self) -> dict[str, Any]:
@@ -198,7 +214,8 @@ class Artifact(Record, Generic[PayloadT]):
         """
         body = self.body()
         verify_body(self.ref, body)
-        if not self._loaded and self.payload.model_dump(mode="json") != body["payload"]:
+        dumped = _adapter(self._payload_type).dump_python(self.payload, mode="json")
+        if not self._loaded and dumped != body["payload"]:
             raise ArtifactCorrupt(f"artifact {self.ref}: the payload was changed after it was made")
 
     def __eq__(self, other: object) -> bool:
@@ -209,25 +226,48 @@ class Artifact(Record, Generic[PayloadT]):
         return hash(self.ref)
 
 
-def _round_trip(payload: BaseModel) -> dict[str, Any]:
-    """Dump a payload to JSON-ready data, and prove it reads back as the same payload."""
-    model = payload.__class__
+@lru_cache(maxsize=256)
+def _adapter(payload_type: Any) -> TypeAdapter[Any]:
+    """Return a cached ``TypeAdapter`` for ``payload_type``."""
+    return TypeAdapter(payload_type)
+
+
+def adapter_for(payload_type: Any) -> TypeAdapter[Any]:
+    """Return the ``TypeAdapter`` for ``payload_type``, or raise :class:`ArtifactInvalid`.
+
+    Raises when Pydantic cannot serialise values of the type.
+    """
+    try:
+        return _adapter(payload_type)
+    except (PydanticSchemaGenerationError, TypeError) as error:
+        name = getattr(payload_type, "__name__", repr(payload_type))
+        raise ArtifactInvalid(f"Pydantic cannot serialise a {name}: {error}") from error
+
+
+def _round_trip(payload: Any, payload_type: Any) -> tuple[Any, Any]:
+    """Dump a payload to JSON-ready data, and prove it reads back as the same payload.
+
+    Returns the data and a fresh copy read back from it.
+    """
+    name = getattr(payload_type, "__name__", repr(payload_type))
+    adapter = adapter_for(payload_type)
     hint = (
         "Check for field aliases, excluded or computed fields, mixed-type dictionary keys, "
         "and fields typed as a base class that hold a subclass."
     )
     try:
-        dumped: dict[str, Any] = payload.model_dump(mode="json")
-        again = model.model_validate_json(json.dumps(dumped))
+        dumped: Any = adapter.dump_python(payload, mode="json")
+        again = adapter.validate_json(json.dumps(dumped))
+        dumped_again = adapter.dump_python(again, mode="json")
     except (ValidationError, ValueError, TypeError, UnicodeError) as error:
         raise ArtifactInvalid(
-            f"a {model.__name__} payload does not read back from its own JSON: {error}. {hint}"
+            f"a {name} payload does not read back from its own JSON: {error}. {hint}"
         ) from error
-    if again != payload or again.model_dump(mode="json") != dumped:
+    if again != payload or dumped_again != dumped:
         raise ArtifactInvalid(
-            f"a {model.__name__} payload changes when it is written to JSON and read back. {hint}"
+            f"a {name} payload changes when it is written to JSON and read back. {hint}"
         )
-    return dumped
+    return dumped, again
 
 
 def body_digest(artifact_type: str, body: dict[str, Any]) -> str:

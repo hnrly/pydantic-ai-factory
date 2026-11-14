@@ -6,11 +6,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic_ai.agent import AbstractAgent
 
-from ..artifacts import Artifact, ArtifactStore
-from ..contracts import DefinitionError, MethodologyRef, check_name, digest_of
+from ..artifacts import ArtifactStore
+from ..contracts import DefinitionError, MethodologyRef, check_name, digest_of, run_sync
 from ..stations import Station
+from ..stations._station import type_name
 from ._runner import OnStep, Run, run_factory
 
 OnLimit = Literal["halt", "continue"]
@@ -24,22 +25,22 @@ class FactoryDefinitionError(DefinitionError):
 class Rework:
     """Send failed work back, a fixed number of times.
 
-    When ``from_station`` fails its gate, the work goes back to ``to_station`` and runs
-    forward again from there. ``limit`` is how many times that may happen in one run; it
-    is not reset when another rule sends the work back past this station. When the limit
-    is reached, the run halts, or carries on to the next station if ``on_limit`` is
-    ``"continue"``.
+    When ``station`` fails its gate, the work goes back to ``to`` and runs forward again
+    from there. ``to`` defaults to ``station`` itself. ``limit`` is how many times that
+    may happen in one run; it is not reset when another rule sends the work back past
+    this station. When the limit is reached, the run halts, or carries on to the next
+    station if ``on_limit`` is ``"continue"``.
     """
 
-    from_station: str
-    to_station: str | None = None
+    station: Station[Any, Any]
+    to: Station[Any, Any] | None = None
     limit: int = 1
     on_limit: OnLimit = "halt"
 
     @property
-    def target(self) -> str:
-        """Where work goes back to: ``to_station``, or the failing station itself."""
-        return self.from_station if self.to_station is None else self.to_station
+    def target(self) -> Station[Any, Any]:
+        """Where work goes back to: ``to``, or the failing station itself."""
+        return self.station if self.to is None else self.to
 
 
 @dataclass(frozen=True)
@@ -80,8 +81,12 @@ class Factory:
         return [s.name for s in self.stations].index(station)
 
     def rework_for(self, station: str) -> Rework | None:
-        """Return the rework rule that applies when ``station`` fails, if any."""
-        return next((rule for rule in self.rework if rule.from_station == station), None)
+        """Return the rework rule that applies when the station ``station`` fails, if any."""
+        return next((rule for rule in self.rework if rule.station.name == station), None)
+
+    def agents(self) -> dict[str, tuple[AbstractAgent[Any, Any], ...]]:
+        """Every agent each station may run, by station name, before anything runs."""
+        return {station.name: station.agents for station in self.stations}
 
     @property
     def digest(self) -> str:
@@ -99,14 +104,15 @@ class Factory:
                     {
                         "name": s.name,
                         "version": s.version,
-                        "input": s.input_type.__name__,
-                        "output": s.output_type.__name__,
+                        "input": type_name(s.input_type),
+                        "output": type_name(s.output_type),
                         "gate": [s.gate.name, s.gate.version] if s.gate else None,
+                        "agents": [agent.name for agent in s.agents],
                     }
                     for s in self.stations
                 ],
                 "rework": [
-                    [rule.from_station, rule.target, rule.limit, rule.on_limit]
+                    [rule.station.name, rule.target.name, rule.limit, rule.on_limit]
                     for rule in self.rework
                 ],
             }
@@ -114,7 +120,7 @@ class Factory:
 
     async def run(
         self,
-        input: BaseModel | Artifact[Any],
+        input: Any,
         *,
         store: ArtifactStore,
         deps: Any = None,
@@ -144,6 +150,30 @@ class Factory:
             on_step=on_step,
         )
 
+    def run_sync(
+        self,
+        input: Any,
+        *,
+        store: ArtifactStore,
+        deps: Any = None,
+        run_id: str | None = None,
+        mission_id: str | None = None,
+        methodologies: Sequence[MethodologyRef] = (),
+        on_step: OnStep | None = None,
+    ) -> Run:
+        """Run ``input`` through the stations, from code that is not async. See :meth:`run`."""
+        return run_sync(
+            self.run(
+                input,
+                store=store,
+                deps=deps,
+                run_id=run_id,
+                mission_id=mission_id,
+                methodologies=methodologies,
+                on_step=on_step,
+            )
+        )
+
     def _findings(self) -> list[str]:
         findings: list[str] = []
         for label, value in (("name", self.name), ("version", self.version)):
@@ -162,32 +192,44 @@ class Factory:
             findings.append(f"station name {name!r} is used more than once")
 
         for before, after in zip(self.stations, self.stations[1:], strict=False):
-            if not issubclass(before.output_type, after.input_type):
+            if not _hands_on(before.output_type, after.input_type):
                 findings.append(
-                    f"{before.name!r} hands on {before.output_type.__name__} "
-                    f"but {after.name!r} takes {after.input_type.__name__}"
+                    f"{before.name!r} hands on {type_name(before.output_type)} "
+                    f"but {after.name!r} takes {type_name(after.input_type)}"
                 )
 
-        seen: set[str] = set()
+        def position(station: object) -> int | None:
+            return next((i for i, s in enumerate(self.stations) if s is station), None)
+
+        seen: set[int] = set()
         for rule in self.rework:
             if not isinstance(rule, Rework):  # pyright: ignore[reportUnnecessaryIsInstance]
                 findings.append(f"every rework rule must be a Rework, not {rule!r}")
                 continue
-            label = f"rework from {rule.from_station!r}"
+            label = f"rework from {getattr(rule.station, 'name', rule.station)!r}"
             if type(rule.limit) is not int or rule.limit < 1:
                 findings.append(f"{label}: the limit must be a whole number, at least 1")
             if rule.on_limit not in ("halt", "continue"):
                 findings.append(f"{label}: on_limit must be 'halt' or 'continue'")
-            if rule.from_station not in names:
-                findings.append(f"{label}: no such station")
+            source = position(rule.station)
+            if source is None:
+                findings.append(f"{label}: the station is not in this factory")
                 continue
-            if rule.from_station in seen:
+            if source in seen:
                 findings.append(f"{label}: declared more than once")
-            seen.add(rule.from_station)
-            if rule.target not in names:
-                findings.append(f"{label}: target {rule.target!r} is not a station")
-            elif names.index(rule.target) > names.index(rule.from_station):
-                findings.append(f"{label}: target {rule.target!r} comes later in the factory")
-            if self.stations[names.index(rule.from_station)].gate is None:
+            seen.add(source)
+            target = position(rule.target)
+            if target is None:
+                findings.append(f"{label}: the station it sends work to is not in this factory")
+            elif target > source:
+                findings.append(f"{label}: {rule.target.name!r} comes later in the factory")
+            if rule.station.gate is None:
                 findings.append(f"{label}: the station has no gate, so it can never fail")
         return findings
+
+
+def _hands_on(output: Any, input: Any) -> bool:
+    """Whether a station's output type can be the next station's input type."""
+    if isinstance(output, type) and isinstance(input, type):
+        return issubclass(output, input)
+    return output == input

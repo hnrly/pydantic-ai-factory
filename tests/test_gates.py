@@ -211,7 +211,7 @@ def test_a_badly_declared_gate_is_refused_with_the_reason() -> None:
         ({"version": ""}, check, "the version must be non-empty"),
         ({"version": "1", "name": " x"}, check, "the name must be non-empty"),
         ({"version": "1"}, async_check, "must be a plain function, not async"),
-        ({"version": "1", "requires": [str]}, check, "must hold Pydantic model classes"),
+        ({"version": "1", "requires": ["Review"]}, check, "requires must hold classes"),
         ({"version": "1", "requires": Review}, check, "requires must be a list"),
     ]
     for arguments, function, message in cases:

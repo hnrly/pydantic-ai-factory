@@ -1,170 +1,79 @@
 ---
 title: Gates
-description: How a gate judges a station's output from recorded evidence, and what happens when it cannot.
+description: A gate is plain code that judges a station's output. A model may produce evidence; it never makes the decision.
 ---
 
 # Gates
 
-A gate decides whether a station's output may move on. It is plain code: a function that reads recorded evidence and returns a verdict with its reasons. A model may produce the evidence, but a model never makes the decision. This page shows how to write a gate, what its decision records, and what happens when a gate cannot be evaluated.
-
-## At a glance
-
-A gate reads the output and the recorded evidence. It gives one of three verdicts, or it cannot be evaluated, which is neither a pass nor a fail.
-
-```mermaid
-flowchart TD
-    O["The station's output"] --> Q{"Is the required evidence recorded?"}
-    EV["Recorded evidence"] --> Q
-    Q -->|"no"| NE["Not evaluated: the check is not called"]
-    Q -->|"yes"| C["The check, plain code"]
-    C -->|"raised, or returned no verdict"| NE
-    C --> P["passed"]
-    C --> F["failed"]
-    C --> NA["needs_approval"]
-```
-
-## Write a gate
-
-A gate is a function with a decorator. It takes two arguments and returns a verdict. The first is the station's output, as an [artifact](artifacts.md). The second is the evidence: whatever else the station recorded.
+A gate decides whether a station's output may move on. It is plain code: a function that reads the output, and any evidence the station recorded, and returns a verdict with its reasons. A model may write the work or the evidence. A model never decides the gate.
 
 ```python
-from pydantic import BaseModel
+from pydantic_ai import Agent
 
-from pydantic_ai_factory import Artifact, Evidence, Verdict, failed, gate, passed
+from pydantic_ai_factory import Artifact, Evidence, Factory, MemoryStore, Rework, Verdict, failed, gate, passed, station
 
-
-class Design(BaseModel):
-    summary: str
-    steps: list[str]
+designer = Agent("anthropic:claude-opus-5-5", name="designer", instructions="Write a short design.")
 
 
 @gate(version="1")
-def has_steps(output: Artifact[Design], evidence: Evidence) -> Verdict:
-    if not output.payload.steps:
-        return failed("the design lists no steps")
-    return passed(f"{len(output.payload.steps)} steps listed")
+def says_what_happens_to_blank_tasks(output: Artifact[str], evidence: Evidence) -> Verdict:
+    if "blank" in output.payload.lower():
+        return passed("the design says what happens to a blank task")
+    return failed("the design never says what happens to a blank task")
 
 
-design = Artifact.create(Design(summary="Split the bill evenly", steps=["add", "divide"]))
-decision = has_steps.evaluate(design, Evidence())
-
-print(decision.judgement, decision.reasons)
-#> passed ('2 steps listed',)
+design = station(designer, gate=says_what_happens_to_blank_tasks)
+software = Factory("software", [design], rework=[Rework(design, limit=2)])
+run = software.run_sync("A to-do list web page where I can add tasks and tick them off.", store=MemoryStore())
+print([(step.attempt, step.outcome) for step in run.steps])
+#> [(1, 'failed'), (2, 'passed')]
 ```
 
-You will rarely call `Gate.evaluate` yourself. Attach the gate to a [station](stations.md) with `@station(gate=has_steps)` and the station evaluates it after every run.
+The first design did not mention blank tasks, so the gate failed it and the rework rule sent it back. The designer was told why, in its own conversation, and the second design passed.
 
-Keep a gate pure. It should do no I/O and call no model. Anything slow or uncertain belongs in the station, which records the result as evidence for the gate to read.
+Keep a gate pure: no I/O and no model calls. Anything slow or uncertain belongs in the station, which records the result as evidence for the gate to read.
 
-## The three verdicts
+## Verdicts
 
-| Helper | Meaning | What the station reports |
-|---|---|---|
-| `passed(*reasons)` | The work may move on. | `passed` |
-| `failed(*reasons)` | The work was judged and is not good enough. | `failed` |
-| `needs_approval(*reasons)` | The checks are satisfied, and a person must now decide. | `needs_approval` |
+| Verdict | Means |
+|---|---|
+| `passed(*reasons)` | The work may move on. |
+| `failed(*reasons)` | The work was judged and is not good enough. |
+| `needs_approval(*reasons)` | The checks are satisfied, and a person must now decide. |
 
-Every verdict needs at least one reason. A failure nobody can act on is not useful, and a pass that cannot say why is not a judgement.
+Every verdict needs at least one reason.
 
-## Requiring evidence
+## Evidence
 
-A gate names the evidence it needs with `requires`. Evidence is found by its payload type; a subclass counts as its base type. The station's output is not evidence for its own gate, so requiring the output's type asks for a second artifact of that type.
+A gate can require evidence the station records, by type.
 
 ```python
 from pydantic import BaseModel
 
-from pydantic_ai_factory import (
-    Artifact,
-    Evidence,
-    NotEvaluated,
-    Verdict,
-    failed,
-    gate,
-    passed,
-)
+from pydantic_ai_factory import Artifact, Evidence, MemoryStore, StationContext, Verdict, failed, gate, passed, station
 
 
-class Design(BaseModel):
-    summary: str
+class TestRun(BaseModel):
+    passed: int
+    failed: int
 
 
-class ReviewReport(BaseModel):
-    blockers: list[str]
+@gate(version="1", requires=[TestRun])
+def tests_pass(output: Artifact[str], evidence: Evidence) -> Verdict:
+    run = evidence.one(TestRun).payload
+    return passed("all tests pass") if run.failed == 0 else failed(f"{run.failed} tests failed")
 
 
-@gate(version="1", requires=[ReviewReport])
-def no_open_blockers(output: Artifact[Design], evidence: Evidence) -> Verdict:
-    blockers = evidence.one(ReviewReport).payload.blockers
-    return failed(*blockers) if blockers else passed("the review found no blockers")
+@station(gate=tests_pass)
+async def build(ctx: StationContext, design: str) -> str:
+    return "Built index.html, but the tests never ran."
 
 
-design = Artifact.create(Design(summary="Split the bill evenly"))
-report = Artifact.create(ReviewReport(blockers=["no rounding rule"]))
-
-decision = no_open_blockers.evaluate(design, Evidence([report]))
-print(decision.judgement, decision.reasons)
-#> failed ('no rounding rule',)
-
-without_report = no_open_blockers.evaluate(design, Evidence())
-assert isinstance(without_report, NotEvaluated)
-print(without_report.reason, without_report.missing)
-#> missing evidence: ReviewReport ('ReviewReport',)
+result = build.run_sync("One page, index.html.", store=MemoryStore())
+print(result.outcome, result.reason)
+#> did_not_run gate 'tests_pass' was not evaluated: missing evidence: TestRun
 ```
 
-`Evidence` has two lookups.
+If the evidence is missing, the gate is not evaluated and the station did not run. A test suite that never ran must not look like one that passed.
 
-| Call | Returns |
-|---|---|
-| `evidence.of(ReviewReport)` | Every artifact with that payload type, in the order recorded. |
-| `evidence.one(ReviewReport)` | The single one. Raises `LookupError` if there is none or more than one. |
-
-## When a gate cannot be evaluated
-
-Sometimes a gate cannot give an answer. Then `Gate.evaluate` returns `NotEvaluated`, with a reason. It is never a pass and never a fail.
-
-| Cause | Reason reported |
-|---|---|
-| Required evidence is missing | `missing evidence: ReviewReport` |
-| The check raised | `the check raised LookupError: …` |
-| The check returned something that is not a verdict | `the check returned bool, not a verdict` |
-
-When evidence is missing, the check function is not called at all, and `missing` names what was absent. A check that raises is also logged, with its traceback, on the `pydantic_ai_factory` logger.
-
-A station whose gate was not evaluated reports `did_not_run`. This is the rule that keeps a factory honest. A review that never happened must not look like a review that found nothing. And a tool that was unreachable must not look like work that was judged and failed, because failed work may be sent back for rework and an unreachable tool is not fixed by redoing the work.
-
-## What a decision records
-
-When a gate is evaluated, the result is a `GateDecision`.
-
-| Field | Meaning |
-|---|---|
-| `gate` | The gate's name. |
-| `version` | The version you gave the gate. |
-| `judgement` | `passed`, `failed` or `needs_approval`. |
-| `reasons` | The reasons the check gave. |
-| `judged` | The ref of every artifact the gate was shown, the output first. |
-| `methodologies` | The methodologies in force. |
-| `decided_at` | When it was decided. |
-
-A decision always names at least one artifact. Because it holds refs, you can always tell exactly which content was judged, by which rules.
-
-Change the gate's `version` whenever its rules change. Two decisions with different versions are not comparable, and the record should say so.
-
-## Naming a gate
-
-A gate takes its name from its function. Pass `name=` to choose another, or when the check is a lambda.
-
-A gate is refused when it is declared, with a `GateDefinitionError`, if its name or version is empty, its check is async, or `requires` is not a list of Pydantic models.
-
-```python
-from pydantic import BaseModel
-
-from pydantic_ai_factory import Gate, gate, passed
-
-always: Gate[BaseModel] = gate(version="1", name="always")(
-    lambda output, evidence: passed("nothing to check")
-)
-
-print(always.name, always.version)
-#> always 1
-```
+Change a gate's `version` whenever its rules change, so records judged by the old rules can be told apart.

@@ -7,11 +7,12 @@ from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, Literal, Self, cast
 
-from pydantic import BaseModel, model_validator
+from pydantic import model_validator
 
 from ..artifacts import Artifact, ArtifactRef, ArtifactStore
 from ..contracts import Digest, MethodologyRef, Name, Record, check_name
-from ..stations import StationInputInvalid, StationResult
+from ..stations import Feedback, StationInputInvalid, StationResult
+from ..stations._station import coerce, recorded_as
 
 if TYPE_CHECKING:
     from ._factory import Factory
@@ -28,6 +29,9 @@ class Run(Record):
     went. They are separate answers: work can reach the end with a station whose last
     attempt failed, if that station's rework rule says to carry on.
 
+    ``output`` is the last station's output, once the run has finished. ``input_ref`` and
+    ``output_ref`` name the artifacts that hold the input and the output.
+
     ``steps`` holds one result per attempt, in the order they happened. Together with
     ``factory_digest`` and the artifact store, that is everything needed to see where a run
     stopped and to carry it on.
@@ -40,8 +44,9 @@ class Run(Record):
     outcome: RunOutcome
     finished: bool
     stopped_at: Name | None = None
-    input: ArtifactRef
-    output: ArtifactRef | None = None
+    input_ref: ArtifactRef
+    output_ref: ArtifactRef | None = None
+    output: Any = None
     steps: tuple[StationResult, ...] = ()
     mission_id: Name | None = None
     methodologies: tuple[MethodologyRef, ...] = ()
@@ -51,12 +56,12 @@ class Run(Record):
         if self.finished:
             if self.outcome not in ("passed", "failed"):
                 raise ValueError("a finished run either passed or failed")
-            if self.stopped_at is not None or self.output is None:
+            if self.stopped_at is not None or self.output_ref is None:
                 raise ValueError("a finished run has an output and did not stop early")
         else:
             if self.outcome == "passed":
                 raise ValueError("a run that passed must have finished")
-            if self.output is not None:
+            if self.output_ref is not None:
                 raise ValueError("a run that has not finished has no output yet")
             if (self.stopped_at is None) != (self.outcome == "running"):
                 raise ValueError("a run names where it stopped unless it is still running")
@@ -73,7 +78,7 @@ class Run(Record):
 
 async def run_factory(
     factory: Factory,
-    input: BaseModel | Artifact[Any],
+    input: Any,
     *,
     store: ArtifactStore,
     deps: Any = None,
@@ -87,11 +92,10 @@ async def run_factory(
     first = factory.stations[0]
     given: object = input
     payload: object = cast("Artifact[Any]", given).payload if isinstance(given, Artifact) else given
-    if not isinstance(payload, first.input_type):
-        raise StationInputInvalid(
-            f"factory {factory.name!r} takes {first.input_type.__name__}, "
-            f"not {type(payload).__name__}"
-        )
+    try:
+        payload = coerce(first.input_type, payload)
+    except ValueError as error:
+        raise StationInputInvalid(f"factory {factory.name!r} {error}") from error
     identifier = uuid.uuid4().hex if run_id is None else run_id
     for label, value in (("run_id", identifier), ("mission_id", mission_id)):
         if value is not None and (problem := check_name(value)):
@@ -101,7 +105,12 @@ async def run_factory(
     if isinstance(given, Artifact):
         incoming = cast("Artifact[Any]", given)
     else:
-        incoming = Artifact.create(payload, mission_id=mission_id, methodologies=stamps)
+        incoming = Artifact.create(
+            payload,
+            payload_type=recorded_as(first.input_type, payload),
+            mission_id=mission_id,
+            methodologies=stamps,
+        )
     await store.put(incoming)
 
     steps: list[StationResult] = []
@@ -114,7 +123,7 @@ async def run_factory(
         *,
         finished: bool = False,
         stopped_at: str | None = None,
-        output: ArtifactRef | None = None,
+        output: Artifact[Any] | None = None,
     ) -> Run:
         return Run(
             run_id=identifier,
@@ -124,15 +133,18 @@ async def run_factory(
             outcome=outcome,
             finished=finished,
             stopped_at=stopped_at,
-            input=incoming.ref,
-            output=output,
+            input_ref=incoming.ref,
+            output_ref=output.ref if output else None,
+            output=output.payload if output else None,
             steps=tuple(steps),
             mission_id=mission_id,
             methodologies=stamps,
         )
 
     index = 0
-    feedback = None
+    feedback: Feedback | None = None
+    # The latest conversations of each station's agents, carried on at a later attempt.
+    conversations: dict[str, dict[str, ArtifactRef]] = {}
     while index < len(factory.stations):
         station = factory.stations[index]
         attempts[station.name] += 1
@@ -145,8 +157,13 @@ async def run_factory(
             mission_id=mission_id,
             methodologies=stamps,
             feedback=feedback,
+            conversations=conversations.get(station.name),
         )
         feedback = None
+        conversations[station.name] = {
+            **conversations.get(station.name, {}),
+            **result.conversations,
+        }
         steps.append(result)
         if on_step is not None:
             await on_step(record("running"))
@@ -159,15 +176,16 @@ async def run_factory(
             if rule is not None and reworked[station.name] < rule.limit:
                 reworked[station.name] += 1
                 # The target is the very next station to run, so it alone gets the reasons.
-                feedback = result.decision
-                index = factory.index_of(rule.target)
+                if result.decision is not None:
+                    feedback = Feedback(reasons=result.decision.reasons)
+                index = factory.index_of(rule.target.name)
                 continue
             if rule is None or rule.on_limit != "continue":
                 return record("failed", stopped_at=station.name)
 
-        if result.output is None:  # cannot happen: a station that ran has an output
+        if result.output_ref is None:  # cannot happen: a station that ran has an output
             return record("did_not_run", stopped_at=station.name)
-        inputs[index + 1] = await store.get(result.output, station.output_type)
+        inputs[index + 1] = await store.get(result.output_ref, station.output_type)
         index += 1
 
     # The run failed if any station's last attempt failed, even though the work carried on.
@@ -175,5 +193,5 @@ async def run_factory(
     return record(
         "failed" if "failed" in last.values() else "passed",
         finished=True,
-        output=inputs[len(factory.stations)].ref,
+        output=inputs[len(factory.stations)],
     )
