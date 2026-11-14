@@ -17,9 +17,9 @@ from pydantic_ai_factory import (
     MethodologyRef,
     NotEvaluated,
     Verdict,
+    escalate,
     failed,
     gate,
-    needs_approval,
     passed,
 )
 
@@ -83,15 +83,15 @@ def test_a_failing_decision_carries_every_reason() -> None:
     assert decision.judged == (DESIGN.ref, BLOCKED_REVIEW.ref)
 
 
-def test_a_gate_can_ask_for_a_person() -> None:
+def test_a_gate_can_escalate_to_a_person() -> None:
     @gate(version="1")
     def sign_off(output: Artifact[Design], evidence: Evidence) -> Verdict:
-        return needs_approval("ready for sign-off")
+        return escalate("only a person can settle this")
 
     decision = sign_off.evaluate(DESIGN, Evidence())
 
     assert isinstance(decision, GateDecision)
-    assert decision.judgement == "needs_approval"
+    assert decision.judgement == "escalate"
 
 
 def test_missing_evidence_is_not_evaluated_and_the_check_is_never_called() -> None:
@@ -131,7 +131,7 @@ def test_a_check_that_returns_something_else_is_not_evaluated() -> None:
 
 
 def test_every_verdict_and_decision_must_say_why() -> None:
-    for judgement in ("passed", "failed", "needs_approval"):
+    for judgement in ("passed", "failed", "escalate"):
         with pytest.raises(ValidationError):
             Verdict(judgement=judgement, reasons=())
         with pytest.raises(ValidationError):

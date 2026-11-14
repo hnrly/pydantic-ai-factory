@@ -102,6 +102,7 @@ layers = [
   "(cli)",
   "(methodologies)",
   "(capabilities)",
+  "(stores)",
   "(factory)",
   "(_methodology)",
   "(stations)",

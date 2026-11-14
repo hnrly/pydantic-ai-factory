@@ -18,8 +18,10 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 SAMPLE_MODEL = "anthropic:claude-opus-5-5"
 
-Reply = str | dict[str, Any] | Callable[[list[ModelMessage], AgentInfo], ModelResponse]
-"""Text, the arguments of a structured output, or a function that builds the response."""
+Reply = (
+    str | dict[str, Any] | ModelResponse | Callable[[list[ModelMessage], AgentInfo], ModelResponse]
+)
+"""Text, a structured output's arguments, a whole response, or a function that builds one."""
 
 Script = Mapping[str, Sequence[Reply]]
 """The replies each agent gives in turn, by the agent's name. The last one repeats."""
@@ -33,6 +35,8 @@ def scripted_model(replies: Sequence[Reply]) -> FunctionModel:
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         reply = queue.pop(0) if len(queue) > 1 else queue[0]
+        if isinstance(reply, ModelResponse):
+            return reply
         if callable(reply):
             return reply(messages, info)
         if isinstance(reply, dict) or not info.allow_text_output:
@@ -66,6 +70,12 @@ DESIGN = (
 DESIGN_WITH_BLANK = DESIGN + " Pressing Enter on a blank task adds nothing."
 REVIEW = "The page matches the design. Nothing is wrong."
 
+
+def call(tool: str, **args: Any) -> ModelResponse:
+    """A response that calls ``tool`` with ``args``."""
+    return ModelResponse(parts=[ToolCallPart(tool, args, f"{tool}-1")])
+
+
 SCRIPTS: dict[str, Script] = {
     "docs/factories.md": {
         "designer": [DESIGN, DESIGN_WITH_BLANK],
@@ -74,4 +84,9 @@ SCRIPTS: dict[str, Script] = {
     "docs/stations.md": {"builder": ["Built index.html."], "reviewer": [REVIEW]},
     "docs/agents.md": {"builder": ["Built index.html."], "reviewer": [REVIEW]},
     "docs/gates.md": {"designer": [DESIGN, DESIGN_WITH_BLANK]},
+    "docs/approvals.md": {
+        "designer": [DESIGN, DESIGN_WITH_BLANK],
+        "builder": [call("publish_page", path="index.html"), "Published index.html."],
+    },
+    "docs/stores.md": {"designer": [DESIGN]},
 }

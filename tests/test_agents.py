@@ -26,6 +26,7 @@ from pydantic_ai_factory import (
     passed,
     station,
 )
+from pydantic_ai_factory.stations._station import replayed_result
 
 pytestmark = pytest.mark.anyio
 
@@ -228,3 +229,17 @@ def test_a_station_may_take_and_return_any_type_pydantic_can_serialise() -> None
 def test_a_station_refuses_the_wrong_type_of_input_before_anything_runs() -> None:
     with pytest.raises(StationInputInvalid, match="expected str, not int"):
         station(designer).run_sync(3, store=MemoryStore())  # pyright: ignore[reportArgumentType]
+
+
+def test_a_replayed_result_reads_like_the_run_it_replays() -> None:
+    # replayed_result builds AgentRunResult from Pydantic AI's private agent state. This
+    # pins the parts a station reads, so an upgrade that changes them fails here first.
+    original = Agent(TestModel(custom_output_text="Built."), name="builder").run_sync("go")
+
+    replayed = replayed_result(original.output, original.conversation)
+
+    assert replayed.output == "Built."
+    assert replayed.all_messages() == original.all_messages()
+    assert replayed.usage == original.usage
+    assert replayed.conversation.messages == original.conversation.messages
+    assert replayed.conversation.conversation_id == original.conversation.conversation_id

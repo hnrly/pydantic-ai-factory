@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from typing import Any, Generic, Literal, Self, TypeVar, cast, overload
 
 from pydantic import Field, ValidationError, model_validator
-from pydantic_ai import Conversation
+from pydantic_ai import Conversation, DeferredToolRequests, DeferredToolResults
+from pydantic_ai._agent_graph import GraphAgentState
 from pydantic_ai.agent import AbstractAgent, AgentRunResult
 from typing_extensions import TypeVar as TypeVarWithDefault
 
@@ -29,10 +30,11 @@ OutT = TypeVar("OutT")
 RecordedT = TypeVar("RecordedT")
 DepsT = TypeVarWithDefault("DepsT", default=None)
 
-StationOutcome = Literal["passed", "failed", "needs_approval", "not_judged", "did_not_run"]
+StationOutcome = Literal["passed", "failed", "waiting", "not_judged", "did_not_run"]
+WaitingKind = Literal["approval", "escalation", "tool-calls"]
 
 # Arguments of Agent.run that ctx.run_agent fills in itself.
-_RESERVED = ("conversation", "message_history")
+_RESERVED = ("conversation", "message_history", "deferred_tool_results")
 
 
 class StationDefinitionError(DefinitionError):
@@ -47,20 +49,83 @@ class StationClosed(FactoryError):
     """Evidence was recorded, or an agent run, after the station had already returned."""
 
 
+_NO_OUTPUT: Any = object()
+
+
+class Escalate(Exception):
+    """Raise inside a station to hand a decision to a person.
+
+    The run waits with ``run.waiting.kind`` of ``"escalation"``. Pass ``output=`` to offer
+    the work as it stands: a person who approves then accepts it as the station's output.
+    """
+
+    def __init__(self, reason: str, *, output: Any = _NO_OUTPUT) -> None:
+        self.reason = reason
+        self.output = output
+        super().__init__(reason)
+
+
 class Feedback(Record):
     """Why work came back to a station for another attempt.
 
-    ``reasons`` are the failing gate's reasons. On a later attempt, ``ctx.run_agent``
-    sends :meth:`message` to the agent in place of its prompt.
+    ``reasons`` are the failing gate's reasons, or a person's note. ``by`` names the
+    person who asked for changes, if one did. On a later attempt, ``ctx.run_agent`` sends
+    :meth:`message` to the agent in place of its prompt.
     """
 
     reasons: tuple[str, ...] = Field(min_length=1)
+    by: Name | None = None
 
     def message(self) -> str:
         """The text an agent is sent when its work comes back."""
+        if self.by is not None:
+            return "A person asked for changes to your last output.\n" + "\n".join(
+                f"{self.by}: {reason}" for reason in self.reasons
+            )
         return "Your last output did not pass its checks.\n" + "\n".join(
             f"- {reason}" for reason in self.reasons
         )
+
+
+class AgentCall(Record):
+    """The record of one finished ``ctx.run_agent`` call, so a resumed station can replay it."""
+
+    agent: Name
+    conversation: ArtifactRef
+    output: ArtifactRef
+
+
+class Waiting(Record):
+    """What a person is being asked, when a station or a run is waiting.
+
+    ``kind`` says why: ``"approval"`` when the station has ``approval=True`` and its gate
+    passed, ``"escalation"`` when only a person should settle it, and ``"tool-calls"``
+    when an agent asked a person something. ``artifact`` and ``output`` are the work
+    being decided on, when there is any. ``requests`` and ``agent`` are set for tool calls.
+    """
+
+    kind: WaitingKind
+    station: Name
+    artifact: ArtifactRef | None = None
+    output: Any = None
+    reasons: tuple[str, ...] = ()
+    requests: DeferredToolRequests | None = None
+    agent: Name | None = None
+    conversation: ArtifactRef | None = None
+
+
+class _ToolCallsWait(BaseException):
+    """An agent's run ended with deferred tool calls. Raised through station code on purpose.
+
+    It derives from ``BaseException`` so that a station's own ``except Exception`` cannot
+    swallow it.
+    """
+
+    def __init__(self, agent: str, requests: DeferredToolRequests, conversation: ArtifactRef):
+        self.agent = agent
+        self.requests = requests
+        self.conversation = conversation
+        super().__init__(agent)
 
 
 @dataclass
@@ -76,8 +141,12 @@ class _Session:
     methodologies: tuple[MethodologyRef, ...]
     feedback: Feedback | None
     previous: Mapping[str, ArtifactRef]
+    replay: tuple[AgentCall, ...] = ()
+    answer: DeferredToolResults | None = None
+    waiting: Waiting | None = None
     artifacts: list[Artifact[Any]] = field(default_factory=lambda: [])
     conversations: dict[str, ArtifactRef] = field(default_factory=lambda: {})
+    calls: list[AgentCall] = field(default_factory=lambda: [])
     closed: bool = False
 
     def check_open(self, doing: str) -> None:
@@ -92,6 +161,50 @@ class _Session:
             methodologies=self.methodologies,
             **more,
         )
+
+
+def _with_deferred(agent: AbstractAgent[Any, Any], kwargs: dict[str, Any]) -> list[Any] | None:
+    """The run's output type with ``DeferredToolRequests`` added, or None to keep the agent's.
+
+    A run can wait on tool calls only if its output type includes ``DeferredToolRequests``.
+    An agent that already declares it is left alone. So is an agent with output
+    validators, because Pydantic AI refuses a run-level output type for one: to let it
+    wait, declare ``DeferredToolRequests`` in its own ``output_type``.
+    """
+    given = "output_type" in kwargs
+    declared: Any = kwargs.pop("output_type") if given else agent.output_type
+    kinds: list[Any] = (
+        list(cast("list[Any]", declared)) if isinstance(declared, list) else [declared]
+    )
+    if DeferredToolRequests in kinds:
+        return kinds if given else None
+    # Pydantic AI has no public way to ask whether an agent has output validators.
+    if not given and getattr(agent, "_output_validators", None):
+        return None
+    return [*kinds, DeferredToolRequests]
+
+
+def _output_type_of(agent: AbstractAgent[Any, Any]) -> Any:
+    """The agent's output type when it is one type Pydantic can read back, else ``Any``."""
+    kind: Any = agent.output_type
+    if inspect.isclass(kind) or isinstance(kind, types.GenericAlias):
+        return kind
+    return Any
+
+
+def replayed_result(output: Any, conversation: Conversation) -> AgentRunResult[Any]:
+    """Rebuild the result of a finished agent run from its output and conversation.
+
+    Pydantic AI has no public constructor for a finished result, so this fills in the
+    state that ``output``, ``all_messages()``, ``usage`` and ``conversation`` read.
+    ``workspace`` is a placeholder on a replayed result.
+    """
+    state = GraphAgentState(
+        message_history=list(conversation.messages),
+        usage=conversation.usage,
+        conversation_id=conversation.conversation_id,
+    )
+    return AgentRunResult(output, _state=state, _new_message_index=len(conversation.messages))
 
 
 @dataclass(frozen=True)
@@ -133,6 +246,11 @@ class StationContext(Generic[DepsT]):
         agent the feedback instead of ``prompt``. Any other keyword argument is passed to
         the agent's run.
 
+        When the agent ends with deferred tool calls, such as a question for a person,
+        the station stops and the run waits. When the person answers, the station runs
+        again from the top: calls that already finished return their stored result,
+        matched by agent and order, and the waiting call carries on with the answer.
+
         Raises :class:`StationDefinitionError` if the station does not name ``agent``.
         """
         session = self._session
@@ -151,8 +269,33 @@ class StationContext(Generic[DepsT]):
                 f"station {session.station!r}: ctx.run_agent sets {', '.join(clashes)} itself"
             )
         name = cast(str, agent.name)
+        index = len(session.calls)
+
+        if index < len(session.replay):
+            done = session.replay[index]
+            if done.agent != name:
+                raise StationDefinitionError(
+                    f"station {session.station!r}",
+                    [
+                        f"on resume, call {index + 1} ran agent {name!r} where it ran "
+                        f"{done.agent!r} before; keep the code between agent runs deterministic"
+                    ],
+                )
+            replayed = await session.store.get(done.conversation, Conversation)
+            output = await session.store.get(done.output, _output_type_of(agent))
+            session.conversations[name] = done.conversation
+            session.calls.append(done)
+            return replayed_result(output.payload, replayed.payload)
+
         conversation: Conversation | None = None
-        if name in session.conversations:
+        deferred_results: DeferredToolResults | None = None
+        waiting = session.waiting
+        if session.answer is not None and waiting is not None and waiting.agent == name:
+            # This is the call that was waiting: carry it on with the person's answer.
+            stored = await session.store.get(cast(ArtifactRef, waiting.conversation), Conversation)
+            conversation, prompt = stored.payload, None
+            deferred_results, session.answer = session.answer, None
+        elif name in session.conversations:
             stored = await session.store.get(session.conversations[name], Conversation)
             conversation = stored.payload
         elif name in session.previous:
@@ -160,7 +303,16 @@ class StationContext(Generic[DepsT]):
             conversation = stored.payload
             if session.feedback is not None:
                 prompt = session.feedback.message()
-        result = await agent.run(prompt, conversation=conversation, **kwargs)
+
+        output_type = _with_deferred(agent, kwargs)
+        if output_type is not None:
+            kwargs["output_type"] = output_type
+        result: AgentRunResult[Any] = await agent.run(
+            prompt,
+            conversation=conversation,
+            deferred_tool_results=deferred_results,
+            **kwargs,
+        )
         kept = session.artifact(
             result.conversation,
             payload_type=Conversation,
@@ -169,6 +321,14 @@ class StationContext(Generic[DepsT]):
         )
         await session.store.put(kept)
         session.conversations[name] = kept.ref
+        produced: Any = result.output
+        if isinstance(produced, DeferredToolRequests):
+            raise _ToolCallsWait(name, produced, kept.ref)
+        output = session.artifact(
+            result.output, type=f"AgentOutput:{name}", inputs=(session.input.ref,)
+        )
+        await session.store.put(output)
+        session.calls.append(AgentCall(agent=name, conversation=kept.ref, output=output.ref))
         return result
 
 
@@ -189,6 +349,7 @@ class Station(Generic[InT, OutT]):
     gate: Gate[OutT] | None = None
     version: str = "0"
     agents: tuple[AbstractAgent[Any, Any], ...] = ()
+    approval: bool = False
 
     def __post_init__(self) -> None:
         problems: list[str] = []
@@ -230,13 +391,17 @@ class Station(Generic[InT, OutT]):
         methodologies: Sequence[MethodologyRef] = (),
         feedback: Feedback | None = None,
         conversations: Mapping[str, ArtifactRef] | None = None,
+        resume: StationResult | None = None,
+        answer: DeferredToolResults | None = None,
     ) -> StationResult:
         """Run this station once and record what happened.
 
         The input may be a payload or an artifact that holds one. The output and anything
         the station recorded are stored as artifacts, then the station's gate judges them.
         ``conversations`` are the agents' conversations from an earlier attempt, which
-        ``ctx.run_agent`` carries on.
+        ``ctx.run_agent`` carries on. ``resume`` and ``answer`` carry on an attempt that
+        was waiting on tool calls: the station runs again, replaying the agent calls that
+        finished, and the waiting call receives ``answer``.
 
         A station that raises, or returns something that is not its output type, did not
         run: that is reported in the result, with the traceback, and is never a failure.
@@ -257,6 +422,8 @@ class Station(Generic[InT, OutT]):
             methodologies=methodologies,
             feedback=feedback,
             previous=conversations or {},
+            resume=resume,
+            answer=answer,
         )
 
     def run_sync(
@@ -357,6 +524,7 @@ def _agent_station(
     name: str | None,
     version: str,
     gate: Gate[OutT] | None,
+    approval: bool,
 ) -> Station[str, OutT]:
     """Turn one agent into a station: the input is the prompt, the output is the agent's."""
     station_name = agent.name if name is None else name
@@ -386,6 +554,7 @@ def _agent_station(
         gate=gate,
         version=version,
         agents=(agent,),
+        approval=approval,
     )
 
 
@@ -401,6 +570,7 @@ def station(
     name: str | None = None,
     version: str = "0",
     gate: Gate[OutT] | None = None,
+    approval: bool = False,
 ) -> Station[str, OutT]: ...
 
 
@@ -411,6 +581,7 @@ def station(
     version: str = "0",
     gate: Gate[Any] | None = None,
     agents: Sequence[AbstractAgent[Any, Any]] | None = None,
+    approval: bool = False,
 ) -> Callable[[StationFn[InT, OutT]], Station[InT, OutT]]: ...
 
 
@@ -422,6 +593,7 @@ def station(
     version: str = "0",
     gate: Gate[Any] | None = None,
     agents: Sequence[AbstractAgent[Any, Any]] | None = None,
+    approval: bool = False,
 ) -> Station[Any, Any] | Callable[[StationFn[InT, OutT]], Station[InT, OutT]]:
     """Declare a station from an async function, or from one agent.
 
@@ -432,6 +604,8 @@ def station(
 
     ``station(agent)`` makes a station that passes its input to the agent as the prompt
     and hands on the agent's output. Its name is the agent's name.
+
+    ``approval=True`` makes a person approve the output once every gate has passed.
     """
     if isinstance(fn, AbstractAgent):
         if agents is not None:
@@ -439,7 +613,11 @@ def station(
                 f"station {fn.name!r}", ["a station made from an agent runs only that agent"]
             )
         return _agent_station(
-            cast("AbstractAgent[Any, Any]", fn), name=name, version=version, gate=gate
+            cast("AbstractAgent[Any, Any]", fn),
+            name=name,
+            version=version,
+            gate=gate,
+            approval=approval,
         )
 
     def wrap(run: StationFn[InT, OutT]) -> Station[InT, OutT]:
@@ -466,6 +644,7 @@ def station(
             gate=gate,
             version=version,
             agents=agents_used_by(run) if agents is None else tuple(agents),
+            approval=approval,
         )
 
     return wrap if fn is None else wrap(fn)
@@ -480,8 +659,9 @@ class StationResult(Record):
     the output was not judged. So an attempt can have ``ran`` true and the outcome
     ``did_not_run``: the code ran, but its gate could not be evaluated.
 
+    ``waiting`` says what a person is asked, when the outcome is ``"waiting"``.
     ``conversations`` holds the last conversation of each agent the station ran, by the
-    agent's name.
+    agent's name, and ``calls`` the agent runs that finished, in order.
     """
 
     station: Name
@@ -493,8 +673,11 @@ class StationResult(Record):
     output_ref: ArtifactRef | None = None
     evidence: tuple[ArtifactRef, ...] = ()
     conversations: dict[Name, ArtifactRef] = Field(default_factory=lambda: {})
+    calls: tuple[AgentCall, ...] = ()
     decision: GateDecision | None = None
     not_evaluated: NotEvaluated | None = None
+    waiting: Waiting | None = None
+    feedback: Feedback | None = None
     reason: str | None = None
     error_type: str | None = None
     traceback: str | None = None
@@ -502,6 +685,8 @@ class StationResult(Record):
     @property
     def ran(self) -> bool:
         """Whether the station's own code completed and returned its output type."""
+        if self.outcome == "waiting":
+            return self.output_ref is not None
         return self.outcome != "did_not_run" or self.not_evaluated is not None
 
     @property
@@ -520,6 +705,15 @@ class StationResult(Record):
             return self
         if self.not_evaluated is not None:
             raise ValueError("a gate that was not evaluated means the attempt did not run")
+        if (self.outcome == "waiting") != (self.waiting is not None):
+            raise ValueError("an attempt is waiting exactly when it says what it waits for")
+        if self.outcome == "waiting":
+            if judgement == "failed":
+                raise ValueError("work that failed its gate does not wait for a person")
+            approval = self.waiting is not None and self.waiting.kind == "approval"
+            if approval and (judgement not in (None, "passed") or self.output_ref is None):
+                raise ValueError("only output that passed every gate waits for approval")
+            return self
         if judgement != (None if self.outcome == "not_judged" else self.outcome):
             raise ValueError(f"outcome {self.outcome!r} does not match the gate's decision")
         if self.output_ref is None:
@@ -568,6 +762,8 @@ async def _attempt(
     methodologies: Sequence[MethodologyRef],
     feedback: Feedback | None,
     previous: Mapping[str, ArtifactRef],
+    resume: StationResult | None,
+    answer: DeferredToolResults | None,
 ) -> StationResult:
     """Do the work of :meth:`Station.run`."""
     stamps = tuple(methodologies)
@@ -579,6 +775,10 @@ async def _attempt(
         raise StationInputInvalid(f"station {station.name!r} {error}") from error
     if mission_id is not None and (problem := check_name(mission_id)):
         raise StationInputInvalid(f"station {station.name!r}: mission_id {problem}")
+    if (resume is None) != (answer is None):
+        raise StationInputInvalid(f"station {station.name!r}: resume and answer go together")
+    if resume is not None and (resume.waiting is None or resume.waiting.kind != "tool-calls"):
+        raise StationInputInvalid(f"station {station.name!r}: only tool calls are resumed here")
     try:
         producer = Producer(
             station=station.name,
@@ -611,6 +811,9 @@ async def _attempt(
         methodologies=stamps,
         feedback=feedback,
         previous=previous,
+        replay=resume.calls if resume is not None else (),
+        answer=answer,
+        waiting=resume.waiting if resume is not None else None,
     )
     context: StationContext[Any] = StationContext(
         deps=deps,
@@ -628,8 +831,10 @@ async def _attempt(
             attempt=producer.attempt,
             outcome=outcome,
             input_ref=incoming.ref,
-            evidence=tuple(artifact.ref for artifact in session.artifacts),
+            evidence=tuple(dict.fromkeys(artifact.ref for artifact in session.artifacts)),
             conversations=dict(session.conversations),
+            calls=tuple(session.calls),
+            feedback=feedback,
             **more,
         )
 
@@ -641,30 +846,85 @@ async def _attempt(
             traceback="".join(traceback.format_exception(error)) if error else None,
         )
 
+    async def record_output(produced: object) -> Artifact[Any] | StationResult:
+        try:
+            produced = coerce(station.output_type, produced)
+        except ValueError as error:
+            return did_not_run(f"the station returned the wrong type: {error}")
+        try:
+            output = session.artifact(
+                produced,
+                payload_type=recorded_as(station.output_type, produced),
+                inputs=(incoming.ref,),
+            )
+        except ArtifactInvalid as error:
+            return did_not_run(f"the station's output cannot be recorded: {error}", error)
+        await store.put(output)
+        return output
+
+    def escalation(reasons: tuple[str, ...], output: Artifact[Any] | None) -> Waiting:
+        return Waiting(
+            kind="escalation",
+            station=station.name,
+            artifact=output.ref if output else None,
+            output=output.payload if output else None,
+            reasons=reasons,
+        )
+
     try:
         produced: object = await station.function(context, incoming.payload)
+    except _ToolCallsWait as wait:
+        return result(
+            "waiting",
+            waiting=Waiting(
+                kind="tool-calls",
+                station=station.name,
+                requests=wait.requests,
+                agent=wait.agent,
+                conversation=wait.conversation,
+            ),
+        )
+    except Escalate as raised:
+        offered: Artifact[Any] | None = None
+        if raised.output is not _NO_OUTPUT:
+            recorded = await record_output(raised.output)
+            if isinstance(recorded, StationResult):
+                return recorded
+            offered = recorded
+        return result(
+            "waiting",
+            output_ref=offered.ref if offered else None,
+            waiting=escalation((raised.reason,), offered),
+        )
     except Exception as error:
         logger.exception("station %r raised on attempt %d", station.name, attempt)
         return did_not_run(f"the station raised {type(error).__name__}: {error}", error)
     finally:
         session.closed = True
 
-    try:
-        produced = coerce(station.output_type, produced)
-    except ValueError as error:
-        return did_not_run(f"the station returned the wrong type: {error}")
-    try:
-        output = session.artifact(
-            produced,
-            payload_type=recorded_as(station.output_type, produced),
-            inputs=(incoming.ref,),
+    output = await record_output(produced)
+    if isinstance(output, StationResult):
+        return output
+
+    def approval_or(outcome: StationOutcome, **more: Any) -> StationResult:
+        if not station.approval:
+            return result(outcome, output_ref=output.ref, **more)
+        decision: GateDecision | None = more.get("decision")
+        return result(
+            "waiting",
+            output_ref=output.ref,
+            waiting=Waiting(
+                kind="approval",
+                station=station.name,
+                artifact=output.ref,
+                output=output.payload,
+                reasons=decision.reasons if decision else (),
+            ),
+            **more,
         )
-    except ArtifactInvalid as error:
-        return did_not_run(f"the station's output cannot be recorded: {error}", error)
-    await store.put(output)
 
     if station.gate is None:
-        return result("not_judged", output_ref=output.ref)
+        return approval_or("not_judged")
 
     judged = station.gate.evaluate(output, Evidence(session.artifacts), methodologies=stamps)
     if isinstance(judged, NotEvaluated):
@@ -674,4 +934,13 @@ async def _attempt(
             not_evaluated=judged,
             reason=f"gate {judged.gate!r} was not evaluated: {judged.reason}",
         )
+    if judged.judgement == "escalate":
+        return result(
+            "waiting",
+            output_ref=output.ref,
+            decision=judged,
+            waiting=escalation(judged.reasons, output),
+        )
+    if judged.judgement == "passed":
+        return approval_or("passed", decision=judged)
     return result(judged.judgement, output_ref=output.ref, decision=judged)

@@ -5,54 +5,99 @@ from __future__ import annotations
 import uuid
 from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, Self, cast
 
-from pydantic import model_validator
+from pydantic import AwareDatetime, Field, model_validator
+from pydantic_ai import DeferredToolResults
 
-from ..artifacts import Artifact, ArtifactRef, ArtifactStore
-from ..contracts import Digest, MethodologyRef, Name, Record, check_name
-from ..stations import Feedback, StationInputInvalid, StationResult
+from ..artifacts import Artifact, ArtifactRef
+from ..contracts import Digest, FactoryError, MethodologyRef, Name, Record, check_name
+from ..stations import Feedback, StationInputInvalid, StationResult, Waiting
 from ..stations._station import coerce, recorded_as
+from ._store import RunConflict, Store
 
 if TYPE_CHECKING:
     from ._factory import Factory
 
-RunOutcome = Literal["running", "passed", "failed", "did_not_run", "needs_approval"]
+RunOutcome = Literal["running", "passed", "failed", "did_not_run", "waiting"]
+DecisionKind = Literal["approved", "changes_requested", "rejected"]
 
 OnStep = Callable[["Run"], Awaitable[None]]
+
+
+class ApprovalRefused(FactoryError):
+    """An answer could not be applied to a run, so nothing changed.
+
+    The run is not waiting, the answer is of the wrong kind, names another artifact, or
+    the factory's shape has changed since the run stopped.
+    """
+
+
+class Decision(Record):
+    """A person's answer to an approval or an escalation.
+
+    It names the exact artifact it was made on, by digest, so it cannot be carried over
+    to revised work. ``overrode`` is true when a person approved work that a gate, or a
+    station, had escalated.
+    """
+
+    decision: DecisionKind
+    station: Name
+    waiting: Literal["approval", "escalation"]
+    artifact: ArtifactRef | None
+    by: Name
+    note: str | None = None
+    at: AwareDatetime
+    overrode: bool = False
+
+    @model_validator(mode="after")
+    def _says_why_when_it_must(self) -> Self:
+        if self.decision != "approved" and not (self.note and self.note.strip()):
+            raise ValueError(f"a decision of {self.decision!r} needs a note saying why")
+        return self
 
 
 class Run(Record):
     """The record of one piece of work moving through a factory.
 
-    ``finished`` says whether the work reached the last station. ``outcome`` says how it
-    went. They are separate answers: work can reach the end with a station whose last
-    attempt failed, if that station's rework rule says to carry on.
+    ``outcome`` says how the run went: ``"passed"``, ``"failed"``, ``"did_not_run"``, or
+    ``"waiting"`` for a person. ``finished`` says whether the work reached the last
+    station. ``output`` is the last station's output, once the run has finished;
+    ``input_ref`` and ``output_ref`` name the artifacts that hold the input and output.
 
-    ``output`` is the last station's output, once the run has finished. ``input_ref`` and
-    ``output_ref`` name the artifacts that hold the input and the output.
+    ``waiting`` says what a person is asked. Answer with :meth:`approve`,
+    :meth:`request_changes` or :meth:`reject`, or, for tool calls, with Pydantic AI's
+    ``DeferredToolResults``, and pass the answer to ``Factory.resume``.
 
-    ``steps`` holds one result per attempt, in the order they happened. Together with
-    ``factory_digest`` and the artifact store, that is everything needed to see where a run
-    stopped and to carry it on.
+    ``steps`` holds one result per attempt, in order, and ``approvals`` every decision a
+    person made. ``revision`` counts the saves, for compare-and-swap in the store. A run
+    read back from a store holds its payloads as plain JSON data.
     """
 
     run_id: Name
     factory: Name
     factory_version: Name
     factory_digest: Digest
+    revision: int = 0
     outcome: RunOutcome
     finished: bool
     stopped_at: Name | None = None
     input_ref: ArtifactRef
     output_ref: ArtifactRef | None = None
     output: Any = None
+    waiting: Waiting | None = None
     steps: tuple[StationResult, ...] = ()
+    approvals: tuple[Decision, ...] = ()
+    reworked: dict[Name, int] = Field(default_factory=lambda: {})
     mission_id: Name | None = None
     methodologies: tuple[MethodologyRef, ...] = ()
 
     @model_validator(mode="after")
     def _is_consistent(self) -> Self:
+        if (self.outcome == "waiting") != (self.waiting is not None):
+            raise ValueError("a run is waiting exactly when it says what it waits for")
         if self.finished:
             if self.outcome not in ("passed", "failed"):
                 raise ValueError("a finished run either passed or failed")
@@ -73,14 +118,110 @@ class Run(Record):
 
     def attempts(self, station: str) -> int:
         """Return how many times ``station`` was attempted."""
-        return sum(1 for step in self.steps if step.station == station)
+        return len({step.attempt for step in self.steps if step.station == station})
+
+    def approve(self, *, by: str, note: str | None = None) -> Decision:
+        """Approve what this run is waiting on. Pass the result to ``Factory.resume``."""
+        return self._decide("approved", by=by, note=note)
+
+    def request_changes(self, *, by: str, note: str) -> Decision:
+        """Send the waiting work back to its station once, with ``note`` as the feedback."""
+        return self._decide("changes_requested", by=by, note=note)
+
+    def reject(self, *, by: str, note: str) -> Decision:
+        """Reject the waiting work. The run ends as failed."""
+        return self._decide("rejected", by=by, note=note)
+
+    def _decide(self, decision: DecisionKind, *, by: str, note: str | None) -> Decision:
+        waiting = self.waiting
+        if waiting is None or waiting.kind == "tool-calls":
+            raise ApprovalRefused(
+                f"run {self.run_id!r} is not waiting for a decision"
+                + ("; answer its tool calls with DeferredToolResults" if waiting else "")
+            )
+        try:
+            return Decision(
+                decision=decision,
+                station=waiting.station,
+                waiting=waiting.kind,
+                artifact=waiting.artifact,
+                by=by,
+                note=note,
+                at=datetime.now(UTC),
+            )
+        except ValueError as error:
+            raise ApprovalRefused(f"run {self.run_id!r}: {error}") from error
+
+
+@dataclass
+class _Progress:
+    """Everything the runner needs to carry a run on. Rebuilt from a ``Run`` on resume."""
+
+    factory: Factory
+    store: Store
+    deps: Any
+    run_id: str
+    incoming: Artifact[Any]
+    mission_id: str | None
+    stamps: tuple[MethodologyRef, ...]
+    on_step: OnStep | None
+    saved: Run | None = None
+    steps: list[StationResult] = field(default_factory=lambda: [])
+    approvals: list[Decision] = field(default_factory=lambda: [])
+    reworked: Counter[str] = field(default_factory=lambda: Counter[str]())
+
+    def attempts(self, station: str) -> int:
+        return len({step.attempt for step in self.steps if step.station == station})
+
+    def conversations(self, station: str) -> dict[str, ArtifactRef]:
+        kept: dict[str, ArtifactRef] = {}
+        for step in self.steps:
+            if step.station == station:
+                kept.update(step.conversations)
+        return kept
+
+    def record(
+        self,
+        outcome: RunOutcome,
+        *,
+        finished: bool = False,
+        stopped_at: str | None = None,
+        output: Artifact[Any] | None = None,
+        waiting: Waiting | None = None,
+    ) -> Run:
+        return Run(
+            run_id=self.run_id,
+            factory=self.factory.name,
+            factory_version=self.factory.version,
+            factory_digest=self.factory.digest,
+            revision=0 if self.saved is None else self.saved.revision + 1,
+            outcome=outcome,
+            finished=finished,
+            stopped_at=stopped_at,
+            input_ref=self.incoming.ref,
+            output_ref=output.ref if output else None,
+            output=output.payload if output else None,
+            waiting=waiting,
+            steps=tuple(self.steps),
+            approvals=tuple(self.approvals),
+            reworked=dict(self.reworked),
+            mission_id=self.mission_id,
+            methodologies=self.stamps,
+        )
+
+    async def save(self, run: Run) -> Run:
+        await self.store.put_run(run, replaces=self.saved)
+        self.saved = run
+        if self.on_step is not None:
+            await self.on_step(run)
+        return run
 
 
 async def run_factory(
     factory: Factory,
     input: Any,
     *,
-    store: ArtifactStore,
+    store: Store,
     deps: Any = None,
     run_id: str | None = None,
     mission_id: str | None = None,
@@ -113,85 +254,216 @@ async def run_factory(
         )
     await store.put(incoming)
 
-    steps: list[StationResult] = []
-    inputs: dict[int, Artifact[Any]] = {0: incoming}
-    attempts: Counter[str] = Counter()
-    reworked: Counter[str] = Counter()
+    progress = _Progress(
+        factory=factory,
+        store=store,
+        deps=deps,
+        run_id=identifier,
+        incoming=incoming,
+        mission_id=mission_id,
+        stamps=stamps,
+        on_step=on_step,
+    )
+    await progress.save(progress.record("running"))
+    return await _drive(progress, index=0, input=incoming)
 
-    def record(
-        outcome: RunOutcome,
-        *,
-        finished: bool = False,
-        stopped_at: str | None = None,
-        output: Artifact[Any] | None = None,
-    ) -> Run:
-        return Run(
-            run_id=identifier,
-            factory=factory.name,
-            factory_version=factory.version,
-            factory_digest=factory.digest,
-            outcome=outcome,
-            finished=finished,
-            stopped_at=stopped_at,
-            input_ref=incoming.ref,
-            output_ref=output.ref if output else None,
-            output=output.payload if output else None,
-            steps=tuple(steps),
-            mission_id=mission_id,
-            methodologies=stamps,
+
+async def resume_factory(
+    factory: Factory,
+    run: Run,
+    answer: Decision | DeferredToolResults,
+    *,
+    store: Store,
+    deps: Any = None,
+    on_step: OnStep | None = None,
+) -> Run:
+    """Do the work of :meth:`Factory.resume`."""
+    waiting = run.waiting
+    if waiting is None or run.stopped_at is None:
+        raise ApprovalRefused(f"run {run.run_id!r} is not waiting; its outcome is {run.outcome!r}")
+    if run.factory_digest != factory.digest:
+        raise ApprovalRefused(
+            f"run {run.run_id!r} was made by a factory of another shape; "
+            "resume it on the factory that started it"
         )
+    stored = await store.get_run(run.run_id)
+    if stored.revision != run.revision:
+        raise RunConflict(
+            f"run {run.run_id!r} has moved on since it was read; load it again with get_run"
+        )
+    index = factory.index_of(run.stopped_at)
+    station = factory.stations[index]
+    step = run.steps[-1]
+    first = factory.stations[0]
+    progress = _Progress(
+        factory=factory,
+        store=store,
+        deps=deps,
+        run_id=run.run_id,
+        incoming=await store.get(run.input_ref, first.input_type),
+        mission_id=run.mission_id,
+        stamps=run.methodologies,
+        on_step=on_step,
+        saved=stored,
+        steps=list(run.steps),
+        approvals=list(run.approvals),
+        reworked=Counter(run.reworked),
+    )
+    station_input = await store.get(step.input_ref, station.input_type)
 
-    index = 0
-    feedback: Feedback | None = None
-    # The latest conversations of each station's agents, carried on at a later attempt.
-    conversations: dict[str, dict[str, ArtifactRef]] = {}
+    if isinstance(answer, DeferredToolResults):
+        if waiting.kind != "tool-calls":
+            raise ApprovalRefused(
+                f"run {run.run_id!r} waits for a decision; use run.approve, "
+                "run.request_changes or run.reject"
+            )
+        await _claim(progress)
+        return await _drive(progress, index=index, input=station_input, resume=step, answer=answer)
+
+    if not isinstance(answer, Decision):  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise ApprovalRefused(f"cannot resume with {type(answer).__name__}")
+    if waiting.kind == "tool-calls":
+        raise ApprovalRefused(
+            f"run {run.run_id!r} waits on tool calls; answer them with DeferredToolResults"
+        )
+    if (answer.station, answer.waiting, answer.artifact) != (
+        waiting.station,
+        waiting.kind,
+        waiting.artifact,
+    ):
+        raise ApprovalRefused(
+            f"the decision was made on {answer.artifact} at {answer.station!r}, "
+            f"but the run waits on {waiting.artifact} at {waiting.station!r}"
+        )
+    decided = answer.model_copy(
+        update={"overrode": answer.decision == "approved" and waiting.kind == "escalation"}
+    )
+    progress.approvals.append(decided)
+
+    if decided.decision == "rejected":
+        return await progress.save(progress.record("failed", stopped_at=station.name))
+    if decided.decision == "changes_requested":
+        feedback = Feedback(reasons=(cast(str, decided.note),), by=decided.by)
+        await _claim(progress)
+        return await _drive(progress, index=index, input=station_input, feedback=feedback)
+    if waiting.artifact is None:
+        raise ApprovalRefused(
+            f"station {station.name!r} offered no work to accept; ask for changes or reject"
+        )
+    accepted = await store.get(waiting.artifact, station.output_type)
+    await _claim(progress)
+    return await _drive(progress, index=index + 1, input=accepted)
+
+
+async def _claim(progress: _Progress) -> None:
+    """Save the answer, and the run as running, before any resumed work starts.
+
+    The save is a compare-and-swap on the revision that was waiting, so of two answers
+    to the same run only one gets here: the other raises :class:`RunConflict` and runs
+    nothing.
+    """
+    await progress.save(progress.record("running"))
+
+
+async def _drive(
+    progress: _Progress,
+    *,
+    index: int,
+    input: Artifact[Any],
+    feedback: Feedback | None = None,
+    resume: StationResult | None = None,
+    answer: DeferredToolResults | None = None,
+) -> Run:
+    """Run stations from ``index`` until the work finishes or has to stop."""
+    factory, store = progress.factory, progress.store
+    current = input
     while index < len(factory.stations):
         station = factory.stations[index]
-        attempts[station.name] += 1
+        attempt = resume.attempt if resume is not None else progress.attempts(station.name) + 1
         result = await station.run(
-            inputs[index],
+            current,
             store=store,
-            deps=deps,
-            run_id=identifier,
-            attempt=attempts[station.name],
-            mission_id=mission_id,
-            methodologies=stamps,
-            feedback=feedback,
-            conversations=conversations.get(station.name),
+            deps=progress.deps,
+            run_id=progress.run_id,
+            attempt=attempt,
+            mission_id=progress.mission_id,
+            methodologies=progress.stamps,
+            feedback=resume.feedback if resume is not None else feedback,
+            conversations=progress.conversations(station.name) if resume is None else None,
+            resume=resume,
+            answer=answer,
         )
-        feedback = None
-        conversations[station.name] = {
-            **conversations.get(station.name, {}),
-            **result.conversations,
-        }
-        steps.append(result)
-        if on_step is not None:
-            await on_step(record("running"))
+        feedback, resume, answer = None, None, None
+        progress.steps.append(result)
 
-        if result.outcome in ("did_not_run", "needs_approval"):
-            return record(result.outcome, stopped_at=station.name)
+        if result.outcome == "did_not_run":
+            return await progress.save(progress.record("did_not_run", stopped_at=station.name))
+        if result.outcome == "waiting":
+            return await progress.save(
+                progress.record("waiting", stopped_at=station.name, waiting=result.waiting)
+            )
+        await progress.save(progress.record("running"))
 
         if result.outcome == "failed":
             rule = factory.rework_for(station.name)
-            if rule is not None and reworked[station.name] < rule.limit:
-                reworked[station.name] += 1
+            if rule is not None and progress.reworked[station.name] < rule.limit:
+                progress.reworked[station.name] += 1
                 # The target is the very next station to run, so it alone gets the reasons.
                 if result.decision is not None:
                     feedback = Feedback(reasons=result.decision.reasons)
                 index = factory.index_of(rule.target.name)
+                current = await store.get(_input_of(progress, index), rule.target.input_type)
                 continue
+            if rule is not None and rule.on_limit == "escalate" and result.output_ref:
+                failed_output = await store.get(result.output_ref, station.output_type)
+                reasons = result.decision.reasons if result.decision else ()
+                return await progress.save(
+                    progress.record(
+                        "waiting",
+                        stopped_at=station.name,
+                        waiting=Waiting(
+                            kind="escalation",
+                            station=station.name,
+                            artifact=failed_output.ref,
+                            output=failed_output.payload,
+                            reasons=("rework ran out", *reasons),
+                        ),
+                    )
+                )
             if rule is None or rule.on_limit != "continue":
-                return record("failed", stopped_at=station.name)
+                return await progress.save(progress.record("failed", stopped_at=station.name))
 
         if result.output_ref is None:  # cannot happen: a station that ran has an output
-            return record("did_not_run", stopped_at=station.name)
-        inputs[index + 1] = await store.get(result.output_ref, station.output_type)
+            return await progress.save(progress.record("did_not_run", stopped_at=station.name))
+        current = await store.get(result.output_ref, station.output_type)
         index += 1
 
-    # The run failed if any station's last attempt failed, even though the work carried on.
-    last = {step.station: step.outcome for step in steps}
-    return record(
-        "failed" if "failed" in last.values() else "passed",
-        finished=True,
-        output=inputs[len(factory.stations)],
+    return await progress.save(
+        progress.record(
+            "failed" if _any_failed(progress) else "passed", finished=True, output=current
+        )
+    )
+
+
+def _input_of(progress: _Progress, index: int) -> ArtifactRef:
+    """The input the station at ``index`` last received."""
+    name = progress.factory.stations[index].name
+    step = next(step for step in reversed(progress.steps) if step.station == name)
+    return step.input_ref
+
+
+def _any_failed(progress: _Progress) -> bool:
+    """Whether any station's last attempt failed and no person accepted it anyway.
+
+    The run fails then, even though the work carried on to the end.
+    """
+    last = {step.station: step for step in progress.steps}
+    accepted = {
+        (decision.station, decision.artifact)
+        for decision in progress.approvals
+        if decision.decision == "approved"
+    }
+    return any(
+        step.outcome == "failed" and (name, step.output_ref) not in accepted
+        for name, step in last.items()
     )
