@@ -34,6 +34,7 @@ export default defineConfig({
       sidebar: [
         { label: 'Start here', items: [{ label: 'Overview', slug: '' }] },
         { label: 'Concepts', items: ['factories', 'stations', 'agents', 'gates', 'approvals', 'stores', 'missions', 'methodologies'] },
+        { label: 'Methodologies', items: ['elephant-goldfish'] },
         { label: 'Project', items: ['decisions', 'contributing'] },
       ],
     }),
