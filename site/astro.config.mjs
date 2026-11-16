@@ -33,7 +33,7 @@ export default defineConfig({
       // One entry per page. A pull request that adds a page adds its entry here.
       sidebar: [
         { label: 'Start here', items: [{ label: 'Overview', slug: '' }] },
-        { label: 'Concepts', items: ['factories', 'stations', 'agents', 'gates', 'approvals', 'stores', 'missions'] },
+        { label: 'Concepts', items: ['factories', 'stations', 'agents', 'gates', 'approvals', 'stores', 'missions', 'methodologies'] },
         { label: 'Project', items: ['decisions', 'contributing'] },
       ],
     }),

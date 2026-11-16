@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, Self, cast
@@ -13,7 +13,7 @@ from pydantic import AwareDatetime, Field, model_validator
 from pydantic_ai import DeferredToolResults
 
 from ..artifacts import Artifact, ArtifactRef
-from ..contracts import Digest, FactoryError, MethodologyRef, Name, Record, check_name
+from ..contracts import Digest, FactoryError, Name, Record, check_name
 from ..stations import Feedback, StationInputInvalid, StationResult, Waiting
 from ..stations._station import coerce, recorded_as
 from ._mission import Mission, Outcome, Signal, signal_artifact
@@ -98,7 +98,6 @@ class Run(Record):
     reworked: dict[Name, int] = Field(default_factory=lambda: {})
     mission_id: Name | None = None
     mission_ref: ArtifactRef | None = None
-    methodologies: tuple[MethodologyRef, ...] = ()
     outcome_signal: ArtifactRef | None = None
 
     @model_validator(mode="after")
@@ -177,7 +176,6 @@ class _Progress:
     incoming: Artifact[Any]
     mission: Mission | None
     mission_ref: ArtifactRef | None
-    stamps: tuple[MethodologyRef, ...]
     on_step: OnStep | None
     saved: Run | None = None
     steps: list[StationResult] = field(default_factory=lambda: [])
@@ -225,7 +223,6 @@ class _Progress:
             reworked=dict(self.reworked),
             mission_id=self.mission_id,
             mission_ref=self.mission_ref,
-            methodologies=self.stamps,
         )
 
     async def save(self, run: Run) -> Run:
@@ -267,11 +264,9 @@ async def run_factory(
     store: Store,
     deps: Any = None,
     run_id: str | None = None,
-    methodologies: Sequence[MethodologyRef] = (),
     on_step: OnStep | None = None,
 ) -> Run:
     """Do the work of :meth:`Factory.run`."""
-    stamps = tuple(methodologies)
     first = factory.stations[0]
     given: object = input
     payload: object = cast("Artifact[Any]", given).payload if isinstance(given, Artifact) else given
@@ -302,9 +297,7 @@ async def run_factory(
         recorded = (
             cast("Artifact[Mission]", given)
             if isinstance(given, Artifact)
-            else Artifact.create(
-                mission, inputs=mission.signals, mission_id=mission.id, methodologies=stamps
-            )
+            else Artifact.create(mission, inputs=mission.signals, mission_id=mission.id)
         )
         await store.put(recorded)
     if isinstance(given, Artifact):
@@ -315,14 +308,11 @@ async def run_factory(
             payload_type=str,
             inputs=[recorded.ref],
             mission_id=recorded.payload.id,
-            methodologies=stamps,
         )
     elif recorded is not None:
         incoming = recorded
     else:
-        incoming = Artifact.create(
-            payload, payload_type=recorded_as(first.input_type, payload), methodologies=stamps
-        )
+        incoming = Artifact.create(payload, payload_type=recorded_as(first.input_type, payload))
     await store.put(incoming)
 
     progress = _Progress(
@@ -333,7 +323,6 @@ async def run_factory(
         incoming=incoming,
         mission=mission,
         mission_ref=None if recorded is None else recorded.ref,
-        stamps=stamps,
         on_step=on_step,
     )
     await progress.save(progress.record("running"))
@@ -378,7 +367,6 @@ async def resume_factory(
             None if run.mission_ref is None else (await store.get(run.mission_ref, Mission)).payload
         ),
         mission_ref=run.mission_ref,
-        stamps=run.methodologies,
         on_step=on_step,
         saved=stored,
         steps=list(run.steps),
@@ -463,7 +451,6 @@ async def _drive(
             run_id=progress.run_id,
             attempt=attempt,
             mission_id=progress.mission_id,
-            methodologies=progress.stamps,
             feedback=resume.feedback if resume is not None else feedback,
             conversations=progress.conversations(station.name) if resume is None else None,
             resume=resume,

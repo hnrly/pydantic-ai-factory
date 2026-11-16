@@ -93,6 +93,10 @@ software = Factory("software", [station(designer), station(builder)])
 
 print({name: [agent.name for agent in agents] for name, agents in software.agents().items()})
 #> {'designer': ['designer'], 'builder': ['builder']}
+print(software.methodologies())
+#> {'designer': (), 'builder': ()}
 ```
+
+`factory.methodologies()` gives each station's [methodologies](methodologies.md), the objects themselves, before anything runs. These agents have none.
 
 A factory is checked when it is declared. If one station's output type does not match the next station's input, or two stations share a name, `Factory(...)` raises `FactoryDefinitionError` listing every problem at once.

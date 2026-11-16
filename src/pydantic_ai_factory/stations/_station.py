@@ -17,6 +17,14 @@ from pydantic_ai._agent_graph import GraphAgentState
 from pydantic_ai.agent import AbstractAgent, AgentRunResult
 from typing_extensions import TypeVar as TypeVarWithDefault
 
+from .._methodology import (
+    EvidenceCollector,
+    Methodology,
+    MethodologyDefinitionError,
+    judge,
+    methodologies_of,
+    unique,
+)
 from ..artifacts import Artifact, ArtifactInvalid, ArtifactRef, ArtifactStore, Producer
 from ..artifacts._artifact import adapter_for
 from ..contracts import DefinitionError, FactoryError, MethodologyRef, Name, Record, check_name
@@ -88,11 +96,15 @@ class Feedback(Record):
 
 
 class AgentCall(Record):
-    """The record of one finished ``ctx.run_agent`` call, so a resumed station can replay it."""
+    """The record of one finished ``ctx.run_agent`` call, so a resumed station can replay it.
+
+    ``evidence`` is what the agent's methodologies recorded during the call.
+    """
 
     agent: Name
     conversation: ArtifactRef
     output: ArtifactRef
+    evidence: tuple[ArtifactRef, ...] = ()
 
 
 class Waiting(Record):
@@ -138,7 +150,6 @@ class _Session:
     input: Artifact[Any]
     store: ArtifactStore
     mission_id: str | None
-    methodologies: tuple[MethodologyRef, ...]
     feedback: Feedback | None
     previous: Mapping[str, ArtifactRef]
     replay: tuple[AgentCall, ...] = ()
@@ -147,7 +158,17 @@ class _Session:
     artifacts: list[Artifact[Any]] = field(default_factory=lambda: [])
     conversations: dict[str, ArtifactRef] = field(default_factory=lambda: {})
     calls: list[AgentCall] = field(default_factory=lambda: [])
+    in_force: list[Methodology] = field(default_factory=lambda: [])
     closed: bool = False
+
+    @property
+    def methodologies(self) -> tuple[Methodology, ...]:
+        """The methodologies of every agent run so far in this attempt."""
+        return unique(self.in_force)
+
+    @property
+    def stamps(self) -> tuple[MethodologyRef, ...]:
+        return tuple(methodology.ref for methodology in self.methodologies)
 
     def check_open(self, doing: str) -> None:
         if self.closed:
@@ -158,7 +179,7 @@ class _Session:
             payload,
             produced_by=self.producer,
             mission_id=self.mission_id,
-            methodologies=self.methodologies,
+            methodologies=self.stamps,
             **more,
         )
 
@@ -190,6 +211,22 @@ def _output_type_of(agent: AbstractAgent[Any, Any]) -> Any:
     if inspect.isclass(kind) or isinstance(kind, types.GenericAlias):
         return kind
     return Any
+
+
+def _widen_output_retries(agent: AbstractAgent[Any, Any], given: Any, extra: int) -> Any:
+    """The ``retries`` argument that gives the agent ``extra`` more output retries.
+
+    The agent's own budget is kept for ordinary validation retries, and the methodologies'
+    rounds are added on top. ``given`` is any ``retries`` the station passed itself.
+    """
+    if isinstance(given, int):
+        return {"tools": given, "output": given + extra}
+    # Pydantic AI keeps the agent's own budget privately; 1 is its default.
+    own: int = getattr(agent, "_max_output_retries", 1)
+    if isinstance(given, Mapping):
+        budgets = dict(cast("Mapping[str, int]", given))
+        return {**budgets, "output": budgets.get("output", own) + extra}
+    return {"output": own + extra}
 
 
 def replayed_result(output: Any, conversation: Conversation) -> AgentRunResult[Any]:
@@ -251,6 +288,10 @@ class StationContext(Generic[DepsT]):
         again from the top: calls that already finished return their stored result,
         matched by agent and order, and the waiting call carries on with the answer.
 
+        The evidence each :class:`Methodology` on the agent records is stored and added
+        to the station's evidence, and its gate is joined to the station's. The agent's
+        output retry budget is raised by each methodology's ``output_retries``.
+
         Raises :class:`StationDefinitionError` if the station does not name ``agent``.
         """
         session = self._session
@@ -270,6 +311,8 @@ class StationContext(Generic[DepsT]):
             )
         name = cast(str, agent.name)
         index = len(session.calls)
+        methodologies = methodologies_of(agent)
+        session.in_force.extend(methodologies)
 
         if index < len(session.replay):
             done = session.replay[index]
@@ -283,6 +326,17 @@ class StationContext(Generic[DepsT]):
                 )
             replayed = await session.store.get(done.conversation, Conversation)
             output = await session.store.get(done.output, _output_type_of(agent))
+            kinds = {kind.__name__: kind for m in methodologies for kind in m.evidence}
+            for ref in done.evidence:
+                if ref.type not in kinds:
+                    raise StationDefinitionError(
+                        f"station {session.station!r}",
+                        [
+                            f"on resume, agent {name!r} has no methodology that records "
+                            f"{ref.type}; resume on the agents that started the run"
+                        ],
+                    )
+                session.artifacts.append(await session.store.get(ref, kinds[ref.type]))
             session.conversations[name] = done.conversation
             session.calls.append(done)
             return replayed_result(output.payload, replayed.payload)
@@ -307,12 +361,23 @@ class StationContext(Generic[DepsT]):
         output_type = _with_deferred(agent, kwargs)
         if output_type is not None:
             kwargs["output_type"] = output_type
+        collector = EvidenceCollector()
+        kwargs["capabilities"] = [*(kwargs.get("capabilities") or ()), collector]
+        extra = sum(methodology.output_retries for methodology in methodologies)
+        if extra:
+            kwargs["retries"] = _widen_output_retries(agent, kwargs.get("retries"), extra)
         result: AgentRunResult[Any] = await agent.run(
             prompt,
             conversation=conversation,
             deferred_tool_results=deferred_results,
             **kwargs,
         )
+        evidence: list[ArtifactRef] = []
+        for event in collector.recorded:
+            recorded = session.artifact(event.payload, inputs=(session.input.ref,))
+            await session.store.put(recorded)
+            session.artifacts.append(recorded)
+            evidence.append(recorded.ref)
         kept = session.artifact(
             result.conversation,
             payload_type=Conversation,
@@ -328,7 +393,11 @@ class StationContext(Generic[DepsT]):
             result.output, type=f"AgentOutput:{name}", inputs=(session.input.ref,)
         )
         await session.store.put(output)
-        session.calls.append(AgentCall(agent=name, conversation=kept.ref, output=output.ref))
+        session.calls.append(
+            AgentCall(
+                agent=name, conversation=kept.ref, output=output.ref, evidence=tuple(evidence)
+            )
+        )
         return result
 
 
@@ -337,9 +406,10 @@ class Station(Generic[InT, OutT]):
     """One bounded job: typed input in, typed output out, judged by an optional gate.
 
     ``function`` is the station's own code. It may run agents, through
-    ``ctx.run_agent``, or none. ``agents`` lists every agent it may run. Declare a
-    station with :func:`station`, which reads the types from the function's signature
-    and finds the agents itself. :meth:`run` runs it once and records what happened.
+    ``ctx.run_agent``, or none. ``agents`` lists every agent it may run, and
+    :attr:`methodologies` the methodologies attached to them. Declare a station with
+    :func:`station`, which reads the types from the function's signature and finds the
+    agents itself. :meth:`run` runs it once and records what happened.
     """
 
     name: str
@@ -376,8 +446,18 @@ class Station(Generic[InT, OutT]):
                 names.append(agent.name)
         for name in sorted({n for n in names if n and names.count(n) > 1}):
             problems.append(f"two agents are named {name!r}; give each agent its own name")
+        if not problems:
+            try:
+                _ = self.methodologies
+            except MethodologyDefinitionError as error:
+                problems.extend(error.findings)
         if problems:
             raise StationDefinitionError(f"station {self.name!r}", problems)
+
+    @property
+    def methodologies(self) -> tuple[Methodology, ...]:
+        """Every methodology attached to the station's agents, one of each name."""
+        return unique([m for agent in self.agents for m in methodologies_of(agent)])
 
     async def run(
         self,
@@ -388,7 +468,6 @@ class Station(Generic[InT, OutT]):
         run_id: str | None = None,
         attempt: int = 1,
         mission_id: str | None = None,
-        methodologies: Sequence[MethodologyRef] = (),
         feedback: Feedback | None = None,
         conversations: Mapping[str, ArtifactRef] | None = None,
         resume: StationResult | None = None,
@@ -419,7 +498,6 @@ class Station(Generic[InT, OutT]):
             run_id=run_id,
             attempt=attempt,
             mission_id=mission_id,
-            methodologies=methodologies,
             feedback=feedback,
             previous=conversations or {},
             resume=resume,
@@ -759,14 +837,12 @@ async def _attempt(
     run_id: str | None,
     attempt: int,
     mission_id: str | None,
-    methodologies: Sequence[MethodologyRef],
     feedback: Feedback | None,
     previous: Mapping[str, ArtifactRef],
     resume: StationResult | None,
     answer: DeferredToolResults | None,
 ) -> StationResult:
     """Do the work of :meth:`Station.run`."""
-    stamps = tuple(methodologies)
     given: object = input
     payload: object = cast("Artifact[Any]", given).payload if isinstance(given, Artifact) else given
     try:
@@ -797,7 +873,6 @@ async def _attempt(
             payload,
             payload_type=recorded_as(station.input_type, payload),
             mission_id=mission_id,
-            methodologies=stamps,
         )
     await store.put(incoming)
 
@@ -808,7 +883,6 @@ async def _attempt(
         input=incoming,
         store=store,
         mission_id=mission_id,
-        methodologies=stamps,
         feedback=feedback,
         previous=previous,
         replay=resume.calls if resume is not None else (),
@@ -923,10 +997,16 @@ async def _attempt(
             **more,
         )
 
-    if station.gate is None:
+    judged = judge(
+        station.name,
+        station.gate,
+        session.methodologies,
+        output,
+        Evidence(session.artifacts),
+        stamps=session.stamps,
+    )
+    if judged is None:
         return approval_or("not_judged")
-
-    judged = station.gate.evaluate(output, Evidence(session.artifacts), methodologies=stamps)
     if isinstance(judged, NotEvaluated):
         return result(
             "did_not_run",

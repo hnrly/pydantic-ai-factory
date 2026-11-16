@@ -10,8 +10,9 @@ from typing import Any, Literal
 from pydantic_ai import DeferredToolResults
 from pydantic_ai.agent import AbstractAgent
 
+from .._methodology import Methodology
 from ..artifacts import ArtifactRef, ArtifactStore
-from ..contracts import DefinitionError, MethodologyRef, check_name, digest_of, run_sync
+from ..contracts import DefinitionError, check_name, digest_of, run_sync
 from ..stations import Station
 from ..stations._station import type_name
 from ._mission import Accept, Declined, IntakeError, Mission, Signal, signal_artifact
@@ -100,13 +101,21 @@ class Factory:
         """Every agent each station may run, by station name, before anything runs."""
         return {station.name: station.agents for station in self.stations}
 
+    def methodologies(self) -> dict[str, tuple[Methodology, ...]]:
+        """Every methodology on each station's agents, by station name, before anything runs.
+
+        Each is the methodology object itself; its ``ref`` is the name and version
+        stamped on records.
+        """
+        return {station.name: station.methodologies for station in self.stations}
+
     @property
     def digest(self) -> str:
         """A digest of the factory's shape.
 
-        It covers the stations in order, with their versions, types and gate versions,
-        and the rework rules. A run records it, so a run that stopped can only be
-        resumed on a factory of the same shape.
+        It covers the stations in order, with their versions, types, gate versions,
+        agents and methodologies, and the rework rules. A run records it, so a run
+        that stopped can only be resumed on a factory of the same shape.
         """
         return digest_of(
             {
@@ -120,6 +129,7 @@ class Factory:
                         "output": type_name(s.output_type),
                         "gate": [s.gate.name, s.gate.version] if s.gate else None,
                         "agents": [agent.name for agent in s.agents],
+                        "methodologies": [str(m.ref) for m in s.methodologies],
                         "approval": s.approval,
                     }
                     for s in self.stations
@@ -138,7 +148,6 @@ class Factory:
         store: Store,
         deps: Any = None,
         run_id: str | None = None,
-        methodologies: Sequence[MethodologyRef] = (),
         on_step: OnStep | None = None,
     ) -> Run:
         """Run ``input`` through the stations until the work finishes or has to stop.
@@ -164,7 +173,6 @@ class Factory:
             store=store,
             deps=deps,
             run_id=run_id,
-            methodologies=methodologies,
             on_step=on_step,
         )
 
@@ -211,7 +219,6 @@ class Factory:
         store: Store,
         deps: Any = None,
         run_id: str | None = None,
-        methodologies: Sequence[MethodologyRef] = (),
         on_step: OnStep | None = None,
     ) -> Run:
         """Run ``input`` through the stations, from code that is not async. See :meth:`run`."""
@@ -221,7 +228,6 @@ class Factory:
                 store=store,
                 deps=deps,
                 run_id=run_id,
-                methodologies=methodologies,
                 on_step=on_step,
             )
         )

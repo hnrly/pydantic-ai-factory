@@ -4,6 +4,9 @@ Every change a user can see is listed here, newest first.
 
 ## Unreleased
 
+- Add methodologies. `Methodology` subclasses Pydantic AI's `AbstractCapability` and adds `name`, `version`, the `evidence` types it records with `self.record(ctx, payload)`, and `judge`, its gate. Attach it to an agent with `capabilities=[...]`. In a station, `ctx.run_agent` stores the evidence, joins the methodology's gate to the station's into one combined gate, stamps its name and version on the records, and adds its `output_retries` to the agent's output retry budget. A replayed agent call gives back its evidence. `Station.methodologies` and `Factory.methodologies()` list them before a run, and the factory digest covers them.
+- Remove the `methodologies=` argument of `Factory.run`, `Factory.run_sync` and `Station.run`, and the `Run.methodologies` field. Methodologies live only on agents.
+
 - Add missions and signals. `Mission(objective, success_criteria=..., constraints=...)` is what a factory commits to; when the first station takes a `Mission` or a `str`, `Factory.run` turns a plain string into one, and a station that takes a `str`, such as `station(agent)`, is given `mission.as_prompt()`. The run keeps the mission as an artifact, named by `run.mission_ref`, and every artifact it makes carries the mission's id. `Signal(payload, source=None)` is work that arrives on its own; the payload's type is its kind. `Factory(..., accept=...)` and `factory.intake` (or `intake_sync`) store each signal and return a `Mission` that records them, or `Declined(reason)`. When a run of a mission made by intake ends, the factory stores an `Outcome` signal and names it in `run.outcome_signal`.
 - Remove the `mission_id=` argument of `Factory.run` and `run_sync`. A run's mission comes from its input.
 

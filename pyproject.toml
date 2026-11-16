@@ -101,11 +101,10 @@ containers = ["pydantic_ai_factory"]
 layers = [
   "(cli)",
   "(methodologies)",
-  "(capabilities)",
   "(stores)",
   "(factory)",
-  "(_methodology)",
   "(stations)",
+  "(_methodology)",
   "(gates)",
   "(artifacts)",
   "(contracts)",

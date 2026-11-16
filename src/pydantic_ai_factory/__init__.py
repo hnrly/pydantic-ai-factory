@@ -3,6 +3,7 @@
 The public contract arrives layer by layer. Each layer is exported from here as it lands.
 """
 
+from ._methodology import EvidenceRecorded, Methodology, MethodologyDefinitionError
 from .artifacts import (
     Artifact,
     ArtifactCorrupt,
@@ -73,6 +74,7 @@ __all__ = [
     "DefinitionError",
     "Escalate",
     "Evidence",
+    "EvidenceRecorded",
     "Factory",
     "FactoryDefinitionError",
     "FactoryError",
@@ -83,6 +85,8 @@ __all__ = [
     "IntakeError",
     "LocalStore",
     "MemoryStore",
+    "Methodology",
+    "MethodologyDefinitionError",
     "MethodologyRef",
     "Mission",
     "NotEvaluated",
