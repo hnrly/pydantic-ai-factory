@@ -34,6 +34,16 @@ export default defineConfig({
       sidebar: [
         { label: 'Start here', items: [{ label: 'Overview', slug: '' }] },
         { label: 'Concepts', items: ['factories', 'stations', 'agents', 'gates', 'approvals', 'stores', 'missions', 'methodologies'] },
+        {
+          label: 'Software Factory',
+          items: [
+            { label: 'Overview', slug: 'software-factory' },
+            'design-station',
+            { label: 'Build (coming soon)', slug: 'build-station' },
+            { label: 'Quality (coming soon)', slug: 'quality-station' },
+            { label: 'Release (coming soon)', slug: 'release-station' },
+          ],
+        },
         { label: 'Methodologies', items: ['elephant-goldfish'] },
         { label: 'Operate', items: ['observability'] },
         { label: 'Project', items: ['decisions', 'contributing'] },

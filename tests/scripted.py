@@ -18,7 +18,14 @@ from contextlib import contextmanager
 from typing import Any
 
 from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 SAMPLE_MODEL = "anthropic:claude-opus-5-5"
@@ -88,6 +95,104 @@ def call(tool: str, **args: Any) -> ModelResponse:
     return ModelResponse(parts=[ToolCallPart(tool, args, f"{tool}-1")])
 
 
+def _said(messages: list[ModelMessage]) -> str:
+    """Everything the model was sent so far: prompts, tool results and retry prompts."""
+    return "\n".join(
+        str(getattr(part, "content", ""))
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+    )
+
+
+def _answered(messages: list[ModelMessage], tool: str) -> bool:
+    return any(
+        isinstance(part, ToolReturnPart) and part.tool_name == tool
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+    )
+
+
+def _output(info: AgentInfo, args: dict[str, Any]) -> ModelResponse:
+    return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
+
+
+TODO = {
+    "title": "To-do list",
+    "goal": "Keep track of tasks in a browser.",
+    "behaviour": [
+        "Type a task and press Enter to add it.",
+        "Tick a task's box to mark it done.",
+    ],
+    "acceptance_criteria": [
+        "A task typed and entered appears in the list.",
+        "Ticked tasks stay ticked after a reload.",
+    ],
+    "exclusions": ["Accounts", "Sharing between devices"],
+}
+BLANK_RULE = "Pressing Enter on a blank task adds nothing."
+DELETE_RULE = "Each task has a delete button that removes it."
+ONE_FILE_RULE = "Everything is in one file, index.html."
+STYLES_RULE = "Its styles sit in index.html too."
+BLANK_ISSUE = "The design never says what happens to a blank task."
+STYLES = "The design does not say where the styles go."
+ONE_FILE = "The mission asks for one file, so there is no separate stylesheet."
+
+
+def _todo(*rules: str) -> dict[str, Any]:
+    return {**TODO, "behaviour": [*TODO["behaviour"], *rules]}
+
+
+def software_designer(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    """The software factory's designer, as the pages on it tell the story.
+
+    A mission that keeps to one file draws a readiness finding, which the designer
+    contests. Any other mission's first draft misses blank tasks; the revision adds them,
+    and a person's request for changes adds a delete button.
+    """
+    said = _said(messages)
+    if "one file" in said.split("\n", 1)[0].lower():
+        if _answered(messages, "contest"):
+            return _output(info, _todo(BLANK_RULE, ONE_FILE_RULE, STYLES_RULE))
+        if "r1-readiness-1" in said:
+            return call("contest", finding_id="r1-readiness-1", evidence=ONE_FILE)
+        return _output(info, _todo(BLANK_RULE, ONE_FILE_RULE))
+    if "A person asked for changes" in said:
+        return _output(info, _todo(BLANK_RULE, DELETE_RULE))
+    if "Goldfish review" in said:
+        return _output(info, _todo(BLANK_RULE))
+    return _output(info, TODO)
+
+
+def _work(messages: list[ModelMessage]) -> str:
+    return _said(messages[:1]).lower()
+
+
+def critique(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    """Finds the missing blank-task rule, and nothing else."""
+    found = [] if "blank" in _work(messages) else [{"severity": "Major", "issue": BLANK_ISSUE}]
+    return _output(info, {"findings": found})
+
+
+def readiness(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    """Asks where the styles go in a one-file page that does not say."""
+    work = _work(messages)
+    found = "one file" in work and "styles" not in work
+    return _output(info, {"findings": [{"severity": "Major", "issue": STYLES}] if found else []})
+
+
+SOFTWARE: Script = {
+    "designer": [software_designer],
+    "goldfish-comprehension": [
+        {"paraphrase": "A to-do list in the browser: add tasks, tick them off.", "findings": []}
+    ],
+    "goldfish-critique": [critique],
+    "goldfish-readiness": [readiness],
+}
+"""The software factory's agents, for every page that runs it."""
+
+
 SCRIPTS: dict[str, Script] = {
     "docs/factories.md": {
         "designer": [DESIGN, DESIGN_WITH_BLANK],
@@ -104,13 +209,14 @@ SCRIPTS: dict[str, Script] = {
     "docs/missions.md": {"designer": [DESIGN], "builder": ["Built index.html."]},
     "docs/elephant-goldfish.md": {
         "designer": [DESIGN, DESIGN_WITH_BLANK],
-        "goldfish-newcomer": [{"paraphrase": PARAPHRASE, "findings": []}],
-        "goldfish-access": [{"findings": []}],
-        "goldfish-builder": [{"findings": [BLANK_TASK]}, {"findings": []}],
+        "goldfish-comprehension": [{"paraphrase": PARAPHRASE, "findings": []}],
+        "goldfish-critique": [{"findings": [BLANK_TASK]}, {"findings": []}],
+        "goldfish-readiness": [{"findings": []}],
     },
     "docs/methodologies.md": {
-        "goldfish-newcomer": [{"paraphrase": PARAPHRASE, "findings": []}],
-        "goldfish-builder": [{"findings": [BLANK_TASK]}, {"findings": []}],
+        "goldfish-comprehension": [{"paraphrase": PARAPHRASE, "findings": []}],
+        "goldfish-critique": [{"findings": [BLANK_TASK]}, {"findings": []}],
+        "goldfish-readiness": [{"findings": []}],
         "designer": [
             {"summary": DESIGN, "acceptance_criteria": ["Blank tasks are not added."]},
             {
@@ -119,4 +225,8 @@ SCRIPTS: dict[str, Script] = {
             },
         ],
     },
+    "docs/software-factory.md": SOFTWARE,
+    "docs/design-station.md": SOFTWARE,
+    "README.md": SOFTWARE,
+    "packages/software/README.md": SOFTWARE,
 }

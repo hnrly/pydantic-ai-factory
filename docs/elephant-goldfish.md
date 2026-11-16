@@ -11,21 +11,14 @@ Elephant Goldfish is Google's [method](https://github.com/google/elephant-goldfi
 from pydantic_ai import Agent
 
 from pydantic_ai_factory import MemoryStore, station
-from pydantic_ai_factory.methodologies import ElephantGoldfish, Goldfish, GoldfishReport, Standard
-
-ACCESSIBLE = Standard("accessible", "Everything on the page works with a keyboard and a screen reader.")
-
-page_goldfish = (
-    Goldfish("newcomer", stage="comprehension", job="Explain what this does, in your own words."),
-    Goldfish("access", stage="critique", job="Find anything a disabled person could not use.", standard=ACCESSIBLE),
-    Goldfish("builder", stage="readiness", job="Say whether you could build this page without asking anything."),
-)
+from pydantic_ai_factory.methodologies import ElephantGoldfish, GoldfishReport
+from pydantic_ai_factory_software import DESIGN_GOLDFISH
 
 designer = Agent(
     "anthropic:claude-opus-5-5",
     name="designer",
     instructions="Write a short design.",
-    capabilities=[ElephantGoldfish(goldfish=page_goldfish, rounds=2)],
+    capabilities=[ElephantGoldfish(goldfish=DESIGN_GOLDFISH, rounds=2)],
 )
 
 store = MemoryStore()
@@ -37,13 +30,13 @@ print(result.outcome, result.decision.reasons)
 for ref in result.evidence:
     report = store.get_sync(ref, GoldfishReport).payload
     print(report.round, [(finding.id, finding.severity, finding.issue) for finding in report.findings])
-    #> 1 [('r1-builder-1', 'Major', 'It does not say what happens when you press Enter on a blank task.')]
+    #> 1 [('r1-critique-1', 'Major', 'It does not say what happens when you press Enter on a blank task.')]
     #> 2 []
 ```
 
 When the designer finishes a draft, the goldfish read it. Their findings go back to the designer in the same conversation, and it revises. This repeats until a round is clean or the rounds run out. Inside a [station](stations.md), each round's report is stored, and the station cannot pass unless the last round was clean for this exact draft.
 
-Above, the first draft did not say what happens to a blank task. The builder goldfish found that, the designer added it, and the second round was clean. The station's gate, `clean_final_round`, read both reports. Each is stamped `elephant-goldfish@1`.
+`DESIGN_GOLDFISH` comes from the [software factory](software-factory.md): three goldfish, `comprehension`, `critique` and `readiness`. Above, the first draft did not say what happens to a blank task. The `critique` goldfish found that, the designer added it, and the second round was clean. The station's gate, `clean_final_round`, read both reports. Each is stamped `elephant-goldfish@1`.
 
 ## The goldfish
 
@@ -74,7 +67,7 @@ Each goldfish is an agent named `goldfish-<name>`, so it shows up by that name i
 
 ## Findings and answers
 
-Each finding is a `Blocker`, a `Major` or a `Nit`. A round is clean when no Blocker or Major is open; nits never block. Each finding has an id from its round, its goldfish and its place, such as `r1-builder-1`.
+Each finding is a `Blocker`, a `Major` or a `Nit`. A round is clean when no Blocker or Major is open; nits never block. Each finding has an id from its round, its goldfish and its place, such as `r1-critique-1`.
 
 The author answers every finding: it fixes it, contests it with evidence, escalates it to a person, or leaves a nit alone. It contests with the `contest` tool and escalates with the `escalate` tool. Contested and escalated findings go to a person as an [escalation](approvals.md#escalation). Code never waves them through. So does anything still open when the rounds run out.
 
