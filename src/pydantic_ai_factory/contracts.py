@@ -8,17 +8,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
 __all__ = [
+    "DefinitionError",
     "Digest",
     "FactoryError",
     "MethodologyRef",
     "Name",
     "Record",
     "canonical_json",
+    "check_name",
     "digest_of",
 ]
 
@@ -31,6 +34,33 @@ Digest = Annotated[str, StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$")]
 
 class FactoryError(Exception):
     """Base class for every error this library raises on purpose."""
+
+
+class DefinitionError(FactoryError):
+    """Something was declared in a way that cannot work.
+
+    ``subject`` says what was being declared, such as ``station 'design'``. ``findings``
+    lists every problem found, so they can all be fixed in one go.
+    """
+
+    def __init__(self, subject: str, findings: Sequence[str]) -> None:
+        self.subject = subject
+        self.findings = list(findings)
+        super().__init__(f"{subject} is not valid: " + "; ".join(self.findings))
+
+
+def check_name(value: object) -> str | None:
+    """Say what is wrong with ``value`` as a name, or return ``None`` if it is fine.
+
+    A name is one line of 1 to 200 characters with no leading or trailing space.
+    """
+    if not isinstance(value, str):
+        return f"must be a string, not {type(value).__name__}"
+    if not value or value != value.strip():
+        return "must be non-empty with no surrounding space"
+    if len(value) > 200 or "\n" in value or "\r" in value:
+        return "must be one line of at most 200 characters"
+    return None
 
 
 class Record(BaseModel):

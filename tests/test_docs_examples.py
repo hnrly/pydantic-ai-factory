@@ -1,7 +1,8 @@
 """Every Python sample in the documentation runs.
 
 A sample is a fenced ``python`` block in a Markdown page under ``docs/`` or in a README.
-It is executed as written, so a page cannot show code that does not work. A block that is
+It is executed as written, and every ``#>`` comment is checked against what the
+line above printed, so a page cannot show code or output that is not true. A block that is
 only a sketch opts out with ``python test="skip"`` on its opening fence, and the page
 should say why.
 
@@ -33,8 +34,15 @@ DOC_SAMPLES = python_samples(*(str(ROOT / source) for source in SOURCES))
 
 
 @pytest.mark.parametrize("example", DOC_SAMPLES, ids=str)
-def test_a_documentation_sample_runs(example: CodeExample, eval_example: EvalExample) -> None:
-    eval_example.run(example)
+def test_a_documentation_sample_runs_and_prints_what_it_says(
+    example: CodeExample, eval_example: EvalExample
+) -> None:
+    # Each `#>` comment in a sample is compared with what the line above really printed.
+    # Run `uv run pytest --update-examples` to rewrite them after an intended change.
+    if eval_example.update_examples:
+        eval_example.run_print_update(example)
+    else:
+        eval_example.run_print_check(example)
 
 
 def test_the_harness_finds_runs_and_fails_samples(
