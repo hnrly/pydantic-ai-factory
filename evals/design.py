@@ -328,9 +328,14 @@ def designers(model: Model | str) -> tuple[Agent[None, Design], Agent[None, Desi
         output_type=Design,
         instructions=DESIGNER_INSTRUCTIONS,
         capabilities=[ElephantGoldfish(goldfish=DESIGN_GOLDFISH)],
+        model_settings={"cache": True},
     )
     plain_designer = Agent(
-        model, name="designer", output_type=Design, instructions=DESIGNER_INSTRUCTIONS
+        model,
+        name="designer",
+        output_type=Design,
+        instructions=DESIGNER_INSTRUCTIONS,
+        model_settings={"cache": True},
     )
     return designer, plain_designer
 
