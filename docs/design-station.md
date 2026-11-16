@@ -18,7 +18,7 @@ The Design station turns a mission into a design a person can approve and a buil
 | `exclusions` | Accounts, sharing between devices |
 | `open_questions` | Anything the mission left undecided. |
 
-Each field but `title` and `goal` is a list of short sentences. Acceptance criteria are numbered by their place, so the second is AC2. `render_markdown(design)` turns a design into Markdown.
+Each field but `title` and `goal` is a list of short sentences. Acceptance criteria are numbered by their place, so the second is AC2. `render_markdown(design)` turns a design into Markdown. If the designer wrote a label such as "AC2:" itself, `render_markdown` drops it, so the label is not printed twice.
 
 A design that still has open questions fails the station's gate, `no_open_questions`, and goes back to the designer, which asks you or settles them. After `repairs` tries, two by default, a person decides.
 
@@ -34,7 +34,7 @@ The designer revised. The second round was clean, so the run waited for a person
 
 ## When the designer disagrees
 
-The designer may contest a finding instead of fixing it. Then a person decides:
+The designer may contest a finding instead of fixing it. Then a person decides. The designer is told not to list a contested finding as an open question as well, because that question would fail `no_open_questions` and cost a second attempt for no reason:
 
 ```python
 from pydantic_ai_factory import MemoryStore

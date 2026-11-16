@@ -19,6 +19,7 @@ from pydantic_ai_factory_software import (
     SoftwareFactory,
     render_markdown,
 )
+from pydantic_ai_factory_software._design import DESIGNER_INSTRUCTIONS
 
 MISSION = "A to-do list web page where I can add tasks and tick them off."
 TODO: dict[str, Any] = {
@@ -329,3 +330,28 @@ def test_the_package_exports_only_the_factory_and_its_design_parts() -> None:
             "render_markdown",
         ]
     )
+
+
+def test_render_markdown_does_not_repeat_a_label_the_designer_wrote() -> None:
+    design = Design.model_validate(
+        {
+            **TODO,
+            "acceptance_criteria": [
+                "AC1: A task typed and entered appears in the list.",
+                "ac2 - Ticked tasks stay ticked after a reload.",
+                "AC3 is not a label when no separator follows the number.",
+            ],
+        }
+    )
+
+    text = render_markdown(design)
+
+    assert "- **AC1** A task typed and entered appears in the list." in text
+    assert "- **AC2** Ticked tasks stay ticked after a reload." in text
+    assert "- **AC3** AC3 is not a label when no separator follows the number." in text
+
+
+def test_the_designer_is_told_not_to_repeat_a_contested_finding_as_an_open_question() -> None:
+    assert "do not also list it as an open question" in DESIGNER_INSTRUCTIONS
+    description = Design.model_fields["acceptance_criteria"].description or ""
+    assert "do not number them" in description.lower()
