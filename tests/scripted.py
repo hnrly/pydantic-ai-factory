@@ -259,6 +259,7 @@ SCRIPTS: dict[str, Script] = {
     },
     "docs/software-factory.md": SOFTWARE,
     "docs/design-station.md": SOFTWARE,
+    "docs/measuring.md": SOFTWARE,
     "README.md": SOFTWARE,
     "packages/software/README.md": SOFTWARE,
 }

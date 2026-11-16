@@ -48,6 +48,8 @@ dev = [
   # The getting-started sample builds with Pydantic AI Harness. Its docs test needs
   # `coder`; the `live` tests need `anthropic`, the provider the samples name.
   "pydantic-ai-harness[coder,anthropic]>=0.68,<0.69",
+  # The evaluation set in evals/ is built on it.
+  "pydantic-evals>=2.68,<3",
   "pyright>=1.1.410,<2",
   "pytest>=9,<10",
   "pytest-examples>=0.0.18,<0.1",
@@ -77,7 +79,7 @@ known-first-party = ["pydantic_ai_factory", "pydantic_ai_factory_software"]
 "packages/*/tests/**" = ["S101"]
 
 [tool.pyright]
-include = ["src", "packages/software/src", "tests", "scripts"]
+include = ["src", "packages/software/src", "tests", "scripts", "evals"]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
 venvPath = "."
@@ -85,6 +87,8 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The evaluation set is imported by its tests as `evals`, from the repository root.
+pythonpath = ["."]
 addopts = "-ra --strict-config --strict-markers"
 markers = [
   "live: makes real, paid model requests; skipped unless selected with -m live",

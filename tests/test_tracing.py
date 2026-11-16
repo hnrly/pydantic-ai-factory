@@ -41,16 +41,21 @@ DESIGN = "One page. Type a task and press Enter to add it; tick its box to mark 
 FIXED = DESIGN + " Pressing Enter on a blank task adds nothing."
 
 EXPORTER = InMemorySpanExporter()
+ATTACHED: list[InMemorySpanExporter] = []
 
 
 @pytest.fixture(autouse=True)
 def spans() -> Iterator[InMemorySpanExporter]:
     # OpenTelemetry lets a process set its tracer provider once, so the tests share one.
+    # Another test module may have set it first, so the exporter is attached to whichever
+    # provider is in place, once.
     provider = trace.get_tracer_provider()
     if not isinstance(provider, TracerProvider):
         provider = TracerProvider()
         trace.set_tracer_provider(provider)
+    if not ATTACHED:
         provider.add_span_processor(SimpleSpanProcessor(EXPORTER))
+        ATTACHED.append(EXPORTER)
     EXPORTER.clear()
     yield EXPORTER
     EXPORTER.clear()

@@ -12,3 +12,5 @@ description: Coming soon. The station that delivers an approved change as pull r
 - Open one pull request per reviewable step, each with its story, its proof and its technical detail.
 - Never merge. A person merges, and the record says who.
 - Emit the outcome, so a bug report about the released page can come back in as a [signal](missions.md#signals).
+
+The [roadmap](roadmap.md) says where it sits in the order of work.

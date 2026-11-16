@@ -13,3 +13,5 @@ description: Coming soon. The station that checks a build with tests and review,
 - Have the change reviewed by fresh goldfish under the [Elephant Goldfish](elephant-goldfish.md) methodology, against the design's acceptance criteria.
 - Fail the build through a plain-code [gate](gates.md) when a test fails or a blocking finding is open. A [rework rule](factories.md#rework) sends it back to Build. If a ticked task comes back after a reload, this is where it is caught.
 - Escalate to a person when rework runs out.
+
+The [roadmap](roadmap.md) says where it sits in the order of work.

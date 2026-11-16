@@ -36,7 +36,7 @@ for ref in result.evidence:
 
 When the designer finishes a draft, the goldfish read it. Their findings go back to the designer in the same conversation, and it revises. This repeats until a round is clean or the rounds run out. Inside a [station](stations.md), each round's report is stored, and the station cannot pass unless the last round was clean for this exact draft.
 
-`DESIGN_GOLDFISH` comes from the [software factory](software-factory.md): three goldfish, `comprehension`, `critique` and `readiness`. Above, the first draft did not say what happens to a blank task. The `critique` goldfish found that, the designer added it, and the second round was clean. The station's gate, `clean_final_round`, read both reports. Each is stamped `elephant-goldfish@1`.
+`DESIGN_GOLDFISH` comes from the [software factory](software-factory.md): three goldfish, `comprehension`, `critique` and `readiness`. Above, the first draft did not say what happens to a blank task. The `critique` goldfish found that, the designer added it, and the second round was clean. The station's gate, `clean_final_round`, read both reports. Each is stamped `elephant-goldfish@1`, so runs with the method and without it can be [measured](measuring.md) against each other.
 
 ## The goldfish
 
