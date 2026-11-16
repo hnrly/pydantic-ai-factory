@@ -4,7 +4,9 @@ A sample is a fenced ``python`` block in a Markdown page under ``docs/`` or in a
 It is executed as written, and every ``#>`` comment is checked against what the
 line above printed, so a page cannot show code or output that is not true. Samples name
 a real model; while one runs, each agent gets the scripted replies listed for its page in
-``tests/scripted.py``, so no sample calls a model. A block that is
+``tests/scripted.py``, so no sample calls a model. Each sample runs in an empty
+temporary folder, so one that writes files, as the getting-started builder does, never
+writes into the repository. A block that is
 only a sketch opts out with ``python test="skip"`` on its opening fence, and the page
 should say why.
 
@@ -13,6 +15,7 @@ Only ``.md`` files are searched, so an ``.mdx`` page must not hold a Python samp
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -38,13 +41,19 @@ DOC_SAMPLES = python_samples(*(str(ROOT / source) for source in SOURCES))
 
 @pytest.mark.parametrize("example", DOC_SAMPLES, ids=str)
 def test_a_documentation_sample_runs_and_prints_what_it_says(
-    example: CodeExample, eval_example: EvalExample
+    example: CodeExample,
+    eval_example: EvalExample,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Each `#>` comment in a sample is compared with what the line above really printed.
     # Run `uv run pytest --update-examples` to rewrite them after an intended change.
     # Printed lines are compared whole, however long, as a reader sees them.
+    if sys.platform == "win32" and "LocalWorkspace" in example.source:
+        pytest.skip("Pydantic AI Harness's LocalWorkspace runs only on POSIX systems")
     eval_example.set_config(line_length=200)
     page = Path(example.path).relative_to(ROOT).as_posix()
+    monkeypatch.chdir(tmp_path)
     with sample_models(SCRIPTS.get(page, {})):
         if eval_example.update_examples:
             eval_example.run_print_update(example)

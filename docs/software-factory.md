@@ -5,7 +5,7 @@ description: A ready-made factory that turns a mission into reviewed, approved s
 
 # The software factory
 
-The software factory is a ready-made factory for building software, made from the same parts as any other [factory](factories.md). It lives in its own package, `pydantic-ai-factory-software`. Today it has one station, [Design](design-station.md). Build, Quality and Release follow.
+The software factory is a ready-made factory for building software, made from the same parts as the one on [Getting started](getting-started.md). It lives in its own package, `pydantic-ai-factory-software`. Today it has one station, [Design](design-station.md). Build, Quality and Release follow.
 
 ```bash
 pip install "pydantic-ai-factory-software[anthropic]"
@@ -52,3 +52,35 @@ Before the run waited for you, a designer drafted the design and fresh reviewers
 To change more than these allow, build the factory yourself from the same parts: a designer agent with the `ElephantGoldfish` capability, in a station with `approval=True`.
 
 `SoftwareFactory` is a `Factory`, so everything on the [factories](factories.md) page works on it, such as `software.agents()` and `software.intake_sync(...)`.
+
+## From the terminal
+
+The package installs a `factory` command that runs the same factory and asks for your decision.
+
+```bash
+factory run "A to-do list web page where I can add tasks and tick them off."
+```
+
+```text
+# To-do list
+
+A to-do list web page where I can add tasks and tick them off.
+...
+
+design: reviewed in 2 rounds by 3 goldfish; the last round was clean.
+Waiting for approval of Design@37619731dd69.
+Approve, ask for changes, or reject? [a/c/r]
+```
+
+It prints the design in full first, so you decide on what you have read. Answer `a`, and the same design is written to `designs/to-do-list.md`. `factory show <run id>` prints it again for a run that is waiting. Add `--offline` to try it with a scripted model and no key. Add `--no-input` to save the waiting run instead of asking, then decide later with `factory resume <run id> --approve`.
+
+| Option | Means |
+|---|---|
+| `--brief FILE` | Read the mission from a file instead. |
+| `--model NAME` | The model to use. The default is `FACTORY_MODEL`, or `anthropic:claude-opus-5-5`. |
+| `--approve`, `--changes NOTE`, `--reject NOTE` | Decide without being asked. |
+| `--answer TEXT` | Answer the designer's question without being asked. |
+| `--store FOLDER` | Where runs are kept. The default is `.factory`. |
+| `--out FOLDER` | Where approved designs are written. The default is `designs`. |
+
+`factory show <run id>` prints what happened in a run. The command exits with 0 when the run passed, 1 when it ended without passing, 2 when the command was wrong, and 3 when the run is waiting for you.

@@ -13,7 +13,7 @@ instead, so each goldfish gives its own replies, as a dict of its findings.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -26,7 +26,7 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturnPart,
 )
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 SAMPLE_MODEL = "anthropic:claude-opus-5-5"
 
@@ -42,7 +42,11 @@ FALLBACK = "Done."
 
 
 def scripted_model(replies: Sequence[Reply]) -> FunctionModel:
-    """A model that gives ``replies`` in turn, then repeats the last one."""
+    """A model that gives ``replies`` in turn, then repeats the last one.
+
+    It answers streamed requests too, with each reply in one piece, because some
+    capabilities, such as Pydantic AI Harness's ``Coder``, stream every run.
+    """
     queue = list(replies) or [FALLBACK]
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -56,7 +60,24 @@ def scripted_model(replies: Sequence[Reply]) -> FunctionModel:
             return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
         return ModelResponse(parts=[TextPart(reply)])
 
-    return FunctionModel(respond, model_name="scripted")
+    async def stream(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        for index, part in enumerate(respond(messages, info).parts):
+            if isinstance(part, TextPart):
+                yield part.content
+            elif isinstance(part, ToolCallPart):
+                yield {
+                    index: DeltaToolCall(
+                        name=part.tool_name,
+                        json_args=part.args_as_json_str(),
+                        tool_call_id=part.tool_call_id,
+                    )
+                }
+            else:
+                raise TypeError(f"a scripted reply cannot stream a {type(part).__name__}")
+
+    return FunctionModel(respond, stream_function=stream, model_name="scripted")
 
 
 @contextmanager
@@ -117,6 +138,9 @@ def _answered(messages: list[ModelMessage], tool: str) -> bool:
 def _output(info: AgentInfo, args: dict[str, Any]) -> ModelResponse:
     return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
 
+
+PAGE = '<h1>To-do list</h1>\n<input placeholder="Add a task">\n<ul></ul>\n'
+"""The page the getting-started builder writes. Short, so the printed diff stays short."""
 
 TODO = {
     "title": "To-do list",
@@ -194,6 +218,14 @@ SOFTWARE: Script = {
 
 
 SCRIPTS: dict[str, Script] = {
+    "docs/getting-started.md": {
+        "designer": [DESIGN],
+        "builder": [call("write_file", path="index.html", content=PAGE), "Built index.html."],
+        "reviewer": [
+            call("read_file", path="index.html"),
+            "The page matches the design: tasks can be added and ticked off. Nothing is wrong.",
+        ],
+    },
     "docs/factories.md": {
         "designer": [DESIGN, DESIGN_WITH_BLANK],
         "builder": ["Built index.html."],

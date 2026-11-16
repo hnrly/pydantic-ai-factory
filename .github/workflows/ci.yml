@@ -36,6 +36,18 @@ jobs:
       - run: uv run --locked pyright
       - run: uv run --locked lint-imports
       - run: uv run --locked pytest
+      - name: Run the installed factory command offline, wait, then approve
+        run: |
+          set -o pipefail   # so $code is the factory's exit code, not tee's
+          state="$RUNNER_TEMP/factory" designs="$RUNNER_TEMP/designs"
+          code=0
+          uv run --locked factory run --brief examples/todo-list/brief.md --offline --no-input \
+            --store "$state" --out "$designs" | tee "$RUNNER_TEMP/run.txt" || code=$?
+          test "$code" -eq 3   # 3: the run is waiting for a person
+          grep -qx "design: reviewed in 2 rounds by 3 goldfish; the last round was clean." "$RUNNER_TEMP/run.txt"
+          run_id=$(sed -n 's/^Run \([0-9a-f]*\) is waiting.*/\1/p' "$RUNNER_TEMP/run.txt")
+          uv run --locked factory resume "$run_id" --approve --offline --store "$state" --out "$designs"
+          grep -q "^# To-do list" "$designs/to-do-list.md"
 
   platforms:
     # The file store claims to be portable, so the tests also run on Windows and macOS.

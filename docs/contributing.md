@@ -34,6 +34,16 @@ Run these before you ask for review. CI runs the first five on Python 3.11 to 3.
 
 Report what you ran and what each command returned. Do not report a check you skipped as passed.
 
+### Against a real model
+
+Every test above uses a scripted model. Before a release, the maintainer also runs the getting-started path against a real model:
+
+```bash
+ANTHROPIC_API_KEY=... uv run pytest -m live
+```
+
+Tests marked `live` are skipped unless asked for with `-m live`. They make real, paid requests to `anthropic:claude-opus-5-5`. Report the date, the model and what each test returned.
+
 ## The two boundaries
 
 The import check enforces two rules. They are part of the design, not style.
@@ -73,7 +83,7 @@ Five rules keep the docs honest, and close to the style of Pydantic AI's own doc
 1. **Open with a plain summary.** A reader should be able to stop after the first paragraph.
 2. **Every Python sample runs, and its output is checked.** Samples name a real model, `anthropic:claude-opus-5-5`, and call `run_sync`, as a reader would. The test suite swaps in a scripted model for every agent, so the samples run with no key and always print the same thing; each page's replies are in `tests/scripted.py`. Each sample is complete on its own, with its imports. `uv run pytest` executes each fenced `python` block in `docs/` and the READMEs, and compares every `#>` comment with what the line above printed. Run `uv run pytest --update-examples` to rewrite those comments after an intended change. A block that cannot run, such as one that needs an outside account, opts out with `python test="skip"` on its opening fence, and the page says why. Samples are found in `.md` pages only, so keep Python out of `.mdx` pages; a test fails if one appears.
 3. **Link by file path.** Write `[stations](stations.md)`. The site turns it into a route, and the link also works on GitHub.
-4. **One worked example.** Every page uses the to-do list web page. A blank task, or a ticked task that comes back after a reload, drives review, escalation and approval. A bug report about it is the signal example. Do not invent abstract examples.
+4. **One worked example.** Every page uses the to-do list web page from [Getting started](getting-started.md). A blank task, or a ticked task that comes back after a reload, drives review, escalation and approval. A bug report about it is the signal example. Do not invent abstract examples.
 5. **Concepts and short code, no diagrams.** Open with what the thing is in a sentence or two, show the smallest sample that uses it, then explain variations with smaller samples. Keep tables for things a reader looks up, such as options and outcomes.
 
 A new page needs a `title` and `description` in its front matter, and an entry in the sidebar in `site/astro.config.mjs`.
