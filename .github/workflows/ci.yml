@@ -37,6 +37,22 @@ jobs:
       - run: uv run --locked lint-imports
       - run: uv run --locked pytest
 
+  platforms:
+    # The file store claims to be portable, so the tests also run on Windows and macOS.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run --locked pytest
+
   keep-out:
     runs-on: ubuntu-latest
     timeout-minutes: 5
