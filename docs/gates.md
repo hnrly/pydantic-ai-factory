@@ -39,9 +39,11 @@ Keep a gate pure: no I/O and no model calls. Anything slow or uncertain belongs 
 |---|---|
 | `passed(*reasons)` | The work may move on. |
 | `failed(*reasons)` | The work was judged and is not good enough. |
-| `needs_approval(*reasons)` | The checks are satisfied, and a person must now decide. |
+| `escalate(*reasons)` | Code must not settle this; a person must. See [escalation](approvals.md#escalation). |
 
 Every verdict needs at least one reason.
+
+A gate never asks for approval. A station that needs a person's sign-off says so with `approval=True`, and the person is asked only after every gate has passed.
 
 ## Evidence
 

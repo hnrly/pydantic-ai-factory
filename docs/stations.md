@@ -22,7 +22,7 @@ print(design.name, result.outcome)
 #> designer not_judged
 ```
 
-`station(agent)` passes its input to the agent as the prompt and hands on the agent's output. It takes the same options as the decorator below, and its name is the agent's `name`.
+`station(agent)` passes its input to the agent as the prompt and hands on the agent's output. It takes the same options as the decorator below, and its name is the agent's `name`. `station(designer, approval=True)` would also wait for a person to [approve](approvals.md) each design.
 
 ## Stations as functions
 
@@ -60,7 +60,7 @@ A station with no agent is just as welcome. A station that formats a design, or 
 |---|---|
 | `passed` | A [gate](gates.md) judged the output and passed it. |
 | `failed` | A gate judged the output and failed it. |
-| `needs_approval` | A gate is satisfied, and a person must decide. |
+| `waiting` | A person is needed. See [approvals](approvals.md). |
 | `not_judged` | The station has no gate, so nothing judged the output. |
 | `did_not_run` | The station raised, or its gate had no evidence to read. |
 
@@ -104,6 +104,7 @@ If the gate needs evidence the station did not record, the gate is not evaluated
 | Option | Default | Means |
 |---|---|---|
 | `gate` | none | The [gate](gates.md) that judges the output. |
+| `approval` | `False` | A person must approve the output once every gate has passed. |
 | `agents` | inferred | The agents the station runs. See [which agents](agents.md#which-agents-a-station-runs). |
 | `name` | the function's name | The station's name in every record. |
 | `version` | `"0"` | Change it when the station's behaviour changes. |

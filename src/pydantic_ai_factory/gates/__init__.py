@@ -8,9 +8,9 @@ from ._gate import (
     Judgement,
     NotEvaluated,
     Verdict,
+    escalate,
     failed,
     gate,
-    needs_approval,
     passed,
 )
 
@@ -22,8 +22,8 @@ __all__ = [
     "Judgement",
     "NotEvaluated",
     "Verdict",
+    "escalate",
     "failed",
     "gate",
-    "needs_approval",
     "passed",
 ]

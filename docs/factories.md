@@ -5,7 +5,7 @@ description: A factory is a named list of stations. You run work through it and 
 
 # Factories
 
-A factory is a named, ordered list of [stations](stations.md). You give it work, and each station's output becomes the next station's input. The factory holds no state of its own: running it returns a `Run`, a plain record of what happened.
+A factory is a named, ordered list of [stations](stations.md). You give it work, and each station's output becomes the next station's input. The factory holds no state of its own: running it returns a `Run`, a plain record of what happened, which is also kept in the [store](stores.md).
 
 ```python
 from pydantic_ai import Agent
@@ -31,17 +31,20 @@ Name a factory for what it makes, such as `"software"`, not for one piece of wor
 | Call | Does |
 |---|---|
 | `factory.run(input, store=...)` | Runs the work and returns a `Run`. Async. |
-| `factory.run_sync(input, store=...)` | The same, for code that is not async. |
+| `factory.resume(run, answer, store=...)` | Carries on a run that is [waiting for a person](approvals.md). Async. |
+| `run_sync`, `resume_sync` | The same, for code that is not async. |
 
-`input` is the first station's input. The call also takes `deps=`, which every station receives as `ctx.deps`.
+`input` is the first station's input. Both calls also take `deps=`, which every station receives as `ctx.deps`.
 
 ## The run
 
 | Field | Holds |
 |---|---|
-| `outcome` | `"passed"`, `"failed"` or `"did_not_run"`. |
+| `outcome` | `"passed"`, `"failed"`, `"did_not_run"` or `"waiting"`. |
 | `output` | The last station's output, once the run has finished. |
+| `waiting` | What a person is being asked, when the outcome is `"waiting"`. See [approvals](approvals.md). |
 | `steps` | One result per station attempt, in order. |
+| `approvals` | Every decision a person made. |
 
 `"failed"` means a [gate](gates.md) judged the work and it fell short. `"did_not_run"` means something could not be done at all, such as an unreachable model. The library never reports one as the other.
 
@@ -71,7 +74,7 @@ print(run.outcome, len(run.steps))
 #> passed 2
 ```
 
-`Rework(design)` redoes `design` when it fails. To send work back to an earlier station, add `to=`: `Rework(build, to=design)` redoes the design when the build fails. The agent picks up its own conversation and is told what was wrong; see [agents in stations](agents.md#later-attempts). At the limit the run stops as `"failed"`. Pass `on_limit="continue"` to carry on anyway.
+`Rework(design)` redoes `design` when it fails. To send work back to an earlier station, add `to=`: `Rework(build, to=design)` redoes the design when the build fails. The agent picks up its own conversation and is told what was wrong; see [agents in stations](agents.md#later-attempts). At the limit the run stops as `"failed"`. Pass `on_limit="continue"` to carry on anyway, or `on_limit="escalate"` to ask a person.
 
 Rework is only for work that was judged and failed. A station that did not run is never sent back.
 

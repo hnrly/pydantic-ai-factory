@@ -42,6 +42,8 @@ def test_a_documentation_sample_runs_and_prints_what_it_says(
 ) -> None:
     # Each `#>` comment in a sample is compared with what the line above really printed.
     # Run `uv run pytest --update-examples` to rewrite them after an intended change.
+    # Printed lines are compared whole, however long, as a reader sees them.
+    eval_example.set_config(line_length=200)
     page = Path(example.path).relative_to(ROOT).as_posix()
     with sample_models(SCRIPTS.get(page, {})):
         if eval_example.update_examples:

@@ -4,6 +4,12 @@ Every change a user can see is listed here, newest first.
 
 ## Unreleased
 
+- Add approvals. `@station(approval=True)` and `station(agent, approval=True)` make a run wait for a person once every gate has passed. A waiting run has `run.waiting`, of kind `"approval"`, `"escalation"` or `"tool-calls"`. Answer with `run.approve`, `run.request_changes` or `run.reject`, each bound to the exact output, or, for tool calls, with Pydantic AI's `DeferredToolResults`, and carry on with `Factory.resume` or `resume_sync`. `run.approvals` records every decision.
+- Add escalation: the `escalate` verdict, `raise Escalate(reason, output=...)` in a station, and `Rework(..., on_limit="escalate")`. Approving an escalation accepts the work and records that a person overrode it.
+- Add tool-call waits. An agent run through `ctx.run_agent` that ends with deferred tool calls makes the run wait; on resume the station runs again, replaying the agent calls that finished. Add the `AskPerson` capability, an `ask_person` tool capped by `max_questions`. An agent with output validators keeps its own output type; to let it wait, declare `DeferredToolRequests` in it.
+- Add the `RunStore` protocol. `MemoryStore` and `LocalStore` keep runs as well as artifacts, with `get_run`, `get_run_sync` and a compare-and-swap `put_run`; an answer is saved before the work it starts, so a second answer to the same run raises `RunConflict` and runs nothing. The factory saves the run after every step; `on_step` is for watching. `get_sync` reads an artifact from code that is not async. The stores move to `pydantic_ai_factory.stores`, with `encode_run` and `decode_run`.
+- Remove the `needs_approval` verdict; use `approval=True` or `escalate`. Remove the Artifacts page; artifacts and runs are on the Stores page.
+
 - Add agents in stations. `ctx.run_agent(agent, prompt)` runs a Pydantic AI agent, stores its `Conversation` keyed by the agent's name, and carries it on at a later attempt, sending the gate's reasons instead of the prompt. `@station` finds the agents its function refers to; `agents=` names them instead. `station(agent)` turns one agent into a station. `Factory.agents()` lists every agent before a run. `Factory.run_sync` and `Station.run_sync` run from code that is not async.
 - Change stations and artifacts to take any type Pydantic can serialise, such as `str` or `list[str]`, not only models.
 - Change `Rework` to take station objects: `Rework(design, limit=2)` and `Rework(build, to=design)`.

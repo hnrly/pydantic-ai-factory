@@ -19,7 +19,7 @@ logger = logging.getLogger("pydantic_ai_factory")
 OutT = TypeVar("OutT")
 EvidenceT = TypeVar("EvidenceT")
 
-Judgement = Literal["passed", "failed", "needs_approval"]
+Judgement = Literal["passed", "failed", "escalate"]
 
 
 class GateDefinitionError(DefinitionError):
@@ -29,7 +29,7 @@ class GateDefinitionError(DefinitionError):
 class Verdict(Record):
     """What a gate's check returns: a judgement and the reasons for it.
 
-    Build one with :func:`passed`, :func:`failed` or :func:`needs_approval`. Every
+    Build one with :func:`passed`, :func:`failed` or :func:`escalate`. Every
     verdict carries at least one reason, so a decision always says why.
     """
 
@@ -47,9 +47,9 @@ def failed(reason: str, *more: str) -> Verdict:
     return Verdict(judgement="failed", reasons=(reason, *more))
 
 
-def needs_approval(reason: str, *more: str) -> Verdict:
-    """The checks are satisfied, and a person must now decide."""
-    return Verdict(judgement="needs_approval", reasons=(reason, *more))
+def escalate(reason: str, *more: str) -> Verdict:
+    """Code must not settle this; a person must. The run waits for one."""
+    return Verdict(judgement="escalate", reasons=(reason, *more))
 
 
 class Evidence:

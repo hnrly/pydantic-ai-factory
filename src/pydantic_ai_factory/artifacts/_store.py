@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import json
-import os
-import tempfile
-from pathlib import Path
 from typing import Any, Protocol, TypeVar, cast
 
 from ..contracts import FactoryError, canonical_json
@@ -69,89 +64,3 @@ def decode_artifact(
         raise ArtifactCorrupt(f"artifact {ref} is filed under the wrong ref: {stored_ref}")
     verify_body(ref, body)
     return Artifact.from_stored(ref, body, payload_type)
-
-
-class MemoryStore:
-    """Keeps artifacts in memory. Use it in tests and short-lived runs."""
-
-    def __init__(self) -> None:
-        self._data: dict[str, bytes] = {}
-
-    async def put(self, artifact: Artifact[Any]) -> ArtifactRef:
-        self._data.setdefault(artifact.ref.digest, encode_artifact(artifact))
-        return artifact.ref
-
-    async def get(self, ref: ArtifactRef, payload_type: type[PayloadT]) -> Artifact[PayloadT]:
-        try:
-            data = self._data[ref.digest]
-        except KeyError:
-            raise ArtifactNotFound(f"no artifact is filed under {ref}") from None
-        return decode_artifact(ref, data, payload_type)
-
-    async def exists(self, ref: ArtifactRef) -> bool:
-        return ref.digest in self._data
-
-    def __len__(self) -> int:
-        return len(self._data)
-
-
-class LocalStore:
-    """Keeps each artifact as one JSON file under ``root``.
-
-    Files are named by digest, so a path can never be chosen by a payload. Each file
-    is written to a temporary name and then moved into place, so a crash cannot leave
-    half an artifact behind. It uses no platform-specific calls.
-    """
-
-    def __init__(self, root: str | Path) -> None:
-        self.root = Path(root)
-
-    def path_for(self, ref: ArtifactRef) -> Path:
-        """Return where the artifact for ``ref`` is, or would be, kept."""
-        hexdigest = ref.digest.removeprefix("sha256:")
-        return self.root / "artifacts" / hexdigest[:2] / f"{hexdigest}.json"
-
-    async def put(self, artifact: Artifact[Any]) -> ArtifactRef:
-        data = encode_artifact(artifact)
-        await asyncio.to_thread(self._write, self.path_for(artifact.ref), data)
-        return artifact.ref
-
-    async def get(self, ref: ArtifactRef, payload_type: type[PayloadT]) -> Artifact[PayloadT]:
-        try:
-            data = await asyncio.to_thread(self.path_for(ref).read_bytes)
-        except FileNotFoundError:
-            raise ArtifactNotFound(f"no artifact is filed under {ref}") from None
-        return decode_artifact(ref, data, payload_type)
-
-    async def exists(self, ref: ArtifactRef) -> bool:
-        return await asyncio.to_thread(self.path_for(ref).is_file)
-
-    @staticmethod
-    def _write(path: Path, data: bytes) -> None:
-        # A file that already holds exactly these bytes is left alone. One that holds
-        # anything else was damaged, and is replaced with the checked content.
-        with contextlib.suppress(OSError):
-            if path.read_bytes() == data:
-                return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=".incoming-")
-        try:
-            with os.fdopen(handle, "wb") as file:
-                file.write(data)
-                file.flush()
-                os.fsync(file.fileno())
-            # mkstemp makes the file private; give it the usual permissions for a new file.
-            umask = os.umask(0)
-            os.umask(umask)
-            os.chmod(temporary, 0o666 & ~umask)
-            try:
-                os.replace(temporary, path)
-            except PermissionError:
-                # On Windows the move fails while another writer holds the same file open.
-                # That writer is storing the same bytes, so its file is as good as ours.
-                if not path.is_file():
-                    raise
-                Path(temporary).unlink(missing_ok=True)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise

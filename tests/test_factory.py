@@ -22,9 +22,9 @@ from pydantic_ai_factory import (
     StationInputInvalid,
     Untyped,
     Verdict,
+    escalate,
     failed,
     gate,
-    needs_approval,
     passed,
     station,
 )
@@ -237,10 +237,10 @@ async def test_a_station_that_did_not_run_stops_the_run_and_is_never_reworked() 
     assert latest.reason == "the station raised ConnectionError: the checker is unreachable"
 
 
-async def test_a_gate_that_asks_for_a_person_stops_the_run_there() -> None:
+async def test_a_gate_that_escalates_stops_the_run_to_wait_for_a_person() -> None:
     @gate(version="1")
     def sign_off(output: Artifact[Checked], evidence: Evidence) -> Verdict:
-        return needs_approval("ready for sign-off")
+        return escalate("only a person can settle this")
 
     @station(gate=sign_off, name="check")
     async def approve_me(ctx: StationContext[Deps], draft: Draft) -> Checked:
@@ -250,7 +250,8 @@ async def test_a_gate_that_asks_for_a_person_stops_the_run_there() -> None:
 
     run = await waiting.run(Brief(goal="x"), store=MemoryStore(), deps=Deps())
 
-    assert (run.outcome, run.finished, run.stopped_at) == ("needs_approval", False, "check")
+    assert (run.outcome, run.finished, run.stopped_at) == ("waiting", False, "check")
+    assert run.waiting is not None and run.waiting.kind == "escalation"
     assert run.latest("publish") is None
 
 
@@ -300,7 +301,7 @@ def test_a_badly_formed_factory_is_refused_with_every_finding_at_once() -> None:
         "rework from 'publish': 'check' comes later in the factory",
         "rework from 'publish': the station has no gate, so it can never fail",
         "rework from 'elsewhere': the limit must be a whole number, at least 1",
-        "rework from 'elsewhere': on_limit must be 'halt' or 'continue'",
+        "rework from 'elsewhere': on_limit must be 'halt', 'continue' or 'escalate'",
         "rework from 'elsewhere': the station is not in this factory",
     ]
 
@@ -443,20 +444,24 @@ async def test_a_run_that_stops_early_has_no_output() -> None:
     assert (run.output, run.finished) == (None, False)
 
 
-async def test_progress_can_be_saved_after_every_attempt() -> None:
+async def test_the_run_is_saved_after_every_step_and_on_step_watches_each_save() -> None:
     saved: list[Run] = []
+    store = MemoryStore()
 
-    async def save(progress: Run) -> None:
+    async def watch(progress: Run) -> None:
         saved.append(progress)
 
-    run = await factory().run(Brief(goal="x"), store=MemoryStore(), deps=Deps(), on_step=save)
+    run = await factory().run(Brief(goal="x"), store=store, deps=Deps(), on_step=watch)
 
-    assert [(s.outcome, s.finished, len(s.steps)) for s in saved] == [
-        ("running", False, 1),
-        ("running", False, 2),
-        ("running", False, 3),
+    assert [(s.outcome, s.finished, len(s.steps), s.revision) for s in saved] == [
+        ("running", False, 0, 0),
+        ("running", False, 1, 1),
+        ("running", False, 2, 2),
+        ("running", False, 3, 3),
+        ("passed", True, 3, 4),
     ]
-    assert saved[-1].steps == run.steps
+    stored = await store.get_run(run.run_id)
+    assert (stored.revision, stored.steps) == (run.revision, run.steps)
 
 
 async def test_bad_run_arguments_are_refused_before_any_station_runs() -> None:
@@ -485,7 +490,7 @@ def test_a_record_that_contradicts_itself_is_refused() -> None:
         {"outcome": "failed", "finished": True, "output_ref": ref, "stopped_at": "check"},
         {"outcome": "did_not_run", "finished": True, "output_ref": ref},
         {"outcome": "running", "finished": False, "stopped_at": "check"},
-        {"outcome": "needs_approval", "finished": False, "stopped_at": "check", "output_ref": ref},
+        {"outcome": "waiting", "finished": False, "stopped_at": "check"},
     ]
     for wrong in contradictions:
         with pytest.raises(ValidationError):

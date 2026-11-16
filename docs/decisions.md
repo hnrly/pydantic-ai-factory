@@ -43,11 +43,11 @@ The words used below each have a page under Concepts, starting with [factories](
 
 ## Definitions are frozen; running is a method that holds no state
 
-**Decided.** `Factory`, `Station`, `Gate` and `Methodology` are frozen declarations. Running is a method that holds no state, as `Agent.run` is in Pydantic AI: `Factory.run` returns a serialisable record. That record may be waiting on an approval, and `Factory.resume` carries it on.
+**Decided.** `Factory`, `Station` and `Gate` are frozen declarations, and a `Methodology` keeps no per-run state outside `for_run()`. Running is a method that holds no state, as `Agent.run` is in Pydantic AI: `Factory.run` returns a serialisable record. That record may be waiting on an approval, and `Factory.resume` carries it on.
 
-**Why.** State lives in the record and the artifact store, never in a live object. A durability adapter can then take over without changing any type.
+**Why.** State lives in the store, never in a live object. The store keeps artifacts, which are write-once, and runs, which are replaced by compare-and-swap after every step. A web app or a durability adapter can then take over without changing any type.
 
-**Rejected.** A factory object that owns its runs and its store. It is friendlier at first glance, and it grows into one object that everything depends on.
+**Rejected.** Leaving runs to the application to save: every app would write the same load, save and lock code. Also rejected: a factory object that owns its runs and its store. It is friendlier at first glance, and it grows into one object that everything depends on.
 
 ## Signals come in; missions are committed to
 
@@ -57,13 +57,13 @@ The words used below each have a page under Concepts, starting with [factories](
 
 **Rejected.** Using "intent" for both the raw request and the commitment: a vague ask and a measurable promise would share one type. Also rejected: three chained types (signal, intent, mission), which adds a step and little else. Also rejected: making a mission compulsory. When a person asks and a factory runs, wrapping the request in a signal and a mission is ceremony. Intake earns its place when it really decides.
 
-## The human gate is a gate outcome
+## A run waits for a person in three ways
 
-**Decided.** A gate may answer "needs approval". The runner then stops and returns a pending run that names the artifact by its digest. The caller resumes with a decision.
+**Decided.** A waiting run has `run.waiting.kind` of `"approval"`, `"escalation"` or `"tool-calls"`. Approval is declared with `@station(approval=True)`, and the person is asked only when every gate has passed. Escalation comes from a gate's `escalate` verdict, a station raising `Escalate`, or `Rework(on_limit="escalate")`. Approvals and escalations are answered with `run.approve`, `run.request_changes` and `run.reject`, each bound to the digest of what is waiting. Tool-call waits come from Pydantic AI deferred tools inside `ctx.run_agent` and are answered with Pydantic AI's own `DeferredToolResults`.
 
-**Why.** The sign-off is bound to an exact artifact, not to a tool call. The caller can be a terminal prompt today and a chat message later, with no change to the factory.
+**Why.** A sign-off is bound to an exact artifact, so it stays a factory decision, not a tool call. But an agent inside a station also needs to ask a person things, and before, a deferred tool call had nowhere to go. Three kinds, answered with three verbs or Pydantic AI's own type, give levels of approval without many options.
 
-**Rejected.** Modelling the decision as an agent tool that needs approval, which forces an agent into the step. Pydantic AI's deferred tools remain the right choice for approvals inside an agent run.
+**Rejected.** A hand-written gate returning "needs approval", which every station had to repeat. Also rejected: keeping Pydantic AI's deferred tools out of the factory. They are how an agent waits for a person. Also rejected: more kinds of wait, or more verbs.
 
 ## A methodology is a versioned bundle, stamped on every record
 

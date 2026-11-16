@@ -4,8 +4,6 @@ from ._artifact import Artifact, ArtifactCorrupt, ArtifactInvalid, ArtifactRef, 
 from ._store import (
     ArtifactNotFound,
     ArtifactStore,
-    LocalStore,
-    MemoryStore,
     decode_artifact,
     encode_artifact,
 )
@@ -17,8 +15,6 @@ __all__ = [
     "ArtifactNotFound",
     "ArtifactRef",
     "ArtifactStore",
-    "LocalStore",
-    "MemoryStore",
     "Producer",
     "Untyped",
     "decode_artifact",

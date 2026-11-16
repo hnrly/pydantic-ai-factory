@@ -25,9 +25,9 @@ from pydantic_ai_factory import (
     StationInputInvalid,
     StationResult,
     Verdict,
+    escalate,
     failed,
     gate,
-    needs_approval,
     passed,
     station,
 )
@@ -149,10 +149,10 @@ async def test_missing_evidence_means_the_gate_did_not_run_and_nothing_passed() 
     assert result.output_ref is not None and result.decision is None
 
 
-async def test_a_gate_that_asks_for_a_person_leaves_passed_unanswered() -> None:
+async def test_a_gate_that_escalates_leaves_passed_unanswered() -> None:
     @gate(version="1")
     def sign_off(output: Artifact[Count], evidence: Evidence) -> Verdict:
-        return needs_approval("ready for sign-off")
+        return escalate("only a person can settle this")
 
     @station(gate=sign_off)
     async def drafted(ctx: StationContext, text: Text) -> Count:
@@ -160,8 +160,9 @@ async def test_a_gate_that_asks_for_a_person_leaves_passed_unanswered() -> None:
 
     result = await drafted.run(Text(body="hello"), store=MemoryStore())
 
-    assert (result.outcome, result.ran, result.passed) == ("needs_approval", True, None)
-    assert result.decision is not None and result.decision.judgement == "needs_approval"
+    assert (result.outcome, result.ran, result.passed) == ("waiting", True, None)
+    assert result.decision is not None and result.decision.judgement == "escalate"
+    assert result.waiting is not None and result.waiting.kind == "escalation"
 
 
 async def test_recorded_evidence_is_stored_with_lineage_and_reaches_the_gate() -> None:

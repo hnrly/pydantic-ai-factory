@@ -6,15 +6,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from pydantic_ai import DeferredToolResults
 from pydantic_ai.agent import AbstractAgent
 
-from ..artifacts import ArtifactStore
 from ..contracts import DefinitionError, MethodologyRef, check_name, digest_of, run_sync
 from ..stations import Station
 from ..stations._station import type_name
-from ._runner import OnStep, Run, run_factory
+from ._runner import Decision, OnStep, Run, resume_factory, run_factory
+from ._store import Store
 
-OnLimit = Literal["halt", "continue"]
+OnLimit = Literal["halt", "continue", "escalate"]
 
 
 class FactoryDefinitionError(DefinitionError):
@@ -28,8 +29,8 @@ class Rework:
     When ``station`` fails its gate, the work goes back to ``to`` and runs forward again
     from there. ``to`` defaults to ``station`` itself. ``limit`` is how many times that
     may happen in one run; it is not reset when another rule sends the work back past
-    this station. When the limit is reached, the run halts, or carries on to the next
-    station if ``on_limit`` is ``"continue"``.
+    this station. When the limit is reached, the run halts; with ``on_limit="continue"``
+    it carries on to the next station, and with ``"escalate"`` it waits for a person.
     """
 
     station: Station[Any, Any]
@@ -108,6 +109,7 @@ class Factory:
                         "output": type_name(s.output_type),
                         "gate": [s.gate.name, s.gate.version] if s.gate else None,
                         "agents": [agent.name for agent in s.agents],
+                        "approval": s.approval,
                     }
                     for s in self.stations
                 ],
@@ -122,7 +124,7 @@ class Factory:
         self,
         input: Any,
         *,
-        store: ArtifactStore,
+        store: Store,
         deps: Any = None,
         run_id: str | None = None,
         mission_id: str | None = None,
@@ -132,12 +134,12 @@ class Factory:
         """Run ``input`` through the stations until the work finishes or has to stop.
 
         The run stops early when a station did not run, when a station fails with no
-        rework left, or when a gate asks for a person. Rework happens only after a
-        failure. A station that did not run is never retried.
+        rework left, or when a person is needed. Rework happens only after a failure. A
+        station that did not run is never retried.
 
-        ``on_step`` is awaited after every attempt with the record so far, whose outcome
-        is ``"running"``. Use it to save progress: if the store raises, or the run is
-        cancelled, no record is returned.
+        The run is saved in ``store`` after every step, so it can be loaded with
+        ``store.get_run`` and resumed anywhere. ``on_step`` is awaited after each save,
+        for watching progress.
         """
         return await run_factory(
             self,
@@ -150,11 +152,47 @@ class Factory:
             on_step=on_step,
         )
 
+    async def resume(
+        self,
+        run: Run,
+        answer: Decision | DeferredToolResults,
+        *,
+        store: Store,
+        deps: Any = None,
+        on_step: OnStep | None = None,
+    ) -> Run:
+        """Carry on a run that is waiting for a person, with that person's answer.
+
+        ``answer`` is a decision from ``run.approve``, ``run.request_changes`` or
+        ``run.reject``, or, when the run waits on tool calls, Pydantic AI's
+        ``DeferredToolResults``. Approving moves the work on; on an escalation it accepts
+        the work as it stands. Asking for changes sends the work back to the station once,
+        with the note as feedback. Rejecting ends the run as failed.
+
+        The run is carried on from ``run`` and the store alone, so it can be resumed in
+        another process. Raises :class:`ApprovalRefused`, changing nothing, if the answer
+        does not fit what the run waits for, and :class:`RunConflict` if the stored run
+        has moved on since ``run`` was read.
+        """
+        return await resume_factory(self, run, answer, store=store, deps=deps, on_step=on_step)
+
+    def resume_sync(
+        self,
+        run: Run,
+        answer: Decision | DeferredToolResults,
+        *,
+        store: Store,
+        deps: Any = None,
+        on_step: OnStep | None = None,
+    ) -> Run:
+        """Carry on a waiting run, from code that is not async. See :meth:`resume`."""
+        return run_sync(self.resume(run, answer, store=store, deps=deps, on_step=on_step))
+
     def run_sync(
         self,
         input: Any,
         *,
-        store: ArtifactStore,
+        store: Store,
         deps: Any = None,
         run_id: str | None = None,
         mission_id: str | None = None,
@@ -209,8 +247,8 @@ class Factory:
             label = f"rework from {getattr(rule.station, 'name', rule.station)!r}"
             if type(rule.limit) is not int or rule.limit < 1:
                 findings.append(f"{label}: the limit must be a whole number, at least 1")
-            if rule.on_limit not in ("halt", "continue"):
-                findings.append(f"{label}: on_limit must be 'halt' or 'continue'")
+            if rule.on_limit not in ("halt", "continue", "escalate"):
+                findings.append(f"{label}: on_limit must be 'halt', 'continue' or 'escalate'")
             source = position(rule.station)
             if source is None:
                 findings.append(f"{label}: the station is not in this factory")

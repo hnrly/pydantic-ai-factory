@@ -10,13 +10,21 @@ from .artifacts import (
     ArtifactNotFound,
     ArtifactRef,
     ArtifactStore,
-    LocalStore,
-    MemoryStore,
     Producer,
     Untyped,
 )
 from .contracts import DefinitionError, FactoryError, MethodologyRef
-from .factory import Factory, FactoryDefinitionError, Rework, Run
+from .factory import (
+    ApprovalRefused,
+    Decision,
+    Factory,
+    FactoryDefinitionError,
+    Rework,
+    Run,
+    RunConflict,
+    RunNotFound,
+    RunStore,
+)
 from .gates import (
     Evidence,
     Gate,
@@ -24,12 +32,14 @@ from .gates import (
     GateDefinitionError,
     NotEvaluated,
     Verdict,
+    escalate,
     failed,
     gate,
-    needs_approval,
     passed,
 )
 from .stations import (
+    AskPerson,
+    Escalate,
     Feedback,
     Station,
     StationClosed,
@@ -37,19 +47,25 @@ from .stations import (
     StationDefinitionError,
     StationInputInvalid,
     StationResult,
+    Waiting,
     station,
 )
+from .stores import LocalStore, MemoryStore
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "ApprovalRefused",
     "Artifact",
     "ArtifactCorrupt",
     "ArtifactInvalid",
     "ArtifactNotFound",
     "ArtifactRef",
     "ArtifactStore",
+    "AskPerson",
+    "Decision",
     "DefinitionError",
+    "Escalate",
     "Evidence",
     "Factory",
     "FactoryDefinitionError",
@@ -65,6 +81,9 @@ __all__ = [
     "Producer",
     "Rework",
     "Run",
+    "RunConflict",
+    "RunNotFound",
+    "RunStore",
     "Station",
     "StationClosed",
     "StationContext",
@@ -73,10 +92,11 @@ __all__ = [
     "StationResult",
     "Untyped",
     "Verdict",
+    "Waiting",
     "__version__",
+    "escalate",
     "failed",
     "gate",
-    "needs_approval",
     "passed",
     "station",
 ]
