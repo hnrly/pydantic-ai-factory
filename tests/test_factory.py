@@ -115,8 +115,9 @@ async def test_work_moves_through_every_station_in_order() -> None:
         ("check", 1, "passed"),
         ("publish", 1, "not_judged"),
     ]
-    assert run.output is not None
-    assert (await store.get(run.output, Published)).payload.url == "https://example.org/12"
+    assert run.output == Published(url="https://example.org/12")
+    assert run.output_ref is not None
+    assert (await store.get(run.output_ref, Published)).payload == run.output
 
 
 async def test_each_output_is_the_next_stations_input_all_the_way_back() -> None:
@@ -124,11 +125,11 @@ async def test_each_output_is_the_next_stations_input_all_the_way_back() -> None
 
     run = await factory().run(Brief(goal="Split a bill"), store=store, deps=Deps())
 
-    assert run.output is not None
-    published = await store.get(run.output, Published)
+    assert run.output_ref is not None
+    published = await store.get(run.output_ref, Published)
     checked = await store.get(published.inputs[0], Checked)
     drafted = await store.get(checked.inputs[0], Draft)
-    assert drafted.inputs == (run.input,)
+    assert drafted.inputs == (run.input_ref,)
     assert {a.produced_by.run_id for a in (published, checked, drafted) if a.produced_by} == {
         run.run_id
     }
@@ -151,7 +152,7 @@ async def test_a_failure_with_no_rework_rule_stops_the_run() -> None:
 async def test_a_failure_sends_work_back_with_the_reasons_and_then_passes() -> None:
     deps = Deps(problems=[["too short", "no title"]])
 
-    run = await factory(Rework("check", "draft", limit=2)).run(
+    run = await factory(Rework(check, draft, limit=2)).run(
         Brief(goal="x"), store=MemoryStore(), deps=deps
     )
 
@@ -176,7 +177,7 @@ async def test_a_failure_sends_work_back_with_the_reasons_and_then_passes() -> N
 async def test_a_station_can_be_its_own_rework_target() -> None:
     deps = Deps(problems=[["x"]])
 
-    run = await factory(Rework("check")).run(Brief(goal="x"), store=MemoryStore(), deps=deps)
+    run = await factory(Rework(check)).run(Brief(goal="x"), store=MemoryStore(), deps=deps)
 
     assert outcomes(run) == [
         ("draft", 1, "not_judged"),
@@ -189,7 +190,7 @@ async def test_a_station_can_be_its_own_rework_target() -> None:
 async def test_at_the_rework_limit_the_run_halts_by_default() -> None:
     deps = Deps(problems=[["a"], ["b"], ["c"]])
 
-    run = await factory(Rework("check", "draft", limit=2)).run(
+    run = await factory(Rework(check, draft, limit=2)).run(
         Brief(goal="x"), store=MemoryStore(), deps=deps
     )
 
@@ -208,7 +209,7 @@ async def test_at_the_limit_a_run_may_carry_on_but_the_failure_stays_on_the_reco
     deps = Deps(problems=[["a"], ["b"]])
 
     store = MemoryStore()
-    run = await factory(Rework("check", "draft", limit=1, on_limit="continue")).run(
+    run = await factory(Rework(check, draft, limit=1, on_limit="continue")).run(
         Brief(goal="x"),
         store=store,
         deps=deps,
@@ -216,16 +217,16 @@ async def test_at_the_limit_a_run_may_carry_on_but_the_failure_stays_on_the_reco
 
     assert (run.outcome, run.finished, run.stopped_at) == ("failed", True, None)
     assert outcomes(run)[-2:] == [("check", 2, "failed"), ("publish", 1, "not_judged")]
-    assert run.output is not None
+    assert run.output_ref is not None
     failed_check = run.latest("check")
     assert failed_check is not None
-    assert (await store.get(run.output, Published)).inputs == (failed_check.output,)
+    assert (await store.get(run.output_ref, Published)).inputs == (failed_check.output_ref,)
 
 
 async def test_a_station_that_did_not_run_stops_the_run_and_is_never_reworked() -> None:
     deps = Deps(break_check=True)
 
-    run = await factory(Rework("check", "draft", limit=5)).run(
+    run = await factory(Rework(check, draft, limit=5)).run(
         Brief(goal="x"), store=MemoryStore(), deps=deps
     )
 
@@ -259,8 +260,8 @@ async def test_the_factory_takes_an_artifact_and_refuses_the_wrong_input() -> No
 
     run = await factory().run(given, store=store, deps=Deps())
 
-    assert run.input == given.ref
-    with pytest.raises(StationInputInvalid, match="factory 'document' takes Brief, not Draft"):
+    assert run.input_ref == given.ref
+    with pytest.raises(StationInputInvalid, match="factory 'document' expected Brief, not Draft"):
         await factory().run(Draft(text="x"), store=store, deps=Deps())
 
 
@@ -269,16 +270,20 @@ def test_a_badly_formed_factory_is_refused_with_every_finding_at_once() -> None:
     async def twin(ctx: StationContext, brief: Brief) -> Draft:
         return Draft(text="")
 
+    @station(name="elsewhere")
+    async def elsewhere(ctx: StationContext, brief: Brief) -> Draft:
+        return Draft(text="")
+
     with pytest.raises(FactoryDefinitionError) as caught:
         Factory(
             " ",
             [draft, twin, publish, check],
             rework=[
-                Rework("missing"),
-                Rework("check", "nowhere"),
-                Rework("check", "draft"),
-                Rework("publish", "check", limit=0),
-                Rework("nowhere", limit=0, on_limit="stop"),  # type: ignore[arg-type]
+                Rework(elsewhere),
+                Rework(check, elsewhere),
+                Rework(check, draft),
+                Rework(publish, check, limit=0),
+                Rework(elsewhere, limit=0, on_limit="stop"),  # type: ignore[arg-type]
             ],
         )
 
@@ -288,15 +293,15 @@ def test_a_badly_formed_factory_is_refused_with_every_finding_at_once() -> None:
         "'draft' hands on Draft but 'draft' takes Brief",
         "'draft' hands on Draft but 'publish' takes Checked",
         "'publish' hands on Published but 'check' takes Draft",
-        "rework from 'missing': no such station",
-        "rework from 'check': target 'nowhere' is not a station",
+        "rework from 'elsewhere': the station is not in this factory",
+        "rework from 'check': the station it sends work to is not in this factory",
         "rework from 'check': declared more than once",
         "rework from 'publish': the limit must be a whole number, at least 1",
-        "rework from 'publish': target 'check' comes later in the factory",
+        "rework from 'publish': 'check' comes later in the factory",
         "rework from 'publish': the station has no gate, so it can never fail",
-        "rework from 'nowhere': the limit must be a whole number, at least 1",
-        "rework from 'nowhere': on_limit must be 'halt' or 'continue'",
-        "rework from 'nowhere': no such station",
+        "rework from 'elsewhere': the limit must be a whole number, at least 1",
+        "rework from 'elsewhere': on_limit must be 'halt' or 'continue'",
+        "rework from 'elsewhere': the station is not in this factory",
     ]
 
 
@@ -311,8 +316,8 @@ def test_other_malformed_factories_are_refused_with_a_finding_not_a_crash() -> N
         ({"version": ""}, "the version must be non-empty"),
         ({"name": "x" * 201}, "the name must be one line"),
         ({"stations": [draft, "check"]}, "every item must be a Station"),
-        ({"rework": [Rework("check", limit=True)]}, "the limit must be a whole number"),
-        ({"rework": [Rework("check", limit=text_limit)]}, "the limit must be a whole number"),
+        ({"rework": [Rework(check, limit=True)]}, "the limit must be a whole number"),
+        ({"rework": [Rework(check, limit=text_limit)]}, "the limit must be a whole number"),
         ({"rework": ["check"]}, "every rework rule must be a Rework"),
     ]
     for change, message in cases:
@@ -324,14 +329,15 @@ def test_other_malformed_factories_are_refused_with_a_finding_not_a_crash() -> N
 
 
 def test_a_factory_knows_its_stations_and_rules() -> None:
-    rule = Rework("check", "draft")
+    rule = Rework(check, draft)
     built = factory(rule)
 
     assert [s.name for s in built.stations] == ["draft", "check", "publish"]
     assert built.index_of("check") == 1
     assert built.rework_for("check") is rule
     assert built.rework_for("draft") is None
-    assert (Rework("check").target, rule.target) == ("check", "draft")
+    assert Rework(check).target is check
+    assert rule.target is draft
 
 
 # --- two rework rules in one factory
@@ -352,14 +358,14 @@ def two_rule_factory(check_rule: Rework) -> Factory:
     return Factory(
         "document",
         [draft, check, fussy_publish],
-        rework=[check_rule, Rework("publish", "draft", limit=1)],
+        rework=[check_rule, Rework(fussy_publish, draft, limit=1)],
     )
 
 
 async def test_a_failure_that_later_rework_put_right_does_not_fail_the_run() -> None:
     deps = Deps(problems=[["a"], ["b"]])
 
-    run = await two_rule_factory(Rework("check", limit=1, on_limit="continue")).run(
+    run = await two_rule_factory(Rework(check, limit=1, on_limit="continue")).run(
         Brief(goal="x"),
         store=MemoryStore(),
         deps=deps,
@@ -384,7 +390,7 @@ async def test_a_failure_that_later_rework_put_right_does_not_fail_the_run() -> 
 async def test_a_rework_limit_counts_for_the_whole_run() -> None:
     deps = Deps(problems=[["a"], [], ["b"]])
 
-    run = await two_rule_factory(Rework("check", limit=1)).run(
+    run = await two_rule_factory(Rework(check, limit=1)).run(
         Brief(goal="x"), store=MemoryStore(), deps=deps
     )
 
@@ -403,14 +409,17 @@ async def test_a_rework_limit_counts_for_the_whole_run() -> None:
 
 
 async def test_the_record_survives_json_and_names_the_shape_of_its_factory() -> None:
-    built = factory(Rework("check", "draft"))
+    built = factory(Rework(check, draft))
 
     run = await built.run(Brief(goal="x"), store=MemoryStore(), deps=Deps())
 
-    assert type(run).model_validate_json(run.model_dump_json()) == run
+    restored = type(run).model_validate_json(run.model_dump_json())
+    # The output is typed Any on the record, so it reads back as JSON data, not a model.
+    assert restored.model_dump(mode="json") == run.model_dump(mode="json")
+    assert (restored.steps, restored.output_ref) == (run.steps, run.output_ref)
     assert run.factory_digest == built.digest
-    assert built.digest == factory(Rework("check", "draft")).digest
-    assert built.digest != factory(Rework("check", "draft", limit=2)).digest
+    assert built.digest == factory(Rework(check, draft)).digest
+    assert built.digest != factory(Rework(check, draft, limit=2)).digest
     assert built.digest != factory().digest
 
 
@@ -422,7 +431,7 @@ async def test_every_artifact_a_run_makes_carries_its_mission_and_methodologies(
         Brief(goal="x"), store=store, deps=Deps(), mission_id="m-1", methodologies=[stamp]
     )
 
-    refs = [run.input, *(step.output for step in run.steps if step.output)]
+    refs = [run.input_ref, *(step.output_ref for step in run.steps if step.output_ref)]
     for ref in refs:
         artifact = await store.get(ref, Untyped)
         assert (artifact.mission_id, artifact.methodologies) == ("m-1", (stamp,))
@@ -467,16 +476,16 @@ def test_a_record_that_contradicts_itself_is_refused() -> None:
         "factory": "l",
         "factory_version": "0",
         "factory_digest": factory().digest,
-        "input": ref,
+        "input_ref": ref,
     }
     contradictions: list[dict[str, Any]] = [
         {"outcome": "passed", "finished": False, "stopped_at": "check"},
         {"outcome": "passed", "finished": True},
         {"outcome": "failed", "finished": False},
-        {"outcome": "failed", "finished": True, "output": ref, "stopped_at": "check"},
-        {"outcome": "did_not_run", "finished": True, "output": ref},
+        {"outcome": "failed", "finished": True, "output_ref": ref, "stopped_at": "check"},
+        {"outcome": "did_not_run", "finished": True, "output_ref": ref},
         {"outcome": "running", "finished": False, "stopped_at": "check"},
-        {"outcome": "needs_approval", "finished": False, "stopped_at": "check", "output": ref},
+        {"outcome": "needs_approval", "finished": False, "stopped_at": "check", "output_ref": ref},
     ]
     for wrong in contradictions:
         with pytest.raises(ValidationError):

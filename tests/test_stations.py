@@ -14,6 +14,7 @@ from pydantic_ai_factory import (
     Artifact,
     DefinitionError,
     Evidence,
+    Feedback,
     MemoryStore,
     MethodologyRef,
     Producer,
@@ -30,7 +31,6 @@ from pydantic_ai_factory import (
     passed,
     station,
 )
-from pydantic_ai_factory.gates import GateDecision
 
 pytestmark = pytest.mark.anyio
 
@@ -45,6 +45,10 @@ class Count(BaseModel):
 
 class Note(BaseModel):
     text: str
+
+
+class NotSerialisable:
+    """A plain class with no schema, which Pydantic cannot serialise."""
 
 
 @gate(version="1")
@@ -78,10 +82,10 @@ async def test_a_station_that_passes_its_gate_ran_and_passed() -> None:
         "r1",
         1,
     )
-    assert result.output is not None and result.decision is not None
+    assert result.output_ref is not None and result.decision is not None
     assert result.decision.reasons == ("short enough",)
     assert result.reason is None
-    output = await store.get(result.output, Count)
+    output = await store.get(result.output_ref, Count)
     assert output.payload == Count(words=3)
 
 
@@ -91,7 +95,7 @@ async def test_a_station_that_fails_its_gate_ran_and_did_not_pass() -> None:
     assert (result.outcome, result.ran, result.passed) == ("failed", True, False)
     assert result.decision is not None
     assert result.decision.reasons == ("12 words is not under 10",)
-    assert result.output is not None
+    assert result.output_ref is not None
 
 
 async def test_a_station_that_raises_did_not_run_and_did_not_fail() -> None:
@@ -103,7 +107,7 @@ async def test_a_station_that_raises_did_not_run_and_did_not_fail() -> None:
 
     assert (result.outcome, result.ran, result.passed) == ("did_not_run", False, None)
     assert result.reason == "the station raised ConnectionError: the tool is unreachable"
-    assert result.output is None and result.decision is None
+    assert result.output_ref is None and result.decision is None
 
 
 async def test_a_station_that_returns_the_wrong_type_did_not_run() -> None:
@@ -114,7 +118,8 @@ async def test_a_station_that_returns_the_wrong_type_did_not_run() -> None:
     result = await wrong.run(Text(body="hello"), store=MemoryStore())
 
     assert (result.outcome, result.ran) == ("did_not_run", False)
-    assert result.reason == "the station returned Text, not Count"
+    assert result.reason is not None
+    assert result.reason.startswith("the station returned the wrong type")
 
 
 async def test_a_station_with_no_gate_ran_but_was_not_judged() -> None:
@@ -125,7 +130,7 @@ async def test_a_station_with_no_gate_ran_but_was_not_judged() -> None:
     result = await ungated.run(Text(body="hello"), store=MemoryStore())
 
     assert (result.outcome, result.ran, result.passed) == ("not_judged", True, None)
-    assert result.output is not None and result.decision is None
+    assert result.output_ref is not None and result.decision is None
 
 
 async def test_missing_evidence_means_the_gate_did_not_run_and_nothing_passed() -> None:
@@ -141,7 +146,7 @@ async def test_missing_evidence_means_the_gate_did_not_run_and_nothing_passed() 
 
     assert (result.outcome, result.ran, result.passed) == ("did_not_run", True, None)
     assert result.reason == "gate 'needs_a_note' was not evaluated: missing evidence: Note"
-    assert result.output is not None and result.decision is None
+    assert result.output_ref is not None and result.decision is None
 
 
 async def test_a_gate_that_asks_for_a_person_leaves_passed_unanswered() -> None:
@@ -178,14 +183,14 @@ async def test_recorded_evidence_is_stored_with_lineage_and_reaches_the_gate() -
     )
 
     assert result.outcome == "passed"
-    assert result.decision is not None and result.output is not None
+    assert result.decision is not None and result.output_ref is not None
     assert result.decision.reasons == ("counted by splitting on spaces",)
     assert result.decision.methodologies == (stamp,)
     (note_ref,) = result.evidence
-    assert result.decision.judged == (result.output, note_ref)
+    assert result.decision.judged == (result.output_ref, note_ref)
 
     producer = Producer(station="careful", station_version="2", run_id="r9", attempt=1)
-    for ref, payload_type in ((note_ref, Note), (result.output, Count)):
+    for ref, payload_type in ((note_ref, Note), (result.output_ref, Count)):
         artifact = await store.get(ref, payload_type)
         assert artifact.produced_by == producer
         assert artifact.inputs == (given.ref,)
@@ -206,17 +211,18 @@ async def test_the_context_carries_deps_the_attempt_and_feedback() -> None:
             greeting=ctx.deps.greeting,
             attempt=ctx.attempt,
             feedback=ctx.feedback,
-            input=ctx.input.payload,
+            run_id=ctx.run_id,
+            input=text,
         )
         return Count(words=0)
 
-    earlier = under_ten_words.evaluate(Artifact.create(Count(words=12)), Evidence())
-    assert isinstance(earlier, GateDecision)
+    earlier = Feedback(reasons=("12 words is not under 10",))
 
     result = await curious.run(
         Text(body="hi"),
         store=MemoryStore(),
         deps=Deps(greeting="hello"),
+        run_id="r2",
         attempt=2,
         feedback=earlier,
     )
@@ -226,6 +232,7 @@ async def test_the_context_carries_deps_the_attempt_and_feedback() -> None:
         "greeting": "hello",
         "attempt": 2,
         "feedback": earlier,
+        "run_id": "r2",
         "input": Text(body="hi"),
     }
 
@@ -241,8 +248,8 @@ async def test_the_wrong_input_type_is_refused_before_anything_runs() -> None:
         return Count(words=0)
 
     bad_calls: list[tuple[Any, dict[str, Any], str]] = [
-        (Count(words=1), {}, "'watched' takes Text, not Count"),
-        ("hello", {}, "'watched' takes Text, not str"),
+        (Count(words=1), {}, "station 'watched' expected Text, not Count"),
+        ("hello", {}, "station 'watched' expected Text, not str"),
         (Text(body="x"), {"attempt": 0}, "attempt"),
         (Text(body="x"), {"run_id": " padded"}, "run_id"),
         (Text(body="x"), {"mission_id": " "}, "mission_id must be non-empty"),
@@ -280,7 +287,7 @@ def test_a_badly_declared_station_is_refused_with_the_reason() -> None:
     async def no_input(ctx: StationContext) -> Count:
         return Count(words=0)
 
-    async def not_a_model(ctx: StationContext, text: str) -> Count:
+    async def not_serialisable(ctx: StationContext, text: NotSerialisable) -> Count:
         return Count(words=0)
 
     def synchronous(ctx: StationContext, text: Text) -> Count:
@@ -297,7 +304,7 @@ def test_a_badly_declared_station_is_refused_with_the_reason() -> None:
         (42, "declared from a function"),
         (unannotated, "annotate the input and the return type"),
         (no_input, "exactly two positional arguments"),
-        (not_a_model, "input type must be a Pydantic model"),
+        (not_serialisable, "input type must be one Pydantic can serialise"),
         (synchronous, "the function must be async"),
         (unresolvable, "cannot resolve the annotation 'Missing'"),
     ]
@@ -326,7 +333,7 @@ def test_a_badly_declared_station_is_refused_with_the_reason() -> None:
 async def test_station_code_cannot_change_the_record_of_its_own_run() -> None:
     @station(gate=under_ten_words)
     async def tamper(ctx: StationContext, text: Text) -> Count:
-        for name, value in (("producer", None), ("mission_id", "forged"), ("feedback", None)):
+        for name, value in (("run_id", "forged"), ("attempt", 9), ("feedback", None)):
             with pytest.raises(dataclasses.FrozenInstanceError):
                 setattr(ctx, name, value)
         await ctx.record(Note(text="kept"))
@@ -341,8 +348,8 @@ async def test_station_code_cannot_change_the_record_of_its_own_run() -> None:
         2,
         1,
     )
-    assert result.output is not None
-    produced_by = (await store.get(result.output, Count)).produced_by
+    assert result.output_ref is not None
+    produced_by = (await store.get(result.output_ref, Count)).produced_by
     assert produced_by == Producer(station="tamper", run_id="real", attempt=2)
 
 
@@ -429,8 +436,8 @@ async def test_a_subclass_of_the_output_type_is_accepted() -> None:
     store = MemoryStore()
     result = await detailed.run(Text(body="hello"), store=store)
 
-    assert result.outcome == "passed" and result.output is not None
-    assert (await store.get(result.output, DetailedCount)).payload.characters == 5
+    assert result.outcome == "passed" and result.output_ref is not None
+    assert (await store.get(result.output_ref, DetailedCount)).payload.characters == 5
 
 
 async def test_each_run_gets_its_own_id_and_names_its_input() -> None:
@@ -441,15 +448,13 @@ async def test_each_run_gets_its_own_id_and_names_its_input() -> None:
     second = await count_words.run(given, store=store)
 
     assert first.run_id != second.run_id
-    assert first.input == second.input == given.ref
+    assert first.input_ref == second.input_ref == given.ref
 
 
-async def test_recorded_evidence_keeps_its_type_label_and_extra_inputs() -> None:
-    other = Artifact.create(Note(text="elsewhere"))
-
+async def test_recorded_evidence_keeps_its_type_label() -> None:
     @station
     async def labelled(ctx: StationContext, text: Text) -> Count:
-        await ctx.record(Note(text="n"), type="ReviewNote", inputs=[other.ref])
+        await ctx.record(Note(text="n"), type="ReviewNote")
         return Count(words=1)
 
     store = MemoryStore()
@@ -457,7 +462,7 @@ async def test_recorded_evidence_keeps_its_type_label_and_extra_inputs() -> None
 
     (ref,) = result.evidence
     assert ref.type == "ReviewNote"
-    assert (await store.get(ref, Note)).inputs == (result.input, other.ref)
+    assert (await store.get(ref, Note)).inputs == (result.input_ref,)
 
 
 def test_a_result_that_contradicts_itself_is_refused() -> None:
@@ -467,7 +472,7 @@ def test_a_result_that_contradicts_itself_is_refused() -> None:
         "station_version": "0",
         "run_id": "r",
         "attempt": 1,
-        "input": ref,
+        "input_ref": ref,
     }
 
     contradictions: list[dict[str, Any]] = [

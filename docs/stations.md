@@ -1,297 +1,111 @@
 ---
 title: Stations
-description: How to declare a station, run it once and read what happened.
+description: A station is one bounded job with a typed input and output. It may run agents, or none.
 ---
 
 # Stations
 
-A station is one bounded job with a typed input and a typed output. It is the unit a factory is built from. A station may use one agent, several agents or none: the first example below uses no model at all. This page shows how to declare a station, run it, and read a result that keeps "did it run" apart from "did it pass".
+A station is one bounded job in a factory, with a typed input and a typed output. It may run one agent, several, or none at all. Each attempt answers two questions separately: did it run, and did its output pass?
 
-## At a glance
-
-One attempt at a station ends in one of five outcomes. Only a gate's verdict can be `passed` or `failed`.
-
-```mermaid
-flowchart TD
-    I["Typed input"] --> S["The station's code"]
-    S -->|"raised, or returned the wrong type"| DNR["did_not_run"]
-    S -->|"returned its output"| G{"Is there a gate?"}
-    G -->|"no"| NJ["not_judged"]
-    G -->|"yes"| E{"Could the gate be evaluated?"}
-    E -->|"no"| DNR
-    E -->|"yes"| V{"The gate's verdict"}
-    V --> P["passed"]
-    V --> F["failed"]
-    V --> NA["needs_approval"]
-```
-
-## Your first station
-
-A station is an async function with a decorator. It takes a context and one input, and returns one output. The input and the output must each be a Pydantic model; the decorator reads their types from the annotations.
-
-This station counts words. Its [gate](gates.md) passes short texts and fails long ones.
+The shortest station is an agent:
 
 ```python
-import asyncio
+from pydantic_ai import Agent
 
-from pydantic import BaseModel
+from pydantic_ai_factory import MemoryStore, station
 
-from pydantic_ai_factory import (
-    Artifact,
-    Evidence,
-    MemoryStore,
-    StationContext,
-    Verdict,
-    failed,
-    gate,
-    passed,
-    station,
-)
+designer = Agent("anthropic:claude-opus-5-5", name="designer", instructions="Write a short design.")
 
-
-class Text(BaseModel):
-    body: str
-
-
-class Count(BaseModel):
-    words: int
-
-
-@gate(version="1")
-def under_ten_words(output: Artifact[Count], evidence: Evidence) -> Verdict:
-    if output.payload.words >= 10:
-        return failed(f"{output.payload.words} words is not under 10")
-    return passed("short enough")
-
-
-@station(gate=under_ten_words)
-async def count_words(ctx: StationContext, text: Text) -> Count:
-    return Count(words=len(text.body.split()))
-
-
-async def main() -> None:
-    store = MemoryStore()
-    result = await count_words.run(Text(body="one two three"), store=store)
-
-    print(result.outcome, result.ran, result.passed)
-    #> passed True True
-
-    assert result.output is not None
-    output = await store.get(result.output, Count)
-    print(output.payload)
-    #> words=3
-
-
-asyncio.run(main())
+design = station(designer)
+result = design.run_sync("A to-do list web page where I can add tasks and tick them off.", store=MemoryStore())
+print(design.name, result.outcome)
+#> designer not_judged
 ```
 
-Three things happened. The station ran. Its output was stored as an [artifact](artifacts.md). The gate judged that artifact and passed it.
+`station(agent)` passes its input to the agent as the prompt and hands on the agent's output. It takes the same options as the decorator below, and its name is the agent's `name`.
 
-## Reading a result
+## Stations as functions
 
-`Station.run` returns a `StationResult`. It is a plain record that holds refs, so it can be saved and compared.
-
-| Field | Meaning |
-|---|---|
-| `outcome` | One of the five outcomes below. |
-| `ran` | Whether the station's own code completed and returned its output type. |
-| `passed` | `True`, `False`, or `None` when the output was not judged. |
-| `input` | The ref of the input artifact. |
-| `output` | The ref of the output artifact, if there is one. |
-| `evidence` | The refs of anything else the station recorded. |
-| `decision` | The gate's decision, when the gate was evaluated. |
-| `not_evaluated` | Why the gate could not be evaluated, with the evidence that was missing. |
-| `reason` | Why the attempt did not run, in plain words. |
-| `error_type`, `traceback` | The exception a station raised, kept as text so the record can be saved. |
-| `station`, `station_version`, `run_id`, `attempt` | Which attempt this was. |
-
-## The five outcomes
-
-| Outcome | `ran` | `passed` | When |
-|---|---|---|---|
-| `passed` | `True` | `True` | The gate judged the output and passed it. |
-| `failed` | `True` | `False` | The gate judged the output and failed it. |
-| `needs_approval` | `True` | `None` | The gate is satisfied and a person must decide. |
-| `not_judged` | `True` | `None` | The station has no gate. Nothing judged the output. |
-| `did_not_run` | `False` | `None` | The station raised, or returned something that is not its output type. |
-| `did_not_run` | `True` | `None` | The station's code ran, but its gate could not be evaluated. |
-
-`ran` is about the station's own code. `outcome` is about the attempt as a whole. Only `outcome` is stored: `ran` and `passed` are read from the record. That is why `did_not_run` appears twice: an attempt whose gate could not be evaluated did not run to a judgement, even though its code ran.
-
-Only a gate can fail a station. A station that raises has not failed: it did not run. The exception is not lost. Its type and traceback are on the result, and it is logged on the `pydantic_ai_factory` logger. This matters once stations are joined into a [factory](factories.md), because a failure can send work back for rework and "did not run" never does.
+When a station runs more than one agent, or needs code around one, write it as an async function.
 
 ```python
-import asyncio
+from pydantic_ai import Agent
 
-from pydantic import BaseModel
+from pydantic_ai_factory import Factory, MemoryStore, StationContext, station
 
-from pydantic_ai_factory import MemoryStore, StationContext, station
-
-
-class Text(BaseModel):
-    body: str
-
-
-class Count(BaseModel):
-    words: int
+builder = Agent("anthropic:claude-opus-5-5", name="builder", instructions="Build what the design says.")
+reviewer = Agent("anthropic:claude-opus-5-5", name="reviewer", instructions="Say what is wrong, if anything.")
 
 
 @station
-async def unreachable(ctx: StationContext, text: Text) -> Count:
-    raise ConnectionError("the tool is unreachable")
+async def build(ctx: StationContext, design: str) -> str:
+    await ctx.run_agent(builder, design)
+    review = await ctx.run_agent(reviewer, design)
+    return review.output
 
 
-async def main() -> None:
-    result = await unreachable.run(Text(body="hello"), store=MemoryStore())
-
-    print(result.outcome, result.ran, result.passed)
-    #> did_not_run False None
-    print(result.reason)
-    #> the station raised ConnectionError: the tool is unreachable
-
-
-asyncio.run(main())
+software = Factory("software", [build])
+run = software.run_sync("One page, index.html, with a box to add tasks.", store=MemoryStore())
+print(run.output)
+#> The page matches the design. Nothing is wrong.
 ```
 
-A station with no gate is allowed, and its result is honest about it: the outcome is `not_judged`, never `passed`.
+The input and output types come from the annotations. Each may be any type Pydantic can serialise: a `str`, a list, a dataclass or a model. [Agents in stations](agents.md) explains `ctx.run_agent`.
+
+A station with no agent is just as welcome. A station that formats a design, or runs a test suite, is ordinary Python.
+
+## Did it run? Did it pass?
+
+| Outcome | Means |
+|---|---|
+| `passed` | A [gate](gates.md) judged the output and passed it. |
+| `failed` | A gate judged the output and failed it. |
+| `needs_approval` | A gate is satisfied, and a person must decide. |
+| `not_judged` | The station has no gate, so nothing judged the output. |
+| `did_not_run` | The station raised, or its gate had no evidence to read. |
+
+Only a gate can fail a station. A station that raises has not failed: it did not run, and the exception is kept on the result. This matters because failed work can be sent back for [rework](factories.md#rework), and redoing the work does not fix an unreachable model.
 
 ## Recording evidence
 
-A station often produces more than its output: a review report, a test log, a list of sources. Record each with `ctx.record`. It is stored at once, with the station's input as its lineage, and the gate can then read it.
+A station can record more than its output, for a gate to read. Record each piece with `ctx.record`.
 
 ```python
-import asyncio
-
 from pydantic import BaseModel
 
-from pydantic_ai_factory import (
-    Artifact,
-    Evidence,
-    MemoryStore,
-    StationContext,
-    Verdict,
-    failed,
-    gate,
-    passed,
-    station,
-)
+from pydantic_ai_factory import Artifact, Evidence, MemoryStore, StationContext, Verdict, failed, gate, passed, station
 
 
-class Text(BaseModel):
-    body: str
+class TestRun(BaseModel):
+    passed: int
+    failed: int
 
 
-class Summary(BaseModel):
-    text: str
+@gate(version="1", requires=[TestRun])
+def tests_pass(output: Artifact[str], evidence: Evidence) -> Verdict:
+    run = evidence.one(TestRun).payload
+    return passed("all tests pass") if run.failed == 0 else failed(f"{run.failed} tests failed")
 
 
-class SpellCheck(BaseModel):
-    misspelt: list[str]
+@station(gate=tests_pass)
+async def build(ctx: StationContext, design: str) -> str:
+    await ctx.record(TestRun(passed=12, failed=0))
+    return "Built index.html."
 
 
-@gate(version="1", requires=[SpellCheck])
-def no_spelling_mistakes(output: Artifact[Summary], evidence: Evidence) -> Verdict:
-    misspelt = evidence.one(SpellCheck).payload.misspelt
-    return failed(f"misspelt: {', '.join(misspelt)}") if misspelt else passed("spelling is clean")
-
-
-@station(gate=no_spelling_mistakes)
-async def summarise(ctx: StationContext, text: Text) -> Summary:
-    summary = Summary(text=text.body.split(".")[0])
-    await ctx.record(SpellCheck(misspelt=[w for w in summary.text.split() if w == "teh"]))
-    return summary
-
-
-async def main() -> None:
-    result = await summarise.run(Text(body="Split teh bill. Then pay."), store=MemoryStore())
-
-    print(result.outcome)
-    #> failed
-    assert result.decision is not None
-    print(result.decision.reasons)
-    #> ('misspelt: teh',)
-    print(len(result.evidence))
-    #> 1
-
-
-asyncio.run(main())
+print(build.run_sync("One page, index.html.", store=MemoryStore()).outcome)
+#> passed
 ```
 
-If the station forgets to record a `SpellCheck`, the gate is not evaluated and the outcome is `did_not_run`. Missing evidence is never a pass. The [gates](gates.md) page explains why.
+If the gate needs evidence the station did not record, the gate is not evaluated and the attempt did not run. A check that never happened is never counted as a pass.
 
-## The context
+## Options
 
-The first argument to a station is a `StationContext`.
-
-| Attribute | What it gives you |
-|---|---|
-| `ctx.deps` | Whatever you passed as `deps=` to `Station.run`: clients, settings, an agent. |
-| `ctx.input` | The input as an artifact, with its ref. |
-| `ctx.record(payload)` | Records evidence beside the output. |
-| `ctx.attempt` | Which attempt this is, starting at 1. |
-| `ctx.producer` | The station, version, run and attempt, as stamped on what this run makes. |
-| `ctx.feedback` | The gate decision that failed the previous attempt, when this is rework. |
-| `ctx.store` | The artifact store. |
-| `ctx.run_id`, `ctx.mission_id`, `ctx.methodologies` | Where this run sits. |
-
-The context cannot be changed, so a station cannot alter the record of its own run. Evidence must be recorded before the station returns; recording later raises `StationClosed`.
-
-Give `deps` a type by writing `StationContext[MyDeps]`. This is how a station is tested: pass a fake in `deps`. The type guides your editor inside the station. It is not checked where `Station.run` is called, so passing the wrong `deps` shows up when the station uses it.
-
-```python
-import asyncio
-from dataclasses import dataclass
-
-from pydantic import BaseModel
-
-from pydantic_ai_factory import MemoryStore, StationContext, station
-
-
-class City(BaseModel):
-    name: str
-
-
-class Forecast(BaseModel):
-    summary: str
-
-
-@dataclass
-class Deps:
-    weather: dict[str, str]
-
-
-@station
-async def forecast(ctx: StationContext[Deps], city: City) -> Forecast:
-    return Forecast(summary=ctx.deps.weather[city.name])
-
-
-async def main() -> None:
-    result = await forecast.run(
-        City(name="Leeds"), store=MemoryStore(), deps=Deps(weather={"Leeds": "rain"})
-    )
-    print(result.outcome)
-    #> not_judged
-
-
-asyncio.run(main())
-```
-
-## Declaring a station
-
-The decorator takes three optional arguments.
-
-| Argument | Default | Meaning |
+| Option | Default | Means |
 |---|---|---|
+| `gate` | none | The [gate](gates.md) that judges the output. |
+| `agents` | inferred | The agents the station runs. See [which agents](agents.md#which-agents-a-station-runs). |
 | `name` | the function's name | The station's name in every record. |
-| `version` | `"0"` | The version of the station's code. Change it when behaviour changes. |
-| `gate` | none | The gate that judges the output. |
+| `version` | `"0"` | Change it when the station's behaviour changes. |
 
-A station is refused when it is declared, not when it runs, if it is not async, does not take exactly two positional arguments, has an empty name or version, or its input or output type is not a Pydantic model. The error is a `StationDefinitionError`. Like every definition error in the library it is a `DefinitionError`, and its `findings` list every rule that was broken.
-
-Passing the wrong input, or a bad `attempt`, `run_id` or `mission_id`, raises `StationInputInvalid` before anything runs.
-
-An error from the store while saving the input or the output is raised as it is: a store that cannot write is not something a result can record.
-
-## Where agents fit
-
-A station's function is ordinary async Python, so it can call a Pydantic AI agent like any other code. Nothing on this page needs one. The Design station, later in the series, shows a station built around agents and their capabilities.
+`Station.run_sync(input, store=...)` runs one attempt on its own, outside a factory. That is how a station is tested.

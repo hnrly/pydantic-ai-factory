@@ -9,15 +9,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Generic, Literal, Self, TypeVar
 
-from pydantic import AwareDatetime, BaseModel, Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator
 
 from ..artifacts import Artifact, ArtifactRef
 from ..contracts import DefinitionError, MethodologyRef, Name, Record, check_name
 
 logger = logging.getLogger("pydantic_ai_factory")
 
-OutT = TypeVar("OutT", bound=BaseModel)
-EvidenceT = TypeVar("EvidenceT", bound=BaseModel)
+OutT = TypeVar("OutT")
+EvidenceT = TypeVar("EvidenceT")
 
 Judgement = Literal["passed", "failed", "needs_approval"]
 
@@ -98,7 +98,7 @@ class Gate(Generic[OutT]):
     name: str
     version: str
     check: Callable[[Artifact[OutT], Evidence], Verdict]
-    requires: tuple[type[BaseModel], ...] = ()
+    requires: tuple[type[Any], ...] = ()
 
     def __post_init__(self) -> None:
         problems: list[str] = []
@@ -112,11 +112,11 @@ class Gate(Generic[OutT]):
             problems.append("check must be a plain function, not async")
         requires: object = self.requires
         if not isinstance(requires, tuple):  # pyright: ignore[reportUnnecessaryIsInstance]
-            problems.append("requires must be a list of Pydantic model classes")
+            problems.append("requires must be a list of classes")
         else:
             for required in self.requires:
-                if not (inspect.isclass(required) and issubclass(required, BaseModel)):  # pyright: ignore[reportUnnecessaryIsInstance]
-                    problems.append(f"requires must hold Pydantic model classes, not {required!r}")
+                if not inspect.isclass(required):
+                    problems.append(f"requires must hold classes, not {required!r}")
         if problems:
             raise GateDefinitionError(f"gate {self.name!r}", problems)
 
@@ -166,7 +166,7 @@ class Gate(Generic[OutT]):
 def gate(
     *,
     version: str,
-    requires: Sequence[type[BaseModel]] = (),
+    requires: Sequence[type[Any]] = (),
     name: str | None = None,
 ) -> Callable[[Callable[[Artifact[OutT], Evidence], Verdict]], Gate[OutT]]:
     """Turn a function into a :class:`Gate`.

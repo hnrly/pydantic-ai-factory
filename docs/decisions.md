@@ -7,7 +7,7 @@ description: The design decisions behind Pydantic AI Factory, with the reason fo
 
 This page records the decisions that shape the library and why each was made. Where there was a real alternative, it says what was turned down. They were settled before any code was written, so that the foundations are designed whole. A decision here is not rewritten later. If one changes, a new entry replaces it and says so.
 
-The words used below are defined on the [concepts](concepts.md) page.
+The words used below each have a page under Concepts, starting with [factories](factories.md).
 
 ## The core has no durability engine
 
@@ -27,11 +27,19 @@ The words used below are defined on the [concepts](concepts.md) page.
 
 ## A station is a typed contract
 
-**Decided.** A station has a typed input, a typed output, a function and a gate. It may also list capabilities for its agents. An agent is optional. "Capability" means Pydantic AI's `AbstractCapability` and nothing else.
+**Decided.** A station has a typed input, a typed output, a function and a gate. It names the agents it runs, if any. An agent is optional. "Capability" means Pydantic AI's `AbstractCapability` and nothing else.
 
 **Why.** A station with no agent must be first class. And one word must have one meaning.
 
 **Rejected.** Making a station a capability attached to an agent: a station without an agent would have nothing to attach to. Also rejected: a second "capability" abstraction above Pydantic AI's.
+
+## Stations run agents through the context
+
+**Decided.** A station runs an agent with `ctx.run_agent(agent, prompt)`, and the station finds the agents it may run by reading the names its function refers to when it is declared. `@station(agents=[...])` names them explicitly where inference cannot see them. `ctx.run_agent` stores the agent's Pydantic AI `Conversation` as an artifact keyed by the agent's name, and carries it on at a later attempt with what went wrong. It refuses an agent the station did not name.
+
+**Why.** An agent is the thing a station most often does, and an earlier draft left every station to wire it by hand: a fresh run on every attempt with no conversation carried, capabilities passed in by convention and review found by type. Naming the agents lets a factory list every agent before a run.
+
+**Rejected.** A required `agents=[...]` list on every station: it repeated what the code already said, and forgetting an entry only failed at run time. Inference reads the same names Pydantic AI reads when it infers an agent's name. Also rejected: leaving agent runs to station code, with capabilities handed in through the context. It kept the core small but made the flagship station the most complicated thing on the site. Also rejected: building the agent inside the station, which hides it from the factory.
 
 ## Definitions are frozen; running is a method that holds no state
 

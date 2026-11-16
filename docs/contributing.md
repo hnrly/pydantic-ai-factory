@@ -68,12 +68,13 @@ npm --prefix site ci        # once
 npm --prefix site run dev   # preview at http://localhost:4321/pydantic_ai_factory/
 ```
 
-Four rules keep the docs honest.
+Five rules keep the docs honest, and close to the style of Pydantic AI's own docs.
 
 1. **Open with a plain summary.** A reader should be able to stop after the first paragraph.
-2. **Every Python sample runs, and its output is checked.** `uv run pytest` executes each fenced `python` block in `docs/` and the READMEs, and compares every `#>` comment with what the line above printed. Run `uv run pytest --update-examples` to rewrite those comments after an intended change. A block that is only a sketch opts out with `python test="skip"` on its opening fence, and the page says why. Samples are found in `.md` pages only, so keep Python out of `.mdx` pages; a test fails if one appears.
-3. **Link by file path.** Write `[concepts](concepts.md)`. The site turns it into a route, and the link also works on GitHub.
-4. **Draw with Mermaid, where a picture helps.** A fenced `mermaid` block becomes a diagram. Use one when a page describes a flow, a set of states or a lineage, and put it before the first code sample, so the reader sees the shape before the detail. A page that only lists options or commands needs none. The build parses every diagram and fails on one that would not draw; `npm --prefix site run diagrams` runs that check alone.
+2. **Every Python sample runs, and its output is checked.** Samples name a real model, `anthropic:claude-opus-5-5`, and call `run_sync`, as a reader would. The test suite swaps in a scripted model for every agent, so the samples run with no key and always print the same thing; each page's replies are in `tests/scripted.py`. Each sample is complete on its own, with its imports. `uv run pytest` executes each fenced `python` block in `docs/` and the READMEs, and compares every `#>` comment with what the line above printed. Run `uv run pytest --update-examples` to rewrite those comments after an intended change. A block that cannot run, such as one that needs an outside account, opts out with `python test="skip"` on its opening fence, and the page says why. Samples are found in `.md` pages only, so keep Python out of `.mdx` pages; a test fails if one appears.
+3. **Link by file path.** Write `[stations](stations.md)`. The site turns it into a route, and the link also works on GitHub.
+4. **One worked example.** Every page uses the to-do list web page. A blank task, or a ticked task that comes back after a reload, drives review, escalation and approval. A bug report about it is the signal example. Do not invent abstract examples.
+5. **Concepts and short code, no diagrams.** Open with what the thing is in a sentence or two, show the smallest sample that uses it, then explain variations with smaller samples. Keep tables for things a reader looks up, such as options and outcomes.
 
 A new page needs a `title` and `description` in its front matter, and an entry in the sidebar in `site/astro.config.mjs`.
 

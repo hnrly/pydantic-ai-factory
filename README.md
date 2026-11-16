@@ -23,11 +23,12 @@ An agent finishing a task is not the same as the work being right. A factory sep
 ## What is here today
 
 - [Factories and rework](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/factories.md): join stations into a factory, send failed work back a bounded number of times, and read the record of the run.
+- [Agents in stations](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/agents.md): run Pydantic AI agents inside a station with `ctx.run_agent`, which keeps each agent's conversation and carries it on when work comes back.
 - [Stations](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/stations.md) and [gates](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/gates.md): declare a typed station, run it once, and get a result that keeps "ran" apart from "passed".
 - [Artifacts](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/artifacts.md): unchangeable, content-addressed records with lineage, and two stores for them.
 - Two distributions in one workspace: `pydantic-ai-factory` (the generic core) and `pydantic-ai-factory-software` (software stations). The core never imports a domain package.
 - Formatting, linting, strict typing, tests and an import-rule check, run in CI on Python 3.11 to 3.14.
-- A documentation site in `docs/` and `site/`. Start with [Concepts](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/concepts.md) and [Decisions](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/decisions.md).
+- A documentation site in `docs/` and `site/`. Start with [Factories](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/factories.md) and [Decisions](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/decisions.md).
 - A keep-out scan that stops credentials, personal paths and private terms from being published.
 
 ## Develop

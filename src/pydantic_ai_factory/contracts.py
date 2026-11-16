@@ -6,10 +6,12 @@ the rest of the package.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
-from collections.abc import Sequence
-from typing import Annotated, Any
+import warnings
+from collections.abc import Coroutine, Sequence
+from typing import Annotated, Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
@@ -23,7 +25,10 @@ __all__ = [
     "canonical_json",
     "check_name",
     "digest_of",
+    "run_sync",
 ]
+
+ResultT = TypeVar("ResultT")
 
 Name = Annotated[str, StringConstraints(min_length=1, max_length=200, pattern=r"^\S(.*\S)?$")]
 """A short label with no leading or trailing space, such as a station or type name."""
@@ -93,3 +98,25 @@ def canonical_json(value: Any) -> bytes:
 def digest_of(value: Any) -> str:
     """Return the SHA-256 digest of JSON-ready data in its canonical form."""
     return "sha256:" + hashlib.sha256(canonical_json(value)).hexdigest()
+
+
+def run_sync(coroutine: Coroutine[Any, Any, ResultT]) -> ResultT:
+    """Run ``coroutine`` to completion from code that is not async.
+
+    It reuses the thread's event loop, as Pydantic AI's ``Agent.run_sync`` does, so model
+    clients made on an earlier call still work. It cannot be used inside async code.
+    """
+    try:
+        with warnings.catch_warnings():
+            # With no loop in the main thread, Python 3.12 and 3.13 make one and warn.
+            warnings.simplefilter("ignore", DeprecationWarning)
+            loop: asyncio.AbstractEventLoop | None = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = None
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    if loop.is_running():
+        coroutine.close()
+        raise FactoryError("this is the synchronous form; inside async code, await the async form")
+    return loop.run_until_complete(coroutine)

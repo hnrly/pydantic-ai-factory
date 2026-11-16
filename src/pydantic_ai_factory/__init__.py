@@ -30,6 +30,7 @@ from .gates import (
     passed,
 )
 from .stations import (
+    Feedback,
     Station,
     StationClosed,
     StationContext,
@@ -53,6 +54,7 @@ __all__ = [
     "Factory",
     "FactoryDefinitionError",
     "FactoryError",
+    "Feedback",
     "Gate",
     "GateDecision",
     "GateDefinitionError",
