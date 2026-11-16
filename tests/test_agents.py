@@ -7,7 +7,15 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 from pydantic_ai import Agent, Conversation
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturn,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
@@ -243,3 +251,51 @@ def test_a_replayed_result_reads_like_the_run_it_replays() -> None:
     assert replayed.usage == original.usage
     assert replayed.conversation.messages == original.conversation.messages
     assert replayed.conversation.conversation_id == original.conversation.conversation_id
+
+
+async def test_a_conversation_whose_metadata_holds_message_parts_is_kept_in_its_json_form() -> None:
+    # Pydantic AI Harness's CodeMode puts message parts in a tool return's metadata.
+    # JSON turns them into dicts, so the conversation is kept as it reads back from JSON.
+    replies = iter(
+        [
+            ModelResponse(parts=[ToolCallPart("look", {}, "c1")]),
+            ModelResponse(parts=[TextPart("Looked.")]),
+        ]
+    )
+    looker = Agent(FunctionModel(lambda messages, info: next(replies)), name="looker")
+
+    @looker.tool_plain
+    def look() -> ToolReturn:
+        inner = ToolCallPart("read_file", {"path": "index.html"}, "c1-1")
+        return ToolReturn(return_value="seen", metadata={"tool_calls": {"c1-1": inner}})
+
+    @station
+    async def inspect(ctx: StationContext, page: str) -> str:
+        return (await ctx.run_agent(looker, page)).output
+
+    store = MemoryStore()
+
+    result = await inspect.run("Look at the page.", store=store)
+
+    assert result.outcome == "not_judged", result.reason
+    kept = await store.get(result.conversations["looker"], Conversation)
+    metadata: list[object] = [
+        part.metadata  # pyright: ignore[reportUnknownMemberType]
+        for message in kept.payload.messages
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    assert metadata[0] == {
+        "tool_calls": {
+            "c1-1": {
+                "tool_name": "read_file",
+                "args": {"path": "index.html"},
+                "tool_call_id": "c1-1",
+                "tool_kind": None,
+                "id": None,
+                "provider_name": None,
+                "provider_details": None,
+                "part_kind": "tool-call",
+            }
+        }
+    }

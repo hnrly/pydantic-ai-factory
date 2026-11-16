@@ -15,6 +15,7 @@ from pydantic import Field, ValidationError, model_validator
 from pydantic_ai import Conversation, DeferredToolRequests, DeferredToolResults
 from pydantic_ai._agent_graph import GraphAgentState
 from pydantic_ai.agent import AbstractAgent, AgentRunResult
+from pydantic_ai.conversation import ConversationTypeAdapter
 from typing_extensions import TypeVar as TypeVarWithDefault
 
 from .. import _tracing as tracing
@@ -230,6 +231,17 @@ def _widen_output_retries(agent: AbstractAgent[Any, Any], given: Any, extra: int
     return {"output": own + extra}
 
 
+def _as_json_reads_back(conversation: Conversation) -> Conversation:
+    """The conversation as it reads back from JSON, which is how it is stored.
+
+    Message metadata is typed ``Any``, and some capabilities put message parts in it:
+    Pydantic AI Harness's ``CodeMode`` keeps each tool call it made inside ``run_code``.
+    JSON turns those into dictionaries, so a conversation stored as it was would not read
+    back the same. Pydantic AI persists a conversation as JSON, so the factory keeps that form.
+    """
+    return ConversationTypeAdapter.validate_json(ConversationTypeAdapter.dump_json(conversation))
+
+
 def replayed_result(output: Any, conversation: Conversation) -> AgentRunResult[Any]:
     """Rebuild the result of a finished agent run from its output and conversation.
 
@@ -403,7 +415,7 @@ class StationContext(Generic[DepsT]):
             session.artifacts.append(recorded)
             evidence.append(recorded.ref)
         kept = session.artifact(
-            result.conversation,
+            _as_json_reads_back(result.conversation),
             payload_type=Conversation,
             type=f"Conversation:{name}",
             inputs=(session.input.ref,),
