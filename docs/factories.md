@@ -1,11 +1,11 @@
 ---
 title: Factories
-description: A factory is a named list of stations. You run work through it and get back a record of what happened.
+description: A factory is a named list of stations. You run a mission through it and get back a record of what happened.
 ---
 
 # Factories
 
-A factory is a named, ordered list of [stations](stations.md). You give it work, and each station's output becomes the next station's input. The factory holds no state of its own: running it returns a `Run`, a plain record of what happened, which is also kept in the [store](stores.md).
+A factory is a named, ordered list of [stations](stations.md). You give it a mission, and each station's output becomes the next station's input. The factory holds no state of its own: running it returns a `Run`, a plain record of what happened, which is also kept in the [store](stores.md).
 
 ```python
 from pydantic_ai import Agent
@@ -34,7 +34,7 @@ Name a factory for what it makes, such as `"software"`, not for one piece of wor
 | `factory.resume(run, answer, store=...)` | Carries on a run that is [waiting for a person](approvals.md). Async. |
 | `run_sync`, `resume_sync` | The same, for code that is not async. |
 
-`input` is the first station's input. Both calls also take `deps=`, which every station receives as `ctx.deps`.
+`input` is the first station's input. A plain string becomes a [`Mission`](missions.md) when that station takes a mission or a string; a station that takes a string is given the mission as its prompt. Both calls also take `deps=`, which every station receives as `ctx.deps`.
 
 ## The run
 

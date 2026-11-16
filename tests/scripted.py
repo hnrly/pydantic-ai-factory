@@ -89,4 +89,5 @@ SCRIPTS: dict[str, Script] = {
         "builder": [call("publish_page", path="index.html"), "Published index.html."],
     },
     "docs/stores.md": {"designer": [DESIGN]},
+    "docs/missions.md": {"designer": [DESIGN], "builder": ["Built index.html."]},
 }

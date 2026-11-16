@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -9,9 +10,11 @@ from typing import Any, Literal
 from pydantic_ai import DeferredToolResults
 from pydantic_ai.agent import AbstractAgent
 
+from ..artifacts import ArtifactRef, ArtifactStore
 from ..contracts import DefinitionError, MethodologyRef, check_name, digest_of, run_sync
 from ..stations import Station
 from ..stations._station import type_name
+from ._mission import Accept, Declined, IntakeError, Mission, Signal, signal_artifact
 from ._runner import Decision, OnStep, Run, resume_factory, run_factory
 from ._store import Store
 
@@ -52,6 +55,9 @@ class Factory:
     types must line up. A badly formed factory is refused when it is declared, with
     every finding at once.
 
+    ``accept`` reads signals and returns a :class:`Mission`, or :class:`Declined`.
+    :meth:`intake` calls it.
+
     A factory is a declaration. It holds no runs, no store and no other live state:
     :meth:`run` takes what one run needs and returns a record of it.
     """
@@ -59,6 +65,7 @@ class Factory:
     name: str
     stations: tuple[Station[Any, Any], ...]
     rework: tuple[Rework, ...] = ()
+    accept: Accept | None = None
     version: str = "0"
 
     def __init__(
@@ -67,13 +74,17 @@ class Factory:
         stations: list[Station[Any, Any]] | tuple[Station[Any, Any], ...],
         *,
         rework: list[Rework] | tuple[Rework, ...] = (),
+        accept: Accept | None = None,
         version: str = "0",
     ) -> None:
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "stations", tuple(stations))
         object.__setattr__(self, "rework", tuple(rework))
+        object.__setattr__(self, "accept", accept)
         object.__setattr__(self, "version", version)
         findings = self._findings()
+        if accept is not None and not callable(accept):
+            findings.append(f"accept must be a function that reads signals, not {accept!r}")
         if findings:
             raise FactoryDefinitionError(f"factory {name!r}", findings)
 
@@ -127,11 +138,17 @@ class Factory:
         store: Store,
         deps: Any = None,
         run_id: str | None = None,
-        mission_id: str | None = None,
         methodologies: Sequence[MethodologyRef] = (),
         on_step: OnStep | None = None,
     ) -> Run:
         """Run ``input`` through the stations until the work finishes or has to stop.
+
+        ``input`` is the first station's input. When that station takes a
+        :class:`Mission` or a string, a plain string becomes a mission, and a station that
+        takes a string is given ``mission.as_prompt()``. The mission is stored, named by
+        ``run.mission_ref``, and every artifact the run makes carries its id. When a run
+        of a mission made by :meth:`intake` ends, the factory stores an outcome signal and
+        names it in ``run.outcome_signal``.
 
         The run stops early when a station did not run, when a station fails with no
         rework left, or when a person is needed. Rework happens only after a failure. A
@@ -147,7 +164,6 @@ class Factory:
             store=store,
             deps=deps,
             run_id=run_id,
-            mission_id=mission_id,
             methodologies=methodologies,
             on_step=on_step,
         )
@@ -195,7 +211,6 @@ class Factory:
         store: Store,
         deps: Any = None,
         run_id: str | None = None,
-        mission_id: str | None = None,
         methodologies: Sequence[MethodologyRef] = (),
         on_step: OnStep | None = None,
     ) -> Run:
@@ -206,11 +221,55 @@ class Factory:
                 store=store,
                 deps=deps,
                 run_id=run_id,
-                mission_id=mission_id,
                 methodologies=methodologies,
                 on_step=on_step,
             )
         )
+
+    async def intake(
+        self, signals: Sequence[Signal[Any]], *, store: ArtifactStore
+    ) -> Mission | Declined:
+        """Show ``signals`` to the factory's ``accept`` function and return what it decided.
+
+        Each signal is stored first, whatever is decided. A mission that comes back
+        records the refs of those signals in ``signals``, and so does a ``Declined``.
+        Intake does not start a run: pass the mission to :meth:`run`.
+
+        Raises :class:`IntakeError` if there are no signals, the factory has no
+        ``accept`` function, or it returns something other than a mission or ``Declined``.
+        An error raised by ``accept`` itself is passed on, and the signals stay stored.
+        """
+        if self.accept is None:
+            raise IntakeError(f"factory {self.name!r} has no accept function; pass accept=")
+        received = list(signals)
+        if not received:
+            raise IntakeError(f"factory {self.name!r}: intake needs at least one signal")
+        strangers = [item for item in received if not isinstance(item, Signal)]  # pyright: ignore[reportUnnecessaryIsInstance]
+        if strangers:
+            raise IntakeError(
+                f"factory {self.name!r}: intake takes signals, not "
+                f"{type(strangers[0]).__name__}; wrap it in Signal(...)"
+            )
+        refs: tuple[ArtifactRef, ...] = tuple(
+            [await store.put(signal_artifact(item)) for item in received]
+        )
+        decision: object = self.accept(received)
+        if inspect.isawaitable(decision):
+            decision = await decision
+        if isinstance(decision, Mission):
+            return decision.model_copy(update={"signals": refs})
+        if isinstance(decision, Declined):  # pyright: ignore[reportUnnecessaryIsInstance]
+            return decision.model_copy(update={"signals": refs})
+        raise IntakeError(
+            f"factory {self.name!r}: accept returned {type(decision).__name__}, "
+            "not a Mission or Declined"
+        )
+
+    def intake_sync(
+        self, signals: Sequence[Signal[Any]], *, store: ArtifactStore
+    ) -> Mission | Declined:
+        """Show signals to the factory, from code that is not async. See :meth:`intake`."""
+        return run_sync(self.intake(signals, store=store))
 
     def _findings(self) -> list[str]:
         findings: list[str] = []

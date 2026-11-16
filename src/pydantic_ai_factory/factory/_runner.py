@@ -16,6 +16,7 @@ from ..artifacts import Artifact, ArtifactRef
 from ..contracts import Digest, FactoryError, MethodologyRef, Name, Record, check_name
 from ..stations import Feedback, StationInputInvalid, StationResult, Waiting
 from ..stations._station import coerce, recorded_as
+from ._mission import Mission, Outcome, Signal, signal_artifact
 from ._store import RunConflict, Store
 
 if TYPE_CHECKING:
@@ -74,6 +75,10 @@ class Run(Record):
     ``steps`` holds one result per attempt, in order, and ``approvals`` every decision a
     person made. ``revision`` counts the saves, for compare-and-swap in the store. A run
     read back from a store holds its payloads as plain JSON data.
+
+    ``mission_id`` is the id of the run's mission, and ``mission_ref`` names the artifact
+    that records it. When a run of a mission made by intake ends, ``outcome_signal``
+    names the outcome signal it emitted.
     """
 
     run_id: Name
@@ -92,12 +97,20 @@ class Run(Record):
     approvals: tuple[Decision, ...] = ()
     reworked: dict[Name, int] = Field(default_factory=lambda: {})
     mission_id: Name | None = None
+    mission_ref: ArtifactRef | None = None
     methodologies: tuple[MethodologyRef, ...] = ()
+    outcome_signal: ArtifactRef | None = None
 
     @model_validator(mode="after")
     def _is_consistent(self) -> Self:
         if (self.outcome == "waiting") != (self.waiting is not None):
             raise ValueError("a run is waiting exactly when it says what it waits for")
+        if (self.mission_id is None) != (self.mission_ref is None):
+            raise ValueError("a run names its mission's id and the mission's artifact together")
+        if self.outcome_signal is not None and (
+            self.mission_id is None or self.outcome in ("running", "waiting")
+        ):
+            raise ValueError("only a run of a mission that has ended emits an outcome signal")
         if self.finished:
             if self.outcome not in ("passed", "failed"):
                 raise ValueError("a finished run either passed or failed")
@@ -162,7 +175,8 @@ class _Progress:
     deps: Any
     run_id: str
     incoming: Artifact[Any]
-    mission_id: str | None
+    mission: Mission | None
+    mission_ref: ArtifactRef | None
     stamps: tuple[MethodologyRef, ...]
     on_step: OnStep | None
     saved: Run | None = None
@@ -179,6 +193,10 @@ class _Progress:
             if step.station == station:
                 kept.update(step.conversations)
         return kept
+
+    @property
+    def mission_id(self) -> str | None:
+        return None if self.mission is None else self.mission.id
 
     def record(
         self,
@@ -206,15 +224,40 @@ class _Progress:
             approvals=tuple(self.approvals),
             reworked=dict(self.reworked),
             mission_id=self.mission_id,
+            mission_ref=self.mission_ref,
             methodologies=self.stamps,
         )
 
     async def save(self, run: Run) -> Run:
+        run = await self._emit_outcome(run)
         await self.store.put_run(run, replaces=self.saved)
         self.saved = run
         if self.on_step is not None:
             await self.on_step(run)
         return run
+
+    async def _emit_outcome(self, run: Run) -> Run:
+        """Store the outcome signal of a run that has ended, if intake made its mission."""
+        mission, mission_ref = self.mission, self.mission_ref
+        if (
+            mission is None
+            or mission_ref is None
+            or not mission.signals
+            or run.outcome in ("running", "waiting")
+        ):
+            return run
+        outcome = Outcome(
+            factory=self.factory.name,
+            run_id=run.run_id,
+            mission_id=mission.id,
+            objective=mission.objective,
+            mission_ref=mission_ref,
+            outcome=run.outcome,
+            finished=run.finished,
+            output_ref=run.output_ref,
+        )
+        emitted = await self.store.put(signal_artifact(Signal(outcome, self.factory.name)))
+        return run.model_copy(update={"outcome_signal": emitted})
 
 
 async def run_factory(
@@ -224,7 +267,6 @@ async def run_factory(
     store: Store,
     deps: Any = None,
     run_id: str | None = None,
-    mission_id: str | None = None,
     methodologies: Sequence[MethodologyRef] = (),
     on_step: OnStep | None = None,
 ) -> Run:
@@ -233,24 +275,53 @@ async def run_factory(
     first = factory.stations[0]
     given: object = input
     payload: object = cast("Artifact[Any]", given).payload if isinstance(given, Artifact) else given
+    takes_text = first.input_type is str
+    mission: Mission | None = None
     try:
+        if isinstance(payload, Mission):
+            mission = payload
+        elif (
+            isinstance(payload, str)
+            and not isinstance(given, Artifact)
+            and (first.input_type is Mission or takes_text)
+        ):
+            mission = Mission(payload)
+        if mission is not None and not isinstance(given, Artifact):
+            # A station that takes text is given the mission as its prompt.
+            payload = mission.as_prompt() if takes_text else mission
         payload = coerce(first.input_type, payload)
     except ValueError as error:
         raise StationInputInvalid(f"factory {factory.name!r} {error}") from error
     identifier = uuid.uuid4().hex if run_id is None else run_id
-    for label, value in (("run_id", identifier), ("mission_id", mission_id)):
-        if value is not None and (problem := check_name(value)):
-            raise StationInputInvalid(f"factory {factory.name!r}: {label} {problem}")
+    if problem := check_name(identifier):
+        raise StationInputInvalid(f"factory {factory.name!r}: run_id {problem}")
 
     incoming: Artifact[Any]
+    recorded: Artifact[Mission] | None = None
+    if mission is not None:
+        recorded = (
+            cast("Artifact[Mission]", given)
+            if isinstance(given, Artifact)
+            else Artifact.create(
+                mission, inputs=mission.signals, mission_id=mission.id, methodologies=stamps
+            )
+        )
+        await store.put(recorded)
     if isinstance(given, Artifact):
         incoming = cast("Artifact[Any]", given)
-    else:
+    elif recorded is not None and takes_text:
         incoming = Artifact.create(
             payload,
-            payload_type=recorded_as(first.input_type, payload),
-            mission_id=mission_id,
+            payload_type=str,
+            inputs=[recorded.ref],
+            mission_id=recorded.payload.id,
             methodologies=stamps,
+        )
+    elif recorded is not None:
+        incoming = recorded
+    else:
+        incoming = Artifact.create(
+            payload, payload_type=recorded_as(first.input_type, payload), methodologies=stamps
         )
     await store.put(incoming)
 
@@ -260,7 +331,8 @@ async def run_factory(
         deps=deps,
         run_id=identifier,
         incoming=incoming,
-        mission_id=mission_id,
+        mission=mission,
+        mission_ref=None if recorded is None else recorded.ref,
         stamps=stamps,
         on_step=on_step,
     )
@@ -295,13 +367,17 @@ async def resume_factory(
     station = factory.stations[index]
     step = run.steps[-1]
     first = factory.stations[0]
+    incoming = await store.get(run.input_ref, first.input_type)
     progress = _Progress(
         factory=factory,
         store=store,
         deps=deps,
         run_id=run.run_id,
-        incoming=await store.get(run.input_ref, first.input_type),
-        mission_id=run.mission_id,
+        incoming=incoming,
+        mission=(
+            None if run.mission_ref is None else (await store.get(run.mission_ref, Mission)).payload
+        ),
+        mission_ref=run.mission_ref,
         stamps=run.methodologies,
         on_step=on_step,
         saved=stored,

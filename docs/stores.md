@@ -16,7 +16,7 @@ A store keeps two things: the artifacts a factory makes, and the runs that made 
 
 An artifact is the record of what a station handed on: a design, a review report, an agent's conversation. It is never changed after it is written, and it is named by a digest of its content. That is what lets a person approve one exact design: change a word and it is a different artifact.
 
-Every artifact names what it was made from and which station, run and methodologies made it. So any output can be traced back to what started it.
+Every artifact names what it was made from and which station, run and methodologies made it. So any output can be traced back to the mission that started it.
 
 ```python
 from pydantic_ai import Agent
