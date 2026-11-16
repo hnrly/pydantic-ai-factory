@@ -260,6 +260,19 @@ def test_with_no_input_a_question_leaves_the_run_waiting(tmp_path: Path) -> None
     assert "Question: Should ticked tasks survive a reload?" in terminal.lines
 
 
+@pytest.mark.usefixtures("curious")
+def test_a_run_left_waiting_on_a_question_says_to_resume_it_with_an_answer(
+    tmp_path: Path,
+) -> None:
+    terminal = Terminal()
+
+    factory(terminal, tmp_path, "run", MISSION, "--offline", "--no-input")
+
+    run_id = next(line.split()[1] for line in terminal.lines if line.startswith("Run "))
+    assert f'factory resume {run_id} --answer "YOUR ANSWER" --offline' in terminal.text
+    assert "--approve" not in terminal.text
+
+
 @pytest.mark.parametrize(
     ("mission", "title", "file"),
     [

@@ -266,7 +266,8 @@ def _carry_on(
         if answer is None:
             offline = " --offline" if args.offline else ""
             say(f"Run {run.run_id} is waiting. It is saved in {args.store}.")
-            say(f"Answer it with: factory resume {run.run_id} --approve{offline}")
+            flag = '--answer "YOUR ANSWER"' if run.waiting.kind == "tool-calls" else "--approve"
+            say(f"Answer it with: factory resume {run.run_id} {flag}{offline}")
             return WAITING
         run = factory.resume_sync(run, answer, store=store)
 
