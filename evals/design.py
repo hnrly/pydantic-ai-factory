@@ -57,11 +57,35 @@ MAX_ANSWERS = 10
 """How many times one run may wait before the evaluation gives up on it."""
 
 
+class HiddenCheck(BaseModel):
+    """Something the mission leaves unsaid that a good design must still settle.
+
+    The design settles it when one of its statements matches every pattern and none of
+    the ``unless`` patterns. A statement is one behaviour, acceptance criterion or
+    exclusion. Patterns are regular expressions, matched without regard to case.
+    """
+
+    name: str
+    question: str
+    """What the design must decide, in plain words."""
+    patterns: tuple[str, ...]
+    unless: tuple[str, ...] = ()
+    """Patterns that mean the statement dodges the question, such as "no deleting"."""
+
+    def settled_by(self, statement: str) -> bool:
+        found = all(re.search(pattern, statement, re.IGNORECASE) for pattern in self.patterns)
+        return found and not any(re.search(p, statement, re.IGNORECASE) for p in self.unless)
+
+
 class Expectation(BaseModel):
     """What a faithful design of one mission must contain."""
 
     must_cover: tuple[str, ...]
     """Words the mission turns on. A design that drops one has lost part of the mission."""
+
+    hidden: tuple[HiddenCheck, ...] = ()
+    """Things the mission leaves unsaid that a good design must settle. The designer never
+    sees them. They measure judgement, where ``must_cover`` measures faithfulness."""
 
     @property
     def min_criteria(self) -> int:
@@ -85,21 +109,100 @@ class DesignResult(BaseModel):
 
 TODO = "A to-do list web page where I can add tasks and tick them off."
 
+_REFUSED = r"\b(nothing|ignored?|not (be )?added|no task|reject\w*|refus\w*|unchanged|disabled)\b"
+_NO_DELETING = (r"\bno (deleting|deletion|delete)\b|\bcannot be deleted\b|\bnot deletable\b",)
+BLANK_TASK = HiddenCheck(
+    name="blank-task",
+    question="What happens when someone adds a blank task?",
+    patterns=(r"\b(blank|empty)\b", _REFUSED),
+)
+WHITESPACE_TASK = HiddenCheck(
+    name="whitespace-task",
+    question="Does a task of only spaces count as blank?",
+    patterns=(r"\b(whitespace|spaces)\b", rf"\bblank\b|{_REFUSED}"),
+)
+SURVIVES_RELOAD = HiddenCheck(
+    name="survives-reload",
+    question="Do tasks survive a reload of the page?",
+    patterns=(r"\b(reload\w*|refresh\w*|persist\w*|reopen\w*)\b",),
+)
+UNTICK = HiddenCheck(
+    name="untick",
+    question="Can a ticked task be unticked?",
+    patterns=(r"\b(untick\w*|un-tick\w*|uncheck\w*|tick\w* (it |a task )?again)\b",),
+)
+STORAGE_FAILS = HiddenCheck(
+    name="storage-fails",
+    question="What happens when saved tasks cannot be read or written?",
+    patterns=(
+        r"\b(unavailable|corrupt\w*|unreadable|private browsing|quota|full|blocked|disabled)\b",
+        r"\b(storage|localstorage|saved?|saving)\b",
+    ),
+)
+ORDER_AFTER_RELOAD = HiddenCheck(
+    name="order-after-reload",
+    question="Do tasks keep their order after a reload?",
+    patterns=(r"\border\b", r"\b(reload\w*|refresh\w*)\b"),
+)
+DELETE_TICKED = HiddenCheck(
+    name="delete-ticked",
+    question="Can a ticked task be deleted too?",
+    patterns=(r"\bdelet\w*", r"\b(ticked|done|completed|any task|every task|each task)\b"),
+    unless=_NO_DELETING,
+)
+DELETE_CONFIRM = HiddenCheck(
+    name="delete-confirm",
+    question="Is deleting confirmed first, or undoable?",
+    patterns=(
+        r"\bdelet\w*",
+        r"\b(confirm\w*|undo\w*|immediately|without asking|cannot be undone|permanent\w*)\b",
+    ),
+    unless=_NO_DELETING,
+)
+NO_DUE_DATE = HiddenCheck(
+    name="no-due-date",
+    question="Can a task be added without a due date, and where does it go?",
+    patterns=(
+        r"\btasks?\b",
+        r"(\b(without|no|missing|blank|empty)\b.{0,40}\bdue date|\bdue date\b.{0,40}"
+        r"\b(optional|required|mandatory|must be given)\b)",
+    ),
+)
+DUE_TODAY = HiddenCheck(
+    name="due-today",
+    question="Is a task due today overdue?",
+    patterns=(r"\btoday\b",),
+)
+ORDER_OF_OVERDUE = HiddenCheck(
+    name="order-of-overdue",
+    question="In what order are the overdue tasks themselves shown?",
+    patterns=(r"\boverdue\b", r"\b(earliest|oldest|soonest|latest|most overdue|sorted|ordered)\b"),
+)
+
 CASES: tuple[Case[str, DesignResult, Expectation], ...] = (
     Case(
         name="todo-list",
         inputs=TODO,
-        metadata=Expectation(must_cover=("to-do", "add", "tick")),
+        metadata=Expectation(
+            must_cover=("to-do", "add", "tick"),
+            hidden=(BLANK_TASK, SURVIVES_RELOAD, UNTICK),
+        ),
     ),
     Case(
         name="keep-ticked-tasks",
         inputs=f"{TODO} Ticked tasks stay ticked after a reload.",
-        metadata=Expectation(must_cover=("add", "tick", "reload")),
+        metadata=Expectation(
+            must_cover=("add", "tick", "reload"),
+            hidden=(BLANK_TASK, STORAGE_FAILS, ORDER_AFTER_RELOAD),
+        ),
     ),
     Case(
         name="delete-tasks",
         inputs=f"{TODO} I can delete a task, and a blank task is never added.",
-        metadata=Expectation(must_cover=("add", "tick", "delete", "blank")),
+        metadata=Expectation(
+            must_cover=("add", "tick", "delete", "blank"),
+            hidden=(WHITESPACE_TASK, DELETE_TICKED, DELETE_CONFIRM),
+        ),
     ),
     Case(
         name="due-dates",
@@ -107,7 +210,10 @@ CASES: tuple[Case[str, DesignResult, Expectation], ...] = (
             "A to-do list web page where I can add tasks with a due date and tick them off. "
             "Overdue tasks are shown first."
         ),
-        metadata=Expectation(must_cover=("add", "due date", "tick", "overdue")),
+        metadata=Expectation(
+            must_cover=("add", "due date", "tick", "overdue"),
+            hidden=(NO_DUE_DATE, DUE_TODAY, ORDER_OF_OVERDUE),
+        ),
     ),
 )
 
@@ -156,6 +262,33 @@ class CriteriaTiedToTheMission(Evaluator[str, DesignResult, Expectation]):
 
 
 @dataclass
+class SettlesTheUnsaid(Evaluator[str, DesignResult, Expectation]):
+    """The share of the case's hidden checks that the design settles.
+
+    Each hidden check is something the mission leaves unsaid, such as what a blank task
+    does. A design settles it when one of its statements matches the check. This is where
+    review should show its value: a fresh reader asks the questions the author forgot.
+    """
+
+    def evaluate(self, ctx: EvaluatorContext[str, DesignResult, Expectation]) -> float:
+        expected = ctx.metadata
+        if expected is None or not expected.hidden or ctx.output.design is None:
+            return 0.0
+        statements = statements_of(ctx.output.design)
+        settled = [
+            check
+            for check in expected.hidden
+            if any(check.settled_by(statement) for statement in statements)
+        ]
+        return len(settled) / len(expected.hidden)
+
+
+def statements_of(design: Design) -> list[str]:
+    """Every statement a design makes: its behaviour, criteria and exclusions."""
+    return [*design.behaviour, *design.acceptance_criteria, *design.exclusions]
+
+
+@dataclass
 class Effort(Evaluator[str, DesignResult, Expectation]):
     """What the result cost: attempts, rounds of review, and blocking findings on the way."""
 
@@ -170,10 +303,16 @@ class Effort(Evaluator[str, DesignResult, Expectation]):
 DATASET: Dataset[str, DesignResult, Expectation] = Dataset(
     name="design",
     cases=list(CASES),
-    evaluators=[CoversTheMission(), EnoughCriteria(), CriteriaTiedToTheMission(), Effort()],
+    evaluators=[
+        CoversTheMission(),
+        EnoughCriteria(),
+        CriteriaTiedToTheMission(),
+        SettlesTheUnsaid(),
+        Effort(),
+    ],
 )
 
-SCORES = ("CoversTheMission", "EnoughCriteria", "CriteriaTiedToTheMission")
+SCORES = ("CoversTheMission", "EnoughCriteria", "CriteriaTiedToTheMission", "SettlesTheUnsaid")
 EFFORT = ("attempts", "rounds", "open_findings")
 
 

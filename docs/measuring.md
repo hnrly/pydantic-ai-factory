@@ -22,6 +22,7 @@ Design station, 4 missions, model: offline (scripted)
 CoversTheMission                        1.00          1.00         +0.00
 EnoughCriteria                          1.00          0.29         +0.71
 CriteriaTiedToTheMission                0.84          0.00         +0.84
+SettlesTheUnsaid                        0.00          0.00         +0.00
 attempts                                1.00          1.00         +0.00
 rounds                                  2.00          0.00         +2.00
 open_findings                           1.00          0.00         +1.00
@@ -30,7 +31,7 @@ These numbers come from a scripted model. They show the evaluation works,
 not how a real model behaves. Run with --model for that.
 ```
 
-Read the table as a trade. With the review on, designs had more acceptance criteria, and far more of them named something the mission asked for. Coverage of the mission did not change, and neither did the number of attempts. The price was two rounds of review per mission, inside the same conversation.
+Read the table as a trade. With the review on, designs had more acceptance criteria, and far more of them named something the mission asked for. Coverage of the mission did not change, and neither did the number of attempts. The price was two rounds of review per mission, inside the same conversation. `SettlesTheUnsaid` is 0 in both arms, because the scripted designer only restates the mission and never decides anything it leaves unsaid.
 
 ## How far to trust these numbers
 
@@ -55,6 +56,7 @@ Every score comes from plain code reading the design. No model judges another mo
 | `CoversTheMission` | The share of the mission's key words that appear somewhere in the design. | 0 to 1 |
 | `EnoughCriteria` | Whether the design has as many acceptance criteria as the mission has things to check. | 0 to 1 |
 | `CriteriaTiedToTheMission` | The share of acceptance criteria that name something the mission asked for. A criterion such as "it works" names nothing. | 0 to 1 |
+| `SettlesTheUnsaid` | The share of the case's hidden checks that the design settles. A hidden check is something the mission leaves unsaid that a good design must decide. | 0 to 1 |
 | `attempts` | How many times the station ran. Review happens inside one attempt, so this counts rework only. | 1 or more |
 | `rounds` | How many rounds of goldfish review ran. | 0 or more |
 | `open_findings` | How many Blocker or Major findings the goldfish raised on the way. | 0 or more |
@@ -71,6 +73,21 @@ Each case names the words its mission turns on.
 | `due-dates` | add, due date, tick, overdue |
 
 Each mission is the to-do list web page from [Getting started](getting-started.md), or a variation on it: ticked tasks that survive a reload, deleting tasks and never adding a blank one, and due dates with overdue tasks first. A design needs one acceptance criterion for each word its mission turns on.
+
+## Hidden checks
+
+The first three scores measure faithfulness: did the design keep what the mission said? A strong model keeps it with or without review, so those scores show what review costs but not what it adds. Review earns its keep on what the mission does not say. A fresh reader asks the questions the author forgot.
+
+So each case also has hidden checks. The designer never sees them. Each one is a question the mission leaves open, with the patterns a statement must match to answer it. A design settles a check when one of its statements, a behaviour, an acceptance criterion or an exclusion, matches every pattern. Some checks also name patterns that dodge the question: "No deleting of tasks" does not say whether a ticked task can be deleted.
+
+| Case | Hidden checks |
+|---|---|
+| `todo-list` | What happens to a blank task? Do tasks survive a reload? Can a ticked task be unticked? |
+| `keep-ticked-tasks` | What happens to a blank task? What happens when saved tasks cannot be read or written? Do tasks keep their order after a reload? |
+| `delete-tasks` | Does a task of only spaces count as blank? Can a ticked task be deleted too? Is deleting confirmed first, or undoable? |
+| `due-dates` | Can a task be added without a due date? Is a task due today overdue? In what order are the overdue tasks shown? |
+
+Patterns are crude. They can miss a design that answers a question in words nobody expected, and a test checks that no mission answers its own hidden checks. Read a low score next to the design before trusting it. The patterns were checked against a real design of the to-do list mission: every check that design settled was matched by the statement that settles it.
 
 ## How the two arms differ
 
@@ -139,6 +156,6 @@ for arm, agent in (("with review", designer), ("without", plain_designer)):
     #> without {'SaysWhatABlankTaskDoes': 0.0}
 ```
 
-`run_design` builds a one-station factory around the agent it is given, runs the mission and approves what comes back. With the goldfish, the designer was told its first draft never said what happens to a blank task, and fixed it; without them, nobody told it. `evals/design.py` in the repository is the complete version, with four missions and six scores. Both agents share the name `designer`, so each arm's records look the same apart from the stamp.
+`run_design` builds a one-station factory around the agent it is given, runs the mission and approves what comes back. With the goldfish, the designer was told its first draft never said what happens to a blank task, and fixed it; without them, nobody told it. `evals/design.py` in the repository is the complete version, with four missions, hidden checks and seven scores. Both agents share the name `designer`, so each arm's records look the same apart from the stamp.
 
 To compare two versions of one methodology, give them different `version` values and run one arm with each. The stamps keep the records apart.

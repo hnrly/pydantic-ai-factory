@@ -29,11 +29,13 @@ def result(*criteria: str, behaviour: str = "Type a task and add it.") -> evals.
     )
 
 
-def score(evaluator: Any, output: evals.DesignResult) -> Any:
+def score(
+    evaluator: Any, output: evals.DesignResult, expected: evals.Expectation = EXPECTED
+) -> Any:
     fields: dict[str, Any] = {
         "name": "case",
         "inputs": "A to-do list web page.",
-        "metadata": EXPECTED,
+        "metadata": expected,
         "expected_output": None,
         "output": output,
         "duration": 0.0,
@@ -71,6 +73,7 @@ def test_a_run_with_no_design_scores_nothing_but_still_reports_its_effort() -> N
         evals.CoversTheMission(),
         evals.EnoughCriteria(),
         evals.CriteriaTiedToTheMission(),
+        evals.SettlesTheUnsaid(),
     ):
         assert score(evaluator, nothing) == 0.0
     assert score(evals.Effort(), nothing) == {
@@ -129,6 +132,7 @@ def test_the_offline_comparison_runs_from_the_command_line_and_writes_its_result
     assert (results["model"], results["failures"]) == ("offline (scripted)", 0)
     assert results["with_review"]["CriteriaTiedToTheMission"] > 0.8
     assert results["without_review"]["CriteriaTiedToTheMission"] == 0.0
+    assert results["with_review"]["SettlesTheUnsaid"] == 0.0
     assert results["with_review"]["rounds"] == 2.0
     assert results["without_review"]["rounds"] == 0.0
     assert "with review" in printed and "These numbers come from a scripted model." in printed
@@ -139,3 +143,35 @@ def test_every_case_names_words_its_mission_really_turns_on() -> None:
         assert case.metadata is not None and case.name
         assert len(case.metadata.must_cover) >= 3
         assert all(term in case.inputs.lower() for term in case.metadata.must_cover)
+
+
+def test_a_hidden_check_is_settled_only_by_one_statement_that_answers_it() -> None:
+    blank = evals.BLANK_TASK
+
+    assert blank.settled_by("Pressing Enter on a blank input adds nothing.")
+    assert not blank.settled_by("Whitespace is trimmed before a task is added.")
+    assert not blank.settled_by("The list starts empty.")
+
+
+def test_a_statement_that_rules_the_feature_out_does_not_settle_how_it_works() -> None:
+    assert evals.DELETE_TICKED.settled_by("Any task can be deleted, ticked or not.")
+    assert not evals.DELETE_TICKED.settled_by("No deleting of tasks; ticked tasks stay.")
+
+
+def test_settling_the_unsaid_is_the_share_of_hidden_checks_the_design_answers() -> None:
+    expected = evals.Expectation(
+        must_cover=("add",), hidden=(evals.BLANK_TASK, evals.UNTICK, evals.DUE_TODAY)
+    )
+    design = result(
+        "Unticking a task marks it not done.",
+        behaviour="Adding a blank task does nothing.",
+    )
+
+    assert score(evals.SettlesTheUnsaid(), design, expected) == pytest.approx(2 / 3)
+    assert score(evals.SettlesTheUnsaid(), result("It works."), expected) == 0.0
+
+
+def test_no_mission_settles_its_own_hidden_checks() -> None:
+    for case in evals.CASES:
+        assert case.metadata is not None and len(case.metadata.hidden) >= 3
+        assert not [c.name for c in case.metadata.hidden if c.settled_by(case.inputs)]
