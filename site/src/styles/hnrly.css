@@ -1,0 +1,246 @@
+/*
+ * hnrly look for the Pydantic AI Factory docs.
+ * Black ground, Inter Tight and Geist Mono, restraint. Pydantic pink (#E520E9)
+ * is a small accent only: links, numbers, tags and code keywords.
+ * Tokens match hnrly.com so the docs and the series read as one family.
+ */
+
+:root {
+  --hn-pink: #e520e9;
+  --hn-lead: #6e6e78;
+
+  --sl-font: 'Inter Tight', system-ui, sans-serif;
+  --sl-font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sl-line-height-headings: 1.15;
+
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #d4d4d8;
+  --sl-color-gray-2: #a1a1aa;
+  --sl-color-gray-3: #8a8a93;
+  --sl-color-gray-4: #2a2a2f;
+  --sl-color-gray-5: #1f1f23;
+  --sl-color-gray-6: #0b0b0d;
+  --sl-color-black: #000000;
+
+  --sl-color-accent-low: #2a0a2b;
+  --sl-color-accent: #e520e9;
+  --sl-color-accent-high: #f3a9f5;
+
+  --sl-color-text: var(--sl-color-gray-1);
+  --sl-color-text-accent: var(--hn-pink);
+  --sl-color-bg-nav: var(--sl-color-black);
+  --sl-color-bg-sidebar: var(--sl-color-black);
+  --sl-color-bg-inline-code: var(--sl-color-gray-6);
+  --sl-color-hairline: var(--sl-color-gray-5);
+  --sl-color-hairline-light: var(--sl-color-gray-5);
+  --sl-color-hairline-shade: var(--sl-color-gray-5);
+}
+
+:root[data-theme='light'] {
+  /* Pink darkened so text links pass 4.5:1 on white. */
+  --hn-pink: #b312b7;
+  --hn-lead: #8a8a93;
+
+  --sl-color-white: #000000;
+  --sl-color-gray-1: #18181b;
+  --sl-color-gray-2: #3f3f46;
+  --sl-color-gray-3: #5b5b66;
+  --sl-color-gray-4: #a1a1aa;
+  --sl-color-gray-5: #d4d4d8;
+  --sl-color-gray-6: #ededf0;
+  --sl-color-gray-7: #f7f7f8;
+  --sl-color-black: #ffffff;
+
+  --sl-color-accent-low: #fbe3fb;
+  --sl-color-accent: #b312b7;
+  --sl-color-accent-high: #6d0a70;
+
+  --sl-color-text: var(--sl-color-gray-2);
+  --sl-color-bg-nav: var(--sl-color-black);
+  --sl-color-bg-sidebar: var(--sl-color-black);
+  --sl-color-bg-inline-code: var(--sl-color-gray-7);
+  --sl-color-hairline: var(--sl-color-gray-6);
+  --sl-color-hairline-light: var(--sl-color-gray-6);
+  --sl-color-hairline-shade: var(--sl-color-gray-6);
+}
+
+/* Type: medium weight, tight tracking, as on hnrly.com. */
+h1,
+h2,
+h3,
+h4,
+.site-title {
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+h1 {
+  letter-spacing: -0.05em;
+}
+.site-title {
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  color: var(--sl-color-white);
+}
+/* The pink full stop is the one mark detail carried over from hnrly. */
+.site-title span::after {
+  content: '.';
+  color: var(--hn-pink);
+}
+
+/* Links: pink, underlined in prose; quiet elsewhere. */
+.sl-markdown-content a:not(.sl-link-button):not(:where(.not-content *)) {
+  color: var(--hn-pink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sl-markdown-content a:not(.sl-link-button):not(:where(.not-content *)):hover {
+  color: var(--sl-color-white);
+}
+
+/* Inline code as a small chip. */
+.sl-markdown-content :not(pre) > code {
+  padding: 2px 7px;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 6px;
+  color: var(--sl-color-white);
+}
+
+/* Tables: mono header labels, hairline rows. */
+.sl-markdown-content th {
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  color: var(--sl-color-gray-3);
+}
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+  border-bottom-color: var(--sl-color-gray-5);
+}
+
+/* Hero: lead in grey, payoff in white. */
+.hero h1 {
+  font-size: clamp(2.25rem, 6vw, 3.5rem);
+  font-weight: 500;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  color: var(--sl-color-white);
+}
+.hero h1 .hn-lead {
+  color: var(--hn-lead);
+}
+.hero .tagline {
+  color: var(--sl-color-gray-2);
+}
+.hn-eyebrow {
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  color: var(--sl-color-gray-3);
+}
+.hn-eyebrow b,
+.hn-num {
+  font-family: var(--sl-font-mono);
+  font-weight: 500;
+  color: var(--hn-pink);
+}
+
+/* Buttons: white pill for the primary action, hairline pill for the rest. */
+.sl-link-button.primary {
+  background: var(--sl-color-white);
+  border-color: var(--sl-color-white);
+  color: var(--sl-color-black);
+  font-weight: 500;
+}
+.sl-link-button.secondary {
+  border-color: var(--sl-color-gray-4);
+  color: var(--sl-color-gray-1);
+}
+.sl-link-button.secondary:hover {
+  color: var(--hn-pink);
+}
+
+/* Cards: one neutral treatment instead of Starlight's rotating colours. */
+.card {
+  --sl-card-border: var(--sl-color-gray-4);
+  --sl-card-bg: transparent;
+  border-color: var(--sl-color-gray-5);
+  border-radius: 20px;
+  background-color: var(--sl-color-gray-6);
+}
+.card:nth-child(n) {
+  --sl-card-border: var(--sl-color-gray-4);
+  --sl-card-bg: transparent;
+}
+.card .title {
+  font-weight: 500;
+}
+.card .icon {
+  border-radius: 8px;
+  color: var(--hn-pink);
+}
+:root[data-theme='light'] .card {
+  background-color: var(--sl-color-gray-7);
+}
+
+/* Sidebar: mono group labels, white current page with a pink marker. */
+.sidebar-content .large {
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  color: var(--sl-color-gray-3);
+}
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+  background-color: transparent;
+  color: var(--sl-color-white);
+  font-weight: 500;
+  box-shadow: inset 2px 0 0 var(--hn-pink);
+  border-radius: 0;
+}
+
+/* Code frames: the plum ground used on hnrly code cards. */
+.expressive-code .frame {
+  --ec-brdRad: 16px;
+}
+
+/* Footer byline. */
+.hn-footer {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--sl-color-gray-5);
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-gray-3);
+}
+.hn-footer p {
+  margin: 0;
+}
+.hn-footer a {
+  color: var(--sl-color-gray-2);
+  text-decoration: none;
+}
+.hn-footer a:hover {
+  color: var(--hn-pink);
+}
+.hn-footer .hn-mark {
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  color: var(--sl-color-white);
+}
+.hn-footer .hn-mark i {
+  font-style: normal;
+  color: var(--hn-pink);
+}
+.hn-footer .hn-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+}
+
+/* Header icons stay neutral; pink is for hover only. */
+.social-icons a {
+  color: var(--sl-color-gray-2);
+}
+.social-icons a:hover {
+  color: var(--hn-pink);
+}

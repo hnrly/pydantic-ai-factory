@@ -1,0 +1,46 @@
+---
+title: Pydantic AI Factory
+description: Composable, evidence-driven AI factories built on Pydantic AI.
+template: splash
+hero:
+  title: <span class="hn-lead">From a signal to</span> work you can trust.
+  tagline: Typed stations. Gates that read evidence. Methodologies you can measure. Built on Pydantic AI.
+  actions:
+    - text: Understand the model
+      link: /pydantic_ai_factory/concepts/
+      icon: right-arrow
+    - text: Read the decisions
+      link: /pydantic_ai_factory/decisions/
+      variant: secondary
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<p class="hn-eyebrow"><b>Pre-alpha</b> · built in public, one small pull request at a time</p>
+
+Pydantic AI Factory is a Python library for building AI factories. A factory is a repeatable production system. It takes a signal, commits to a mission, moves work through stations, and proves each result with evidence before a person approves it.
+
+The library is not released yet. These pages grow with the code: each pull request adds the page for what it builds, and every Python sample is run by the test suite.
+
+<CardGrid>
+  <Card title="Ran is not passed" icon="approve-check">
+    A station finishing is one fact. Its output passing a gate is another. The
+    design records both, and never lets a check that did not run count as a pass.
+  </Card>
+  <Card title="Agents are optional" icon="puzzle">
+    A station is a typed contract. It may use one agent, several, or none. Plain
+    Python is as welcome as a model.
+  </Card>
+  <Card title="A methodology is not a prompt" icon="open-book">
+    A methodology says what agents are given, what evidence a station must
+    produce, and how that evidence is judged. It has a name and a version.
+  </Card>
+  <Card title="One meaning per word" icon="pencil">
+    Pydantic AI already has a "capability". Here the word means that and nothing
+    else. Every word the factory adds is defined on the [concepts](concepts.md) page.
+  </Card>
+</CardGrid>
+
+## Where it is going
+
+The first delivery ends with one station you can run from a terminal: Design. It turns a short request into a reviewed design that a person approves. Build, Quality and Release follow, one station at a time.
