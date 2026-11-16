@@ -61,6 +61,8 @@ class SoftwareFactory(Factory):
             output_type=Design,
             instructions=DESIGNER_INSTRUCTIONS,
             capabilities=[review],
+            # Each review round resends the whole conversation, so cache it.
+            model_settings={"cache": True},
         )
         design = station(
             designer, name="design", version="1", gate=no_open_questions, approval=True

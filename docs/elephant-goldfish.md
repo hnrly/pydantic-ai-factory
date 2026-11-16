@@ -63,7 +63,7 @@ page_goldfish = (
 
 When a round goes back to the author, each comprehension goldfish's paraphrase goes with it. If the paraphrase is not what the author meant, the work says something else, and the author fixes it.
 
-Each goldfish is an agent named `goldfish-<name>`, so it shows up by that name in traces. It uses the author's model unless you pass `model=`.
+Each goldfish is an agent named `goldfish-<name>`, so it shows up by that name in traces. It uses the author's model unless you pass `model=`. Each goldfish asks for prompt caching, `model_settings={"cache": True}`, because it reads again in the next round with the same instructions.
 
 ## Findings and answers
 

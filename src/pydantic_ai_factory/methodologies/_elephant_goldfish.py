@@ -382,6 +382,8 @@ class ElephantGoldfish(Methodology):
                 name=f"goldfish-{fish.name}",
                 output_type=_Explained if fish.stage == "comprehension" else _Found,
                 instructions=_goldfish_instructions(fish),
+                # Each goldfish reads again in the next round with the same instructions.
+                model_settings={"cache": True},
             )
             for fish in self.goldfish
         }

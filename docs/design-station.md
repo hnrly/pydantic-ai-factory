@@ -20,6 +20,8 @@ The Design station turns a mission into a design a person can approve and a buil
 
 Each field but `title` and `goal` is a list of short sentences. Acceptance criteria are numbered by their place, so the second is AC2. `render_markdown(design)` turns a design into Markdown. If the designer wrote a label such as "AC2:" itself, `render_markdown` drops it, so the label is not printed twice.
 
+The designer asks for prompt caching, `model_settings={"cache": True}`. Each review round resends the whole conversation, so the provider can serve all but the newest part from its cache.
+
 A design that still has open questions fails the station's gate, `no_open_questions`, and goes back to the designer, which asks you or settles them. After `repairs` tries, two by default, a person decides.
 
 ## The review

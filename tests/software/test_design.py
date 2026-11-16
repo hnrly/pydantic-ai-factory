@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from pydantic_ai import ModelMessage, ModelRequest, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.profiles import ModelProfile
 
 import pydantic_ai_factory_software as software_package
 from pydantic_ai_factory import Factory, FactoryDefinitionError, MemoryStore, Mission
@@ -355,3 +356,22 @@ def test_the_designer_is_told_not_to_repeat_a_contested_finding_as_an_open_quest
     assert "do not also list it as an open question" in DESIGNER_INSTRUCTIONS
     description = Design.model_fields["acceptance_criteria"].description or ""
     assert "do not number them" in description.lower()
+
+
+def test_the_designer_and_every_goldfish_ask_for_prompt_caching() -> None:
+    cached: list[object] = []
+
+    def recording(model: Designer | Pond) -> FunctionModel:
+        def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            cached.append(info.model_request_parameters.cache)
+            return model(messages, info)
+
+        # A scripted model ignores caching unless its profile says it supports it.
+        return FunctionModel(respond, profile=ModelProfile(supports_cache=True))
+
+    designer = Designer({**TODO, "behaviour": [*TODO["behaviour"], BLANK]})
+    software = SoftwareFactory(recording(designer), review_model=recording(Pond()))
+
+    software.run_sync(MISSION, store=MemoryStore())
+
+    assert cached == [True] * (1 + len(DESIGN_GOLDFISH))
