@@ -16,6 +16,7 @@ from .artifacts import (
     Untyped,
 )
 from .contracts import DefinitionError, FactoryError, MethodologyRef
+from .factory import Factory, FactoryDefinitionError, Rework, Run
 from .gates import (
     Evidence,
     Gate,
@@ -49,6 +50,8 @@ __all__ = [
     "ArtifactStore",
     "DefinitionError",
     "Evidence",
+    "Factory",
+    "FactoryDefinitionError",
     "FactoryError",
     "Gate",
     "GateDecision",
@@ -58,6 +61,8 @@ __all__ = [
     "MethodologyRef",
     "NotEvaluated",
     "Producer",
+    "Rework",
+    "Run",
     "Station",
     "StationClosed",
     "StationContext",
