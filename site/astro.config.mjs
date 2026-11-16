@@ -35,6 +35,7 @@ export default defineConfig({
         { label: 'Start here', items: [{ label: 'Overview', slug: '' }] },
         { label: 'Concepts', items: ['factories', 'stations', 'agents', 'gates', 'approvals', 'stores', 'missions', 'methodologies'] },
         { label: 'Methodologies', items: ['elephant-goldfish'] },
+        { label: 'Operate', items: ['observability'] },
         { label: 'Project', items: ['decisions', 'contributing'] },
       ],
     }),

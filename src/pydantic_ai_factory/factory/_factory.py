@@ -166,6 +166,9 @@ class Factory:
         The run is saved in ``store`` after every step, so it can be loaded with
         ``store.get_run`` and resumed anywhere. ``on_step`` is awaited after each save,
         for watching progress.
+
+        The call is traced as a span named ``factory`` and the factory's name. See the
+        Observability page for the spans inside it.
         """
         return await run_factory(
             self,
@@ -197,6 +200,9 @@ class Factory:
         another process. Raises :class:`ApprovalRefused`, changing nothing, if the answer
         does not fit what the run waits for, and :class:`RunConflict` if the stored run
         has moved on since ``run`` was read.
+
+        The call is traced as a span of its own, in a new trace, with the same
+        ``factory.run.id`` as the run that started the work.
         """
         return await resume_factory(self, run, answer, store=store, deps=deps, on_step=on_step)
 
