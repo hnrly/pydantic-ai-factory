@@ -1,0 +1,31 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Docs site
+node_modules/
+.astro/
+site/dist/
+
+# Local state and secrets
+.DS_Store
+.env
+.env.*
+!.env.example
+.logfire/
+.factory/
+
+# Local agent tooling and private working notes
+.agents/
+.claude/
+.factory-internal/
+skills-lock.json

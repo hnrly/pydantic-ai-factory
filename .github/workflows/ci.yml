@@ -1,0 +1,64 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    env:
+      # Without this, uv would follow .python-version and test one interpreter four times.
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run --locked python --version
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked ruff check .
+      - run: uv run --locked pyright
+      - run: uv run --locked lint-imports
+      - run: uv run --locked pytest
+
+  keep-out:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      # Generic rules always run. Private terms are checked only when the repository
+      # secret is set; the log line says how many were loaded.
+      - run: uv run --no-project --python 3.13 scripts/keep_out_scan.py
+        env:
+          KEEP_OUT_TERMS: ${{ secrets.KEEP_OUT_TERMS }}
+
+  distributions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: uv build --all-packages --no-sources
+      - name: Install exactly the built wheels and import them
+        run: |
+          uv venv "$RUNNER_TEMP/wheels" --python 3.13
+          uv pip install --python "$RUNNER_TEMP/wheels/bin/python" dist/*.whl
+          "$RUNNER_TEMP/wheels/bin/python" -I -c \
+            "import pydantic_ai_factory, pydantic_ai_factory_software; print(pydantic_ai_factory.__version__)"
