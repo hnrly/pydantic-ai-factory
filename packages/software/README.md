@@ -1,6 +1,6 @@
 # pydantic-ai-factory-software
 
-The software factory for [Pydantic AI Factory](https://github.com/hnrly/pydantic_ai_factory).
+The software factory for [Pydantic AI Factory](https://github.com/hnrly/pydantic-ai-factory).
 
 This package holds a ready-made factory for building software. It depends on the generic core, `pydantic-ai-factory`. The core never depends on it, and a check in CI enforces that.
 
@@ -22,6 +22,6 @@ print(run.waiting.kind, run.waiting.output.title)
 
 From a terminal, `factory run "A to-do list web page where I can add tasks and tick them off."` does the same and asks for your decision; add `--offline` to try it with no key.
 
-To run it for real, install `pydantic-ai-factory-software[anthropic]` and set an Anthropic key. [The software factory](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/software-factory.md) and [Design](https://github.com/hnrly/pydantic_ai_factory/blob/main/docs/design-station.md) pages say more.
+To run it for real, install `pydantic-ai-factory-software[anthropic]` and set an Anthropic key. [The software factory](https://github.com/hnrly/pydantic-ai-factory/blob/main/docs/software-factory.md) and [Design](https://github.com/hnrly/pydantic-ai-factory/blob/main/docs/design-station.md) pages say more.
 
 Build, Quality and Release are the next stations.

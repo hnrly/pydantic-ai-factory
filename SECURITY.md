@@ -1,6 +1,6 @@
 # Security
 
-Pydantic AI Factory is pre-alpha. It is a library you run on your own machine, with your own model keys. There is no hosted service.
+Pydantic AI Factory is alpha software (v0.1). It is a library you run on your own machine, with your own model keys. There is no hosted service.
 
 ## What to keep in mind
 

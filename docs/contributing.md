@@ -75,7 +75,7 @@ Pages live in `docs/` as Markdown, beside the code. The site in `site/` renders 
 
 ```bash
 npm --prefix site ci        # once
-npm --prefix site run dev   # preview at http://localhost:4321/pydantic_ai_factory/
+npm --prefix site run dev   # preview at http://localhost:4321/pydantic-ai-factory/
 ```
 
 Five rules keep the docs honest, and close to the style of Pydantic AI's own docs.
@@ -108,8 +108,8 @@ A line that must contain a matching string, such as a test fixture, can end with
 
 ## Working with Pydantic AI
 
-Prefer what Pydantic AI already provides. Check the API against the version in `uv.lock` before you build on it. [AGENTS.md](https://github.com/hnrly/pydantic_ai_factory/blob/main/AGENTS.md) lists the practices this project holds itself to.
+Prefer what Pydantic AI already provides. Check the API against the version in `uv.lock` before you build on it. [AGENTS.md](https://github.com/hnrly/pydantic-ai-factory/blob/main/AGENTS.md) lists the practices this project holds itself to.
 
 ## Reporting a bug
 
-Include the version, your platform, the command you ran with secrets removed, what you expected and the smallest example that shows the problem. For anything sensitive, follow [the security policy](https://github.com/hnrly/pydantic_ai_factory/blob/main/SECURITY.md) instead of opening an issue.
+Include the version, your platform, the command you ran with secrets removed, what you expected and the smallest example that shows the problem. For anything sensitive, follow [the security policy](https://github.com/hnrly/pydantic-ai-factory/blob/main/SECURITY.md) instead of opening an issue.

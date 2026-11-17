@@ -7,7 +7,7 @@ import { hnrlyDark, hnrlyLight } from './src/code-theme.mjs';
 
 export default defineConfig({
   site: 'https://hnrly.github.io',
-  base: '/pydantic_ai_factory',
+  base: '/pydantic-ai-factory',
   trailingSlash: 'always',
   vite: { resolve: { dedupe: ['@astrojs/starlight'] } },
   markdown: { processor: unified({ remarkPlugins: [docsLinks] }) },
@@ -17,7 +17,7 @@ export default defineConfig({
     starlight({
       title: 'Pydantic AI Factory',
       description: 'Composable, evidence-driven AI factories built on Pydantic AI.',
-      social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/hnrly/pydantic_ai_factory' }],
+      social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/hnrly/pydantic-ai-factory' }],
       // hnrly look: tokens in src/styles/hnrly.css, fonts as on hnrly.com.
       customCss: ['./src/styles/hnrly.css'],
       components: { Footer: './src/components/Footer.astro' },
