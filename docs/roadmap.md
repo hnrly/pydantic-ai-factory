@@ -25,7 +25,7 @@ The first delivery is complete. It is the core contract and one real station.
 | See a run as a trace | [Observability](observability.md) |
 | Score a methodology against doing without it | [Measuring a methodology](measuring.md) |
 
-What "complete" does not mean: nothing is published to PyPI, and the API may still change. The getting-started path is run against a real model by hand before each release, with the `live` test marker; no real model has yet been run through the evaluation set.
+What "complete" does not mean: the API may still change before 1.0. The getting-started path is run against a real model by hand before each release, with the `live` test marker. The evaluation set has been run against a real model once, on 16 November 2026.
 
 ## Next
 
