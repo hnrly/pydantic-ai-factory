@@ -32,6 +32,7 @@ designer = Agent(
     "anthropic:claude-opus-5-5",
     name="designer",
     instructions="Write a short design: what the app does, and how to check it works.",
+    model_settings={"cache": True},
 )
 builder = Agent(
     "anthropic:claude-opus-5-5",
@@ -42,7 +43,7 @@ reviewer = Agent(
     "anthropic:claude-opus-5-5",
     name="reviewer",
     instructions="Check the code against the design. Say what is wrong, if anything.",
-    capabilities=[Coder()],
+    capabilities=[Coder(sub_agents=False)],
 )
 
 
@@ -91,6 +92,10 @@ The designer wrote a design, and the factory stopped to wait for you, because th
 `build` hands on a `Built` record: the change as a diff, and the review. The diff comes from the builder's own file tools. Before each write or edit, Harness announces the change with its diff, and the `Hooks` listener keeps it. A file changed by a shell command is not in the diff.
 
 `station(designer, approval=True)` turns one agent into a station. `build` runs two agents, so it is written as a function.
+
+`model_settings={"cache": True}` asks the provider to cache the stable start of each request, so the designer is not charged in full for the same instructions twice. `Coder` turns caching on for the builder and reviewer by itself.
+
+`Coder(sub_agents=False)` takes away the reviewer's `delegate_task` tool. A sub-agent starts from a fresh context and reads the project again, so a review handed to one costs about twice as much and says nothing new. The builder keeps the tool.
 
 `LocalWorkspace` runs the builder's commands on your machine, so it works on macOS and Linux but not on Windows. Use a [sandbox](https://pydantic.dev/docs/ai/harness/) on Windows, or for anything you would not run yourself.
 
