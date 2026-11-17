@@ -70,13 +70,29 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: out/core/
+
+  # A second environment, because PyPI refuses two projects with the same trusted publisher.
+  pypi-software:
+    needs: pypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi-software
+      url: https://pypi.org/project/pydantic-ai-factory-software/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: out/
       - name: Publish the software package, which pins the core
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: out/software/
 
   github-release:
-    needs: pypi
+    needs: pypi-software
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
