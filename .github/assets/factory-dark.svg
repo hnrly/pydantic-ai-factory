@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 420" role="img" aria-labelledby="t">
+<title id="t">A mission goes to a station, where agents do the work. A gate reads the evidence: if it fails, the work goes back to the station; if it passes, a person approves it.</title>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5b5b66"/></marker><marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#e520e9"/></marker></defs>
+<rect width="1600" height="420" fill="#000000"/>
+<rect x="65" y="90" width="300" height="170" rx="14" fill="#0b0b0d" stroke="#2a2a2f" stroke-width="2"/>
+<text x="93" y="136" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="24" fill="#e520e9">01</text>
+<text x="93" y="190" font-family="'Inter Tight', Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="42" font-weight="600" letter-spacing="-0.5" fill="#ffffff">Mission</text>
+<text x="93" y="230" font-family="'Inter Tight', Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" fill="#8a8a93">what to commit to</text>
+<rect x="455" y="90" width="300" height="170" rx="14" fill="#0b0b0d" stroke="#2a2a2f" stroke-width="2"/>
+<text x="483" y="136" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="24" fill="#e520e9">02</text>
+<text x="483" y="190" font-family="'Inter Tight', Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="42" font-weight="600" letter-spacing="-0.5" fill="#ffffff">Station</text>
+<text x="483" y="230" font-family="'Inter Tight', Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" fill="#8a8a93">agents do the work</text>
+<rect x="845" y="90" width="300" height="170" rx="14" fill="#0b0b0d" stroke="#2a2a2f" stroke-width="2"/>
+<text x="873" y="136" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="24" fill="#e520e9">03</text>
+<text x="873" y="190" font-family="'Inter Tight', Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="42" font-weight="600" letter-spacing="-0.5" fill="#ffffff">Gate</text>
+<text x="873" y="230" font-family="'Inter Tight', Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" fill="#8a8a93">code reads the evidence</text>
+<rect x="1235" y="90" width="300" height="170" rx="14" fill="#0b0b0d" stroke="#2a2a2f" stroke-width="2"/>
+<text x="1263" y="136" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="24" fill="#e520e9">04</text>
+<text x="1263" y="190" font-family="'Inter Tight', Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="42" font-weight="600" letter-spacing="-0.5" fill="#ffffff">Approval</text>
+<text x="1263" y="230" font-family="'Inter Tight', Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" fill="#8a8a93">a person signs off</text>
+<line x1="373" y1="175" x2="447" y2="175" stroke="#5b5b66" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="763" y1="175" x2="837" y2="175" stroke="#5b5b66" stroke-width="2.5" marker-end="url(#a)"/>
+<line x1="1153" y1="175" x2="1227" y2="175" stroke="#e520e9" stroke-width="2.5" marker-end="url(#p)"/>
+<text x="1190.0" y="161" text-anchor="middle" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#e520e9">passed</text>
+<path d="M995.0 268 V324 H605.0 V270" fill="none" stroke="#5b5b66" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#a)"/>
+<text x="800.0" y="360" text-anchor="middle" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#8a8a93">failed: back for rework</text>
+</svg>
