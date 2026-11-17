@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const docs = path.join(root, 'docs');
-const base = '/pydantic_ai_factory';
+const base = '/pydantic-ai-factory';
 export default function docsLinks() {
   return (tree, file) => {
     const source = file.path || file.history?.[0];
@@ -22,7 +22,7 @@ export default function docsLinks() {
           const slug = relative.replace(/\.mdx?$/, '').replace(/(^|\/)(index|README)$/, '');
           node.url = `${base}/${slug ? slug.replace(/\/$/, '') + '/' : ''}${fragment ? '#' + fragment : ''}`;
         } else {
-          node.url = `https://github.com/hnrly/pydantic_ai_factory/blob/main/${path.relative(root, absolute)}${fragment ? '#' + fragment : ''}`;
+          node.url = `https://github.com/hnrly/pydantic-ai-factory/blob/main/${path.relative(root, absolute)}${fragment ? '#' + fragment : ''}`;
         }
       }
       for (const child of node.children || []) walk(child);

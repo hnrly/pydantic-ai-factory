@@ -6,7 +6,7 @@ Astro and Starlight render the Markdown and MDX in the repository's `docs/` fold
 npm ci
 npm run check     # type-check the site
 npm run build     # build it, then verify every internal link
-npm run dev       # preview at http://localhost:4321/pydantic_ai_factory/
+npm run dev       # preview at http://localhost:4321/pydantic-ai-factory/
 ```
 
 ## How pages are wired

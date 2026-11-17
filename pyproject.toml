@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "pydantic-ai-factory"
 version = "0.1.0"
-description = "Composable, evidence-driven AI factories built on Pydantic AI."
+description = "AI factories that prove their work. Built on Pydantic AI."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 keywords = ["pydantic-ai", "agents", "factory", "methodology"]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
@@ -29,9 +29,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/hnrly/pydantic_ai_factory"
-Repository = "https://github.com/hnrly/pydantic_ai_factory"
-Changelog = "https://github.com/hnrly/pydantic_ai_factory/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/hnrly/pydantic-ai-factory"
+Repository = "https://github.com/hnrly/pydantic-ai-factory"
+Changelog = "https://github.com/hnrly/pydantic-ai-factory/blob/main/CHANGELOG.md"
 
 [tool.uv.workspace]
 members = ["packages/software"]

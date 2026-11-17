@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 const directory = path.resolve('dist');
-const prefix = '/pydantic_ai_factory/';
+const prefix = '/pydantic-ai-factory/';
 const errors = [];
 async function walk(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {

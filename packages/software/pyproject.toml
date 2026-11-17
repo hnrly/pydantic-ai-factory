@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
@@ -30,9 +30,9 @@ factory = "pydantic_ai_factory_software.cli:entry"
 anthropic = ["pydantic-ai-slim[anthropic]>=2.68,<3"]
 
 [project.urls]
-Homepage = "https://github.com/hnrly/pydantic_ai_factory"
-Repository = "https://github.com/hnrly/pydantic_ai_factory"
-Changelog = "https://github.com/hnrly/pydantic_ai_factory/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/hnrly/pydantic-ai-factory"
+Repository = "https://github.com/hnrly/pydantic-ai-factory"
+Changelog = "https://github.com/hnrly/pydantic-ai-factory/blob/main/CHANGELOG.md"
 
 [tool.uv.sources]
 pydantic-ai-factory = { workspace = true }
