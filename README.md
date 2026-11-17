@@ -13,13 +13,10 @@
 
 An agent saying it finished is not the same as the work being right. Pydantic AI Factory is a Python library that separates the two. A factory takes a mission, moves the work through stations, and lets plain-code gates judge the recorded evidence before a person approves the result. Your agents stay ordinary Pydantic AI agents.
 
-```mermaid
-flowchart LR
-    M[Mission] --> S1[Station<br/>agents do the work]
-    S1 --> G1{Gate<br/>code reads the evidence}
-    G1 -- passed --> A([A person approves])
-    G1 -- failed --> S1
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/hnrly/pydantic-ai-factory/main/.github/assets/factory-dark.svg">
+  <img alt="01 Mission, what to commit to. 02 Station, agents do the work. 03 Gate, code reads the evidence: if it fails, the work goes back to the station. 04 Approval, a person signs off." src="https://raw.githubusercontent.com/hnrly/pydantic-ai-factory/main/.github/assets/factory-light.svg">
+</picture>
 
 The first factory, for software, has one working station today: Design.
 

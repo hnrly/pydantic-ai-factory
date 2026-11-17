@@ -2,6 +2,10 @@
 
 Every change a user can see is listed here, newest first.
 
+## Unreleased
+
+- Draw the README's factory diagram in the hnrly style, with light and dark versions, so its labels are no longer cut off.
+
 ## 0.1.0
 
 - The first release, published to PyPI as `pydantic-ai-factory` and `pydantic-ai-factory-software`. Each release is built and published from its tag by GitHub Actions, with trusted publishing and signed attestations, and its notes are the lines under its heading here.
