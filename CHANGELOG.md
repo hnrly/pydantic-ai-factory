@@ -2,8 +2,9 @@
 
 Every change a user can see is listed here, newest first.
 
-## Unreleased
+## 0.1.0
 
+- The first release, published to PyPI as `pydantic-ai-factory` and `pydantic-ai-factory-software`. Each release is built and published from its tag by GitHub Actions, with trusted publishing and signed attestations, and its notes are the lines under its heading here.
 - Point every link at the repository's real name, `hnrly/pydantic-ai-factory`, and serve the docs site from `/pydantic-ai-factory/`, so GitHub Pages and the clone commands work. Mark both packages alpha, and open the README with what the library promises: AI factories that prove their work.
 - Ask for prompt caching in the software factory's `designer` and in every Elephant Goldfish goldfish, with `model_settings={"cache": True}`. In the first real runs neither was cached, and the designer resends its whole conversation every review round. The Getting started designer and the evaluation set's designers ask for it too. The Getting started reviewer now uses `Coder(sub_agents=False)`: in a real run it handed the whole review to a sub-agent, which read the project again and doubled the review's cost.
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/hnrly/pydantic-ai-factory/security/advisories/new
+    about: Report it privately. Do not open a public issue.
+  - name: Read the documentation
+    url: https://hnrly.github.io/pydantic-ai-factory/
+    about: Getting started, the concepts and the software factory.

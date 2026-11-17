@@ -1,0 +1,30 @@
+name: Something is wrong
+description: A bug, a crash, or docs that say one thing while the library does another.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: The smallest example that shows it
+      description: Code or the command you ran, with any keys or private text removed.
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: "pydantic-ai-factory, pydantic-ai and Python, for example: 0.1.0, 2.68.0, 3.13"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 15, Ubuntu 24.04, Windows 11

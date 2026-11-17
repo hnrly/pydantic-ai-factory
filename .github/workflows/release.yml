@@ -1,0 +1,94 @@
+name: Release
+
+# Pushing a tag such as v0.1.0 publishes both packages to PyPI and makes a GitHub release.
+# Running this by hand on a branch is a dry run: it checks and builds, and publishes nothing.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The tag to check, such as v0.1.0. Nothing is published."
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - name: Check the tag matches both packages and the changelog
+        run: uv run --no-project --python 3.13 scripts/release_check.py "$TAG" --notes notes.md
+      - run: uv build --all-packages --no-sources
+      - name: Install exactly the built wheels and import them
+        run: |
+          uv venv "$RUNNER_TEMP/wheels" --python 3.13
+          uv pip install --python "$RUNNER_TEMP/wheels/bin/python" dist/*.whl
+          "$RUNNER_TEMP/wheels/bin/python" -I -c \
+            "import pydantic_ai_factory, pydantic_ai_factory_software; print(pydantic_ai_factory.__version__)"
+      - name: Keep the core and the software package apart, so the core is published first
+        run: |
+          mkdir -p out/core out/software
+          mv dist/pydantic_ai_factory_software-* out/software/
+          mv dist/pydantic_ai_factory-* out/core/
+          cp notes.md out/
+          ls -R out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: out/
+          if-no-files-found: error
+
+  pypi:
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/pydantic-ai-factory/
+    permissions:
+      id-token: write # trusted publishing: PyPI trusts this workflow, so no token is stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: out/
+      - name: Publish the core
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: out/core/
+      - name: Publish the software package, which pins the core
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: out/software/
+
+  github-release:
+    needs: pypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: out/
+      - name: Make the GitHub release from the changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$TAG" out/core/* out/software/*
+          --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file out/notes.md --verify-tag

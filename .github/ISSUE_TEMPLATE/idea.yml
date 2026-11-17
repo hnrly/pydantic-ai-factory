@@ -1,0 +1,21 @@
+name: An idea
+description: A station, a gate, a methodology or a change you would like to see.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The problem first. What does a factory not let you do today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+  - type: checkboxes
+    id: pydantic-ai
+    attributes:
+      label: Pydantic AI first
+      options:
+        - label: I checked that Pydantic AI or Pydantic AI Harness does not already provide this.
