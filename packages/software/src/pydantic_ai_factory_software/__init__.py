@@ -7,7 +7,7 @@ Its first station is Design. Build, Quality and Release follow.
 from ._design import DESIGN_GOLDFISH, DESIGN_STANDARDS, Design, render_markdown
 from ._factory import SoftwareFactory
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "DESIGN_GOLDFISH",

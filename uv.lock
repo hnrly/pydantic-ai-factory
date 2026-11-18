@@ -580,7 +580,7 @@ wheels = [
 
 [[package]]
 name = "pydantic-ai-factory"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "opentelemetry-api" },
@@ -627,7 +627,7 @@ dev = [
 
 [[package]]
 name = "pydantic-ai-factory-software"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/software" }
 dependencies = [
     { name = "pydantic-ai-factory" },

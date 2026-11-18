@@ -2,7 +2,7 @@
 
 Every change a user can see is listed here, newest first.
 
-## Unreleased
+## 0.1.1
 
 - Document `on_step` on the Factories page: it is awaited with the run after every save, and an error raised in it leaves the run saved as `"running"`. List `"running"` among a run's outcomes, as a run saved between stations has it.
 - Use `LocalStore` in the web-app sample on the Stores page. It used `MemoryStore`, which a web app loses on every restart and does not share between worker processes.
