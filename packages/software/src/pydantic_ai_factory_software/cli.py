@@ -26,9 +26,9 @@ from pydantic_ai.models import Model
 from pydantic_ai_factory import ApprovalRefused, Decision, FactoryError, LocalStore, Run
 from pydantic_ai_factory.methodologies import GoldfishReport
 
+from . import offline_model
 from ._design import Design, render_markdown
 from ._factory import SoftwareFactory
-from ._offline import offline_model
 
 PASSED, ENDED, USAGE, WAITING = 0, 1, 2, 3
 DEFAULT_MODEL = "anthropic:claude-opus-5-5"
