@@ -2,29 +2,30 @@
  * hnrly look for the Pydantic AI Factory docs.
  * Black ground, Inter Tight and Geist Mono, restraint. Pydantic pink (#E520E9)
  * is a small accent only: links, numbers, tags and code keywords.
- * Tokens match hnrly.com so the docs and the series read as one family.
+ * Tokens match hnrly.com so the docs and the series read as one family. Their raw
+ * values live in tokens.css; this file maps Starlight's variables to them.
  */
 
+@import './tokens.css';
+
+/* Starlight's variables, mapped to the raw values in tokens.css. */
 :root {
-  --hn-pink: #e520e9;
-  --hn-lead: #6e6e78;
+  --sl-font: var(--hn-font);
+  --sl-font-mono: var(--hn-font-mono);
+  --sl-line-height-headings: var(--hn-line-height-headings);
 
-  --sl-font: 'Inter Tight', system-ui, sans-serif;
-  --sl-font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --sl-line-height-headings: 1.15;
+  --sl-color-white: var(--hn-white);
+  --sl-color-gray-1: var(--hn-gray-1);
+  --sl-color-gray-2: var(--hn-gray-2);
+  --sl-color-gray-3: var(--hn-gray-3);
+  --sl-color-gray-4: var(--hn-gray-4);
+  --sl-color-gray-5: var(--hn-gray-5);
+  --sl-color-gray-6: var(--hn-gray-6);
+  --sl-color-black: var(--hn-black);
 
-  --sl-color-white: #ffffff;
-  --sl-color-gray-1: #d4d4d8;
-  --sl-color-gray-2: #a1a1aa;
-  --sl-color-gray-3: #8a8a93;
-  --sl-color-gray-4: #2a2a2f;
-  --sl-color-gray-5: #1f1f23;
-  --sl-color-gray-6: #0b0b0d;
-  --sl-color-black: #000000;
-
-  --sl-color-accent-low: #2a0a2b;
-  --sl-color-accent: #e520e9;
-  --sl-color-accent-high: #f3a9f5;
+  --sl-color-accent-low: var(--hn-accent-low);
+  --sl-color-accent: var(--hn-accent);
+  --sl-color-accent-high: var(--hn-accent-high);
 
   --sl-color-text: var(--sl-color-gray-1);
   --sl-color-text-accent: var(--hn-pink);
@@ -37,23 +38,19 @@
 }
 
 :root[data-theme='light'] {
-  /* Pink darkened so text links pass 4.5:1 on white. */
-  --hn-pink: #b312b7;
-  --hn-lead: #8a8a93;
+  --sl-color-white: var(--hn-white);
+  --sl-color-gray-1: var(--hn-gray-1);
+  --sl-color-gray-2: var(--hn-gray-2);
+  --sl-color-gray-3: var(--hn-gray-3);
+  --sl-color-gray-4: var(--hn-gray-4);
+  --sl-color-gray-5: var(--hn-gray-5);
+  --sl-color-gray-6: var(--hn-gray-6);
+  --sl-color-gray-7: var(--hn-gray-7);
+  --sl-color-black: var(--hn-black);
 
-  --sl-color-white: #000000;
-  --sl-color-gray-1: #18181b;
-  --sl-color-gray-2: #3f3f46;
-  --sl-color-gray-3: #5b5b66;
-  --sl-color-gray-4: #a1a1aa;
-  --sl-color-gray-5: #d4d4d8;
-  --sl-color-gray-6: #ededf0;
-  --sl-color-gray-7: #f7f7f8;
-  --sl-color-black: #ffffff;
-
-  --sl-color-accent-low: #fbe3fb;
-  --sl-color-accent: #b312b7;
-  --sl-color-accent-high: #6d0a70;
+  --sl-color-accent-low: var(--hn-accent-low);
+  --sl-color-accent: var(--hn-accent);
+  --sl-color-accent-high: var(--hn-accent-high);
 
   --sl-color-text: var(--sl-color-gray-2);
   --sl-color-bg-nav: var(--sl-color-black);
