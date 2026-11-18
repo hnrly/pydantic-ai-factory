@@ -56,7 +56,7 @@ from .stations import (
     Waiting,
     station,
 )
-from .stores import LocalStore, MemoryStore
+from .stores import LocalStore, MemoryStore, SQLiteStore, StoreBusy, StoreSchemaMismatch
 
 __version__ = "0.1.1"
 
@@ -97,6 +97,7 @@ __all__ = [
     "RunConflict",
     "RunNotFound",
     "RunStore",
+    "SQLiteStore",
     "Signal",
     "Station",
     "StationClosed",
@@ -104,6 +105,8 @@ __all__ = [
     "StationDefinitionError",
     "StationInputInvalid",
     "StationResult",
+    "StoreBusy",
+    "StoreSchemaMismatch",
     "Untyped",
     "Verdict",
     "Waiting",
