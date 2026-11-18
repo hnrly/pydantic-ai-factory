@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pydantic-ai-factory-software"
-version = "0.1.0"
+version = "0.1.1"
 description = "The software factory for Pydantic AI Factory, starting with the Design station."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,7 +20,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Typing :: Typed",
 ]
-dependencies = ["pydantic-ai-factory==0.1.0"]
+dependencies = ["pydantic-ai-factory==0.1.1"]
 
 [project.scripts]
 factory = "pydantic_ai_factory_software.cli:entry"
