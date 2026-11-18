@@ -11,6 +11,7 @@ A store keeps two things: the artifacts a factory makes, and the runs that made 
 |---|---|---|
 | `MemoryStore()` | In memory | Tests and scripts. |
 | `LocalStore(folder)` | As files in a folder | Real work on one machine, or shared disk. |
+| `SQLiteStore(path)` | In one SQLite file | A service on one machine, such as a web app and its worker. |
 
 ## Artifacts
 
@@ -83,20 +84,32 @@ A waiting run's `updated_at` is when it started waiting. A run saved by version 
 
 `limit` caps how many runs come back. It is 50 unless you say otherwise, and it must be between 1 and 1000, or `list_runs` raises `ValueError`. There is no cursor: to see more, narrow the listing with `outcome` or `factory`.
 
-`LocalStore` reads every run file to answer. That is quick for the hundreds of runs one machine makes.
+`LocalStore` reads every run file to answer. That is quick for the hundreds of runs one machine makes. `SQLiteStore` answers from an index.
+
+## SQLiteStore
+
+`SQLiteStore(path)` keeps artifacts and runs in one SQLite file. It creates the file and its tables the first time it is used. It needs nothing beyond Python's standard library.
+
+Choose it when more than one process on one machine shares the work, such as a web app that answers runs and a worker that does them. The file uses SQLite's write-ahead log, so one process can read while another writes. Choose `LocalStore` when you want to read each run as a plain file, or keep the store on a shared disk.
+
+Two processes can save the same run at once. One wins, and the other gets `RunConflict`, as with every store. A save waits up to `busy_timeout` seconds, 5 by default, for another process to finish writing. If it waits longer, it raises `StoreBusy`, which is a kind of `RunConflict`. So `RunConflict` means someone answered first, unless it is a `StoreBusy`, which means try again.
+
+A file written with another schema version, by another version of the library, is refused with `StoreSchemaMismatch`. Its message names both versions.
+
+`SQLiteStore` is for one machine. Do not keep its file on a network share: SQLite's locks are not reliable there.
 
 ## In a web app
 
-A web app keeps nothing between requests. Each request loads the run, answers it and returns. Give it a store that outlives the process, such as `LocalStore`. A `MemoryStore` is lost when the app restarts, and each worker process would have its own. With any web framework, the handler is a few lines:
+A web app keeps nothing between requests. Each request loads the run, answers it and returns. Give it a store that outlives the process, such as `SQLiteStore`. A `MemoryStore` is lost when the app restarts, and each worker process would have its own. With any web framework, the handler is a few lines:
 
 ```python
 from pydantic_ai import Agent
 
-from pydantic_ai_factory import Factory, LocalStore, station
+from pydantic_ai_factory import Factory, SQLiteStore, station
 
 designer = Agent("anthropic:claude-opus-5-5", name="designer", instructions="Write a short design.")
 software = Factory("software", [station(designer, approval=True)])
-store = LocalStore("factory-store")
+store = SQLiteStore("factory.db")
 
 
 async def approve(run_id: str, user_name: str) -> dict[str, str]:
