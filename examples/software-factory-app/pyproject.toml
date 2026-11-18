@@ -1,0 +1,48 @@
+[project]
+name = "software-factory-app"
+version = "0.2.0"
+description = "The software factory run as a small service: a web interface, an API and a worker."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic-ai-factory==0.2.0",
+  "pydantic-ai-factory-software==0.2.0",
+  "fastapi==0.162.0",
+  "uvicorn==0.54.0",
+]
+
+[dependency-groups]
+dev = ["pytest==9.2.0", "httpx==0.28.1", "ruff==0.17.5", "pyright==1.1.414"]
+
+# Inside this repository the two packages come from its own folders. In a copy of
+# this folder, `uv sync --no-sources` ignores this table and installs from PyPI.
+[tool.uv.sources]
+pydantic-ai-factory = { path = "../..", editable = true }
+pydantic-ai-factory-software = { path = "../../packages/software", editable = true }
+
+[tool.uv]
+package = false
+# Keep Pydantic AI at the version the library is tested with.
+constraint-dependencies = ["pydantic-ai-slim==2.68.0"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S101"]
+per-file-ignores = { "tests/**" = ["S101"] }
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["error"]
+
+[tool.pyright]
+include = ["app", "tests"]
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
