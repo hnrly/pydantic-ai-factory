@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from ..artifacts import ArtifactStore
 from ..contracts import FactoryError
 
 if TYPE_CHECKING:
-    from ._runner import Run
+    from ._runner import Run, RunOutcome
 
 
 class RunConflict(FactoryError):
@@ -28,8 +28,9 @@ class RunStore(Protocol):
 
     ``put_run(run, replaces=previous)`` saves ``run`` only if the stored run is still
     ``previous``; with ``replaces=None`` the id must be new. Otherwise it raises
-    :class:`RunConflict` and saves nothing. ``pydantic_ai_factory.stores`` has
-    ``encode_run`` and ``decode_run`` to build one.
+    :class:`RunConflict` and saves nothing. ``list_runs`` lists the stored runs, most
+    recently changed first. ``pydantic_ai_factory.stores`` has ``encode_run`` and
+    ``decode_run`` to build one.
     """
 
     async def get_run(self, run_id: str) -> Run:
@@ -38,6 +39,24 @@ class RunStore(Protocol):
 
     async def put_run(self, run: Run, *, replaces: Run | None) -> None:
         """Save ``run`` in place of ``replaces``, or raise :class:`RunConflict`."""
+        ...
+
+    async def list_runs(
+        self,
+        *,
+        outcome: RunOutcome | None = None,
+        factory: str | None = None,
+        order: Literal["newest", "oldest"] = "newest",
+        limit: int = 50,
+    ) -> list[Run]:
+        """Return up to ``limit`` stored runs, sorted by ``updated_at``.
+
+        Runs come newest first, or oldest first with ``order="oldest"``. A run with no
+        ``updated_at``, saved by 0.1, comes last in either order. Runs changed at the
+        same moment come in ``run_id`` order. Only runs with this ``outcome`` and from
+        this ``factory`` are listed, when either is given. ``limit`` must be between 1
+        and 1000, or the store raises ``ValueError``. Each run is the latest one saved.
+        """
         ...
 
 
