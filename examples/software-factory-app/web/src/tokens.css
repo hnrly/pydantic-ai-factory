@@ -1,0 +1,52 @@
+/*
+ * hnrly design tokens: the raw colours and type behind the docs site.
+ * hnrly.css maps Starlight's variables to these. The software factory app keeps an
+ * exact copy at examples/software-factory-app/web/src/tokens.css, and CI fails when
+ * the two differ, so change both together.
+ *
+ * Dark is the default. "White" is the strongest text colour and "black" the ground,
+ * as in Starlight, so the light theme swaps them. The grays run from near the text
+ * colour (1) to near the ground (6 and 7).
+ */
+
+:root {
+  --hn-pink: #e520e9;
+  --hn-lead: #6e6e78;
+
+  --hn-font: 'Inter Tight', system-ui, sans-serif;
+  --hn-font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --hn-line-height-headings: 1.15;
+
+  --hn-white: #ffffff;
+  --hn-gray-1: #d4d4d8;
+  --hn-gray-2: #a1a1aa;
+  --hn-gray-3: #8a8a93;
+  --hn-gray-4: #2a2a2f;
+  --hn-gray-5: #1f1f23;
+  --hn-gray-6: #0b0b0d;
+  --hn-black: #000000;
+
+  --hn-accent-low: #2a0a2b;
+  --hn-accent: #e520e9;
+  --hn-accent-high: #f3a9f5;
+}
+
+:root[data-theme='light'] {
+  /* Pink darkened so text links pass 4.5:1 on white. */
+  --hn-pink: #b312b7;
+  --hn-lead: #8a8a93;
+
+  --hn-white: #000000;
+  --hn-gray-1: #18181b;
+  --hn-gray-2: #3f3f46;
+  --hn-gray-3: #5b5b66;
+  --hn-gray-4: #a1a1aa;
+  --hn-gray-5: #d4d4d8;
+  --hn-gray-6: #ededf0;
+  --hn-gray-7: #f7f7f8;
+  --hn-black: #ffffff;
+
+  --hn-accent-low: #fbe3fb;
+  --hn-accent: #b312b7;
+  --hn-accent-high: #6d0a70;
+}
