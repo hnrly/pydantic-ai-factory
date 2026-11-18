@@ -60,16 +60,16 @@ Each save is a compare-and-swap. An answer is saved before any of the work it st
 
 ## In a web app
 
-A web app keeps nothing between requests. Each request loads the run, answers it and returns. With any web framework, the handler is a few lines:
+A web app keeps nothing between requests. Each request loads the run, answers it and returns. Give it a store that outlives the process, such as `LocalStore`. A `MemoryStore` is lost when the app restarts, and each worker process would have its own. With any web framework, the handler is a few lines:
 
 ```python
 from pydantic_ai import Agent
 
-from pydantic_ai_factory import Factory, MemoryStore, station
+from pydantic_ai_factory import Factory, LocalStore, station
 
 designer = Agent("anthropic:claude-opus-5-5", name="designer", instructions="Write a short design.")
 software = Factory("software", [station(designer, approval=True)])
-store = MemoryStore()
+store = LocalStore("factory-store")
 
 
 async def approve(run_id: str, user_name: str) -> dict[str, str]:

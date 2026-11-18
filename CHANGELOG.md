@@ -4,6 +4,7 @@ Every change a user can see is listed here, newest first.
 
 ## Unreleased
 
+- Use `LocalStore` in the web-app sample on the Stores page. It used `MemoryStore`, which a web app loses on every restart and does not share between worker processes.
 - Say on the docs home page that v0.1 is released as an alpha and how to install it. It still said pre-alpha and not released.
 - Draw the README's factory diagram in the hnrly style, with light and dark versions, so its labels are no longer cut off.
 
