@@ -250,6 +250,7 @@ SCRIPTS: dict[str, Script] = {
     },
     "docs/stores.md": {"designer": [DESIGN]},
     "docs/operating.md": {"designer": [asking_designer], "builder": ["Built index.html."]},
+    "docs/deploying.md": {"designer": [DESIGN], "builder": ["Built index.html."]},
     "docs/missions.md": {"designer": [DESIGN], "builder": ["Built index.html."]},
     "docs/elephant-goldfish.md": {
         "designer": [DESIGN, DESIGN_WITH_BLANK],
