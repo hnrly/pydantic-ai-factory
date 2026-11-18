@@ -58,6 +58,33 @@ A run read from a store holds its payloads as plain JSON. `factory.resume` reads
 
 Each save is a compare-and-swap. An answer is saved before any of the work it starts, so if two people answer the same run at once, one wins and the other gets `RunConflict` before anything runs. A design cannot be both approved and rejected, and approved work is never built twice.
 
+## Listing runs
+
+`list_runs` finds runs without knowing their ids. It sorts them by `updated_at`, the time each was last saved, newest first. Pass `order="oldest"` for oldest first, and `outcome` or `factory` to list only some. So the runs that have waited longest for a person are one call away:
+
+```python
+from pydantic_ai import Agent
+
+from pydantic_ai_factory import Factory, MemoryStore, station
+
+designer = Agent("anthropic:claude-opus-5-5", name="designer", instructions="Write a short design.")
+software = Factory("software", [station(designer, approval=True)])
+store = MemoryStore()
+first = software.run_sync("A to-do list web page.", store=store)
+second = software.run_sync("A shopping list web page.", store=store)
+software.resume_sync(second, second.approve(by="ada"), store=store)
+
+waiting = store.list_runs_sync(outcome="waiting", order="oldest")
+print(len(waiting), waiting[0].run_id == first.run_id, waiting[0].waiting.station)
+#> 1 True designer
+```
+
+A waiting run's `updated_at` is when it started waiting. A run saved by version 0.1 has no `updated_at`, so it comes last in either order. Runs saved at the same moment come in `run_id` order.
+
+`limit` caps how many runs come back. It is 50 unless you say otherwise, and it must be between 1 and 1000, or `list_runs` raises `ValueError`. There is no cursor: to see more, narrow the listing with `outcome` or `factory`.
+
+`LocalStore` reads every run file to answer. That is quick for the hundreds of runs one machine makes.
+
 ## In a web app
 
 A web app keeps nothing between requests. Each request loads the run, answers it and returns. Give it a store that outlives the process, such as `LocalStore`. A `MemoryStore` is lost when the app restarts, and each worker process would have its own. With any web framework, the handler is a few lines:
@@ -83,4 +110,18 @@ A run makes several model requests, so start long runs in a background task and 
 
 ## Your own store
 
-A store is any object with the async methods of two protocols: `ArtifactStore` (`put`, `get`, `exists`) and `RunStore` (`get_run`, `put_run`). It may keep artifacts in one place, such as object storage, and runs in another, such as a database. `pydantic_ai_factory.stores` has helpers that do the integrity checks for you: `encode_artifact` and `decode_artifact` check every artifact against its digest, and `encode_run` and `decode_run` read and write runs.
+A store is any object with the async methods of two protocols: `ArtifactStore` (`put`, `get`, `exists`) and `RunStore` (`get_run`, `put_run`, `list_runs`). It may keep artifacts in one place, such as object storage, and runs in another, such as a database. `pydantic_ai_factory.stores` has helpers that do the integrity checks for you: `encode_artifact` and `decode_artifact` check every artifact against its digest, and `encode_run` and `decode_run` read and write runs.
+
+A store written for version 0.1 must add `list_runs`. Every store keeps these rules:
+
+- An artifact comes back from `get` exactly as it was put.
+- `put` refuses an artifact that does not match its digest, and `get` refuses one asked for under the wrong ref. Both raise `ArtifactCorrupt`.
+- A run comes back from `get_run` exactly as it was saved.
+- `put_run(run, replaces=previous)` saves only if the stored run is still `previous`. Otherwise it raises `RunConflict` and saves nothing.
+- `put_run(run, replaces=None)` saves only if no run has that id. Otherwise it raises `RunConflict`.
+- `list_runs` returns the latest save of each run, filtered by `outcome` and `factory` when given.
+- It sorts by `updated_at` alone, newest first or oldest first, with runs saved at the same moment in `run_id` order.
+- A run with no `updated_at` comes last in either order.
+- It returns at most `limit` runs, and raises `ValueError` when `limit` is not between 1 and 1000.
+
+The library's own tests check these rules against every store it ships, in `tests/test_store_contract.py`. Copy them to check your own.

@@ -8,12 +8,14 @@ import hashlib
 import os
 import tempfile
 import time
+from collections.abc import Iterable
+from datetime import datetime
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 from ..artifacts import Artifact, ArtifactNotFound, ArtifactRef, decode_artifact, encode_artifact
 from ..contracts import run_sync
-from ..factory import Run, RunConflict, RunNotFound
+from ..factory import Run, RunConflict, RunNotFound, RunOutcome
 
 PayloadT = TypeVar("PayloadT")
 
@@ -44,12 +46,60 @@ def _check_swap(run: Run, replaces: Run | None, current: Run | None) -> None:
         )
 
 
+_LIMIT_MAX = 1000
+
+
+def _check_limit(limit: int, order: str) -> None:
+    """Raise ``ValueError`` unless ``limit`` and ``order`` are ones ``list_runs`` takes."""
+    if not 1 <= limit <= _LIMIT_MAX:
+        raise ValueError(f"limit must be between 1 and {_LIMIT_MAX}, not {limit}")
+    if order not in ("newest", "oldest"):
+        raise ValueError(f"order must be 'newest' or 'oldest', not {order!r}")
+
+
+def _select_runs(
+    runs: Iterable[Run],
+    *,
+    outcome: RunOutcome | None,
+    factory: str | None,
+    order: Literal["newest", "oldest"],
+    limit: int,
+) -> list[Run]:
+    """Filter, sort and cut ``runs`` as ``RunStore.list_runs`` describes."""
+    _check_limit(limit, order)
+    timed: list[tuple[datetime, Run]] = []
+    untimed: list[Run] = []
+    for run in runs:
+        if outcome is not None and run.outcome != outcome:
+            continue
+        if factory is not None and run.factory != factory:
+            continue
+        if run.updated_at is None:
+            untimed.append(run)
+        else:
+            timed.append((run.updated_at, run))
+    # Runs changed at the same moment keep run_id order, so a listing never shuffles.
+    timed.sort(key=lambda pair: pair[1].run_id)
+    timed.sort(key=lambda pair: pair[0], reverse=order == "newest")
+    untimed.sort(key=lambda run: run.run_id)
+    return ([run for _, run in timed] + untimed)[:limit]
+
+
 class _SyncReads:
-    """``get_sync`` and ``get_run_sync``, for code that is not async."""
+    """``get_sync``, ``get_run_sync`` and ``list_runs_sync``, for code that is not async."""
 
     async def get(self, ref: ArtifactRef, payload_type: Any) -> Artifact[Any]: ...
 
     async def get_run(self, run_id: str) -> Run: ...
+
+    async def list_runs(
+        self,
+        *,
+        outcome: RunOutcome | None = None,
+        factory: str | None = None,
+        order: Literal["newest", "oldest"] = "newest",
+        limit: int = 50,
+    ) -> list[Run]: ...
 
     def get_sync(self, ref: ArtifactRef, payload_type: type[PayloadT]) -> Artifact[PayloadT]:
         """Read an artifact back, from code that is not async."""
@@ -58,6 +108,17 @@ class _SyncReads:
     def get_run_sync(self, run_id: str) -> Run:
         """Read a run back, from code that is not async."""
         return run_sync(self.get_run(run_id))
+
+    def list_runs_sync(
+        self,
+        *,
+        outcome: RunOutcome | None = None,
+        factory: str | None = None,
+        order: Literal["newest", "oldest"] = "newest",
+        limit: int = 50,
+    ) -> list[Run]:
+        """List stored runs, from code that is not async. See ``RunStore.list_runs``."""
+        return run_sync(self.list_runs(outcome=outcome, factory=factory, order=order, limit=limit))
 
 
 class MemoryStore(_SyncReads):
@@ -91,6 +152,19 @@ class MemoryStore(_SyncReads):
         stored = self._runs.get(run.run_id)
         _check_swap(run, replaces, decode_run(stored) if stored is not None else None)
         self._runs[run.run_id] = encode_run(run)
+
+    async def list_runs(
+        self,
+        *,
+        outcome: RunOutcome | None = None,
+        factory: str | None = None,
+        order: Literal["newest", "oldest"] = "newest",
+        limit: int = 50,
+    ) -> list[Run]:
+        """List stored runs by when they last changed. See ``RunStore.list_runs``."""
+        _check_limit(limit, order)
+        runs = (decode_run(data) for data in self._runs.values())
+        return _select_runs(runs, outcome=outcome, factory=factory, order=order, limit=limit)
 
     def __len__(self) -> int:
         return len(self._data)
@@ -143,6 +217,27 @@ class LocalStore(_SyncReads):
 
     async def put_run(self, run: Run, *, replaces: Run | None) -> None:
         await asyncio.to_thread(self._swap_run, run, replaces)
+
+    async def list_runs(
+        self,
+        *,
+        outcome: RunOutcome | None = None,
+        factory: str | None = None,
+        order: Literal["newest", "oldest"] = "newest",
+        limit: int = 50,
+    ) -> list[Run]:
+        """List stored runs by when they last changed. See ``RunStore.list_runs``.
+
+        It reads every run file, which is quick for the hundreds of runs one machine
+        makes. A store for many more should answer from an index.
+        """
+        _check_limit(limit, order)
+        runs = await asyncio.to_thread(self._read_runs)
+        return _select_runs(runs, outcome=outcome, factory=factory, order=order, limit=limit)
+
+    def _read_runs(self) -> list[Run]:
+        # Lock files end in .lock and half-written files have no suffix, so neither is read.
+        return [decode_run(path.read_bytes()) for path in (self.root / "runs").glob("*.json")]
 
     def _swap_run(self, run: Run, replaces: Run | None) -> None:
         path = self.run_path_for(run.run_id)
