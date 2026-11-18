@@ -8,6 +8,7 @@ Every change a user can see is listed here, newest first.
 - List the runs in a store with `list_runs`, newest first or oldest first, filtered by `outcome` or `factory`, with a `limit` of 1 to 1000 runs. `MemoryStore` and `LocalStore` have it, and `list_runs_sync` for code that is not async. `list_runs` is now part of the `RunStore` protocol, so a store written for 0.1 must add it. The Stores page lists the rules every store keeps.
 - Keep a factory's work in one SQLite file with `SQLiteStore(path, busy_timeout=5.0)`. It keeps the same rules as the other stores, and lets a web app and a worker on one machine share runs. A save that waits longer than `busy_timeout` seconds for another writer raises `StoreBusy`, a kind of `RunConflict`. A file of another schema version raises `StoreSchemaMismatch`. The web-app sample on the Stores page now uses it.
 - Export `offline_model` from `pydantic_ai_factory_software`, the scripted model behind `factory run --offline`, so Python code can try the software factory with no model key.
+- Add the Operating a factory page: finding the runs that wait for a person with `list_runs`, answering them from any process, hearing when a run starts waiting with `on_step`, what `RunConflict` and `StoreBusy` mean when two people answer at once, how to spot a stalled run from `updated_at`, and why to answer waiting runs before changing a factory's shape.
 
 ## 0.1.1
 
