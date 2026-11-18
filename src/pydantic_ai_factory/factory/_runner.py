@@ -81,6 +81,13 @@ class Run(Record):
     ``mission_id`` is the id of the run's mission, and ``mission_ref`` names the artifact
     that records it. When a run of a mission made by intake ends, ``outcome_signal``
     names the outcome signal it emitted.
+
+    ``created_at`` is when the run was first saved, in UTC. It never changes. It is
+    ``None`` on a run that version 0.1 first saved.
+
+    ``updated_at`` is when the run was last saved, in UTC. A waiting run's
+    ``updated_at`` is when it started waiting. It is ``None`` only on a run that
+    version 0.2 or later has never saved.
     """
 
     run_id: Name
@@ -101,6 +108,8 @@ class Run(Record):
     mission_id: Name | None = None
     mission_ref: ArtifactRef | None = None
     outcome_signal: ArtifactRef | None = None
+    created_at: AwareDatetime | None = None
+    updated_at: AwareDatetime | None = None
 
     @model_validator(mode="after")
     def _is_consistent(self) -> Self:
@@ -167,6 +176,11 @@ class Run(Record):
             raise ApprovalRefused(f"run {self.run_id!r}: {error}") from error
 
 
+def _now() -> datetime:
+    """Read the clock, in UTC. Every time on a run comes from here, so tests can patch it."""
+    return datetime.now(UTC)
+
+
 @dataclass
 class _Progress:
     """Everything the runner needs to carry a run on. Rebuilt from a ``Run`` on resume."""
@@ -207,6 +221,7 @@ class _Progress:
         output: Artifact[Any] | None = None,
         waiting: Waiting | None = None,
     ) -> Run:
+        now = _now()
         return Run(
             run_id=self.run_id,
             factory=self.factory.name,
@@ -225,6 +240,9 @@ class _Progress:
             reworked=dict(self.reworked),
             mission_id=self.mission_id,
             mission_ref=self.mission_ref,
+            # A run first saved by 0.1 has no creation time, and keeps none.
+            created_at=now if self.saved is None else self.saved.created_at,
+            updated_at=now,
         )
 
     async def save(self, run: Run) -> Run:
