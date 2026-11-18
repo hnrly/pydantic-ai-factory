@@ -40,13 +40,40 @@ Name a factory for what it makes, such as `"software"`, not for one piece of wor
 
 | Field | Holds |
 |---|---|
-| `outcome` | `"passed"`, `"failed"`, `"did_not_run"` or `"waiting"`. |
+| `outcome` | `"passed"`, `"failed"`, `"did_not_run"` or `"waiting"`. A run saved between stations is `"running"`. |
 | `output` | The last station's output, once the run has finished. |
 | `waiting` | What a person is being asked, when the outcome is `"waiting"`. See [approvals](approvals.md). |
 | `steps` | One result per station attempt, in order. |
 | `approvals` | Every decision a person made. |
 
 `"failed"` means a [gate](gates.md) judged the work and it fell short. `"did_not_run"` means something could not be done at all, such as an unreachable model. The library never reports one as the other.
+
+## Watching a run
+
+The factory saves the run after every step. Pass `on_step=` to `run` or `resume`, and it is awaited with the run each time it is saved.
+
+```python
+from pydantic_ai import Agent
+
+from pydantic_ai_factory import Factory, MemoryStore, Run, station
+
+designer = Agent("anthropic:claude-opus-5-5", name="designer", instructions="Write a short design.")
+builder = Agent("anthropic:claude-opus-5-5", name="builder", instructions="Build what the design says.")
+software = Factory("software", [station(designer), station(builder)])
+
+
+async def show(run: Run) -> None:
+    print(run.outcome, [step.station for step in run.steps])
+    #> running []
+    #> running ['designer']
+    #> running ['designer', 'builder']
+    #> passed ['designer', 'builder']
+
+
+software.run_sync("A to-do list web page.", store=MemoryStore(), on_step=show)
+```
+
+Use it to tell people a run is waiting for them, or to show progress. The run is already saved when `on_step` is called, so it only watches. The next station waits for it to return, so keep it short. If it raises, the error ends the call and the run stays saved as `"running"`, which nothing can resume. Catch your own errors inside it.
 
 ## Rework
 
