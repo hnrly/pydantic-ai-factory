@@ -45,7 +45,7 @@ export default defineConfig({
           ],
         },
         { label: 'Methodologies', items: ['elephant-goldfish'] },
-        { label: 'Operate', items: ['operating', 'observability', 'measuring'] },
+        { label: 'Operate', items: ['operating', 'deploying', 'observability', 'measuring'] },
         { label: 'Project', items: ['roadmap', 'decisions', 'contributing'] },
       ],
     }),

@@ -2,7 +2,9 @@
 
 Each test is named after its row in the "Today" table on ``docs/roadmap.md`` and proves
 that row end to end through the public API, with scripted models. If a row stops being
-true, its test fails.
+true, its test fails. The test for running a factory behind a web page needs FastAPI,
+which this environment does not install, so it lives in
+``examples/software-factory-app/tests/test_acceptance.py``.
 """
 
 from __future__ import annotations
@@ -51,6 +53,7 @@ from pydantic_ai_factory import (
     Mission,
     Rework,
     Signal,
+    SQLiteStore,
     StationContext,
     StationInputInvalid,
     Verdict,
@@ -447,3 +450,48 @@ def test_you_can_score_a_methodology_against_doing_without_it(
         > results["without_review"]["CriteriaTiedToTheMission"]
     )
     assert "with review" in capsys.readouterr().out
+
+
+INBOX_PROCESS = """
+import sys
+
+from pydantic_ai import Agent
+from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.models.function import FunctionModel
+
+from pydantic_ai_factory import Factory, SQLiteStore, station
+
+
+def reply(messages, info):
+    return ModelResponse(parts=[TextPart({design!r})])
+
+
+designer = Agent(FunctionModel(reply), name="designer")
+software = Factory("software", [station(designer, approval=True)])
+store = SQLiteStore(sys.argv[1])
+for run in store.list_runs_sync(outcome="waiting", order="oldest"):
+    print(run.run_id, software.resume_sync(run, run.approve(by="ada"), store=store).outcome)
+"""
+
+
+def test_you_can_find_the_runs_waiting_for_a_person_from_any_process_that_shares_the_store(
+    tmp_path: Path,
+) -> None:
+    software = Factory("software", [station(agent("designer", DESIGN), approval=True)])
+    store = SQLiteStore(tmp_path / "factory.db")
+    started = software.run_sync(MISSION, store=store)
+    assert started.outcome == "waiting"
+
+    # A second process opens its own store on the same file, finds the run and approves it.
+    script = tmp_path / "inbox.py"
+    script.write_text(INBOX_PROCESS.format(design=DESIGN), encoding="utf-8")
+    answered = subprocess.run(
+        [sys.executable, str(script), str(tmp_path / "factory.db")],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert answered.stdout.split() == [started.run_id, "passed"]
+    assert store.get_run_sync(started.run_id).outcome == "passed"
+    assert store.list_runs_sync(outcome="waiting") == []
