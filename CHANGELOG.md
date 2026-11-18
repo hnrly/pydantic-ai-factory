@@ -4,6 +4,7 @@ Every change a user can see is listed here, newest first.
 
 ## Unreleased
 
+- Say on the docs home page that v0.1 is released as an alpha and how to install it. It still said pre-alpha and not released.
 - Draw the README's factory diagram in the hnrly style, with light and dark versions, so its labels are no longer cut off.
 
 ## 0.1.0
