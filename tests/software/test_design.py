@@ -320,7 +320,7 @@ def test_a_design_needs_behaviour_and_acceptance_criteria() -> None:
         Design.model_validate({**TODO, "acceptance_criteria": []})
 
 
-def test_the_package_exports_only_the_factory_and_its_design_parts() -> None:
+def test_the_package_exports_only_the_factory_its_design_parts_and_its_scripted_model() -> None:
     assert sorted(software_package.__all__) == sorted(
         [
             "DESIGN_GOLDFISH",
@@ -328,6 +328,7 @@ def test_the_package_exports_only_the_factory_and_its_design_parts() -> None:
             "Design",
             "SoftwareFactory",
             "__version__",
+            "offline_model",
             "render_markdown",
         ]
     )
