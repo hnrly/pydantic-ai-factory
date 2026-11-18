@@ -3,7 +3,10 @@ and never retries a station that did not run."""
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -14,6 +17,7 @@ from pydantic_ai_factory import (
     Evidence,
     Factory,
     FactoryDefinitionError,
+    LocalStore,
     MemoryStore,
     Rework,
     Run,
@@ -471,3 +475,106 @@ def test_a_record_that_contradicts_itself_is_refused() -> None:
     for wrong in contradictions:
         with pytest.raises(ValidationError):
             Run(**common, **wrong)
+
+
+class Clock:
+    """Stands in for the runner's clock: each reading is one minute after the last."""
+
+    def __init__(self) -> None:
+        self.readings: list[datetime] = []
+
+    def __call__(self) -> datetime:
+        reading = datetime(2026, 11, 18, 9, 0, tzinfo=UTC) + timedelta(minutes=len(self.readings))
+        self.readings.append(reading)
+        return reading
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
+    clock = Clock()
+    monkeypatch.setattr("pydantic_ai_factory.factory._runner._now", clock)
+    return clock
+
+
+async def test_a_run_keeps_when_it_was_created_while_each_save_moves_when_it_last_changed(
+    clock: Clock,
+) -> None:
+    saved: list[Run] = []
+
+    async def watch(progress: Run) -> None:
+        saved.append(progress)
+
+    run = await factory().run(Brief(goal="x"), store=MemoryStore(), deps=Deps(), on_step=watch)
+
+    assert len(saved) == 5
+    assert {s.created_at for s in saved} == {clock.readings[0]}
+    assert [s.updated_at for s in saved] == clock.readings
+    assert (run.created_at, run.updated_at) == (clock.readings[0], clock.readings[-1])
+
+
+async def test_a_runs_times_are_in_utc_even_when_read_back_from_json() -> None:
+    before = datetime.now(UTC)
+
+    run = await factory().run(Brief(goal="x"), store=MemoryStore(), deps=Deps())
+
+    restored = Run.model_validate_json(run.model_dump_json())
+    for when in (run.created_at, run.updated_at, restored.created_at, restored.updated_at):
+        assert when is not None and when.utcoffset() == timedelta(0)
+        assert before <= when <= datetime.now(UTC)
+
+
+async def test_a_resumed_run_keeps_its_created_at_and_moves_its_updated_at(clock: Clock) -> None:
+    @gate(version="1")
+    def sign_off(output: Artifact[Checked], evidence: Evidence) -> Verdict:
+        return escalate("only a person can settle this")
+
+    @station(gate=sign_off, name="check")
+    async def approve_me(ctx: StationContext[Deps], draft: Draft) -> Checked:
+        return Checked(text=draft.text)
+
+    waiting_factory = Factory("document", [draft, approve_me, publish])
+    store = MemoryStore()
+    waiting = await waiting_factory.run(Brief(goal="x"), store=store, deps=Deps())
+    assert waiting.outcome == "waiting"
+    # A waiting run's last save is when it started waiting.
+    assert waiting.updated_at == clock.readings[-1]
+
+    done = await waiting_factory.resume(
+        waiting, waiting.approve(by="ana"), store=store, deps=Deps()
+    )
+
+    assert done.outcome == "passed"
+    assert done.created_at == waiting.created_at == clock.readings[0]
+    assert waiting.updated_at is not None
+    assert done.updated_at == clock.readings[-1] > waiting.updated_at
+    assert (await store.get_run(done.run_id)).created_at == clock.readings[0]
+
+
+async def test_a_run_saved_without_times_loads_and_a_resume_leaves_its_created_at_empty(
+    clock: Clock, tmp_path: Path
+) -> None:
+    @gate(version="1")
+    def sign_off(output: Artifact[Checked], evidence: Evidence) -> Verdict:
+        return escalate("only a person can settle this")
+
+    @station(gate=sign_off, name="check")
+    async def approve_me(ctx: StationContext[Deps], draft: Draft) -> Checked:
+        return Checked(text=draft.text)
+
+    waiting_factory = Factory("document", [draft, approve_me, publish])
+    store = LocalStore(tmp_path)
+    waiting = await waiting_factory.run(Brief(goal="x"), store=store, deps=Deps())
+    # Rewrite the saved file as 0.1 would have written it: with neither time.
+    path = store.run_path_for(waiting.run_id)
+    saved_by_0_1 = json.loads(path.read_bytes())
+    del saved_by_0_1["created_at"], saved_by_0_1["updated_at"]
+    path.write_text(json.dumps(saved_by_0_1))
+
+    old = await store.get_run(waiting.run_id)
+    assert (old.created_at, old.updated_at) == (None, None)
+
+    done = await waiting_factory.resume(old, old.approve(by="ana"), store=store, deps=Deps())
+
+    assert done.outcome == "passed"
+    assert done.created_at is None
+    assert done.updated_at == clock.readings[-1]

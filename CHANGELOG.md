@@ -2,6 +2,10 @@
 
 Every change a user can see is listed here, newest first.
 
+## Unreleased
+
+- Record when a run was created and last changed. `Run` has two new fields, `created_at` and `updated_at`, both in UTC and set by the runner on every save. A run saved by 0.1 still loads, with both `None`, and keeps `created_at` as `None` after 0.2 resumes it. Version 0.1 cannot read a run that 0.2 has saved, because it refuses fields it does not know. To go back to 0.1, use a store that only 0.1 has written to.
+
 ## 0.1.1
 
 - Document `on_step` on the Factories page: it is awaited with the run after every save, and an error raised in it leaves the run saved as `"running"`. List `"running"` among a run's outcomes, as a run saved between stations has it.
