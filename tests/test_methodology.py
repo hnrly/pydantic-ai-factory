@@ -277,7 +277,22 @@ async def test_the_methodology_rounds_are_added_to_the_agents_own_retry_budget()
 async def test_a_replayed_agent_call_still_gives_its_methodology_evidence() -> None:
     agent, drafted = designer(design(SCENARIO))
     script = Script(
-        ModelResponse(parts=[ToolCallPart("ask_person", {"question": "Keep ticks?"}, "q1")]),
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "ask_person",
+                    {
+                        "questions": [
+                            {
+                                "text": "Keep ticks?",
+                                "why_it_matters": "It decides whether the page saves them.",
+                            }
+                        ]
+                    },
+                    "q1",
+                )
+            ]
+        ),
         design(SCENARIO),
     )
     reviewer = Agent(

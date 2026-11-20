@@ -26,14 +26,13 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import Model, ModelRequestContext
 from pydantic_ai.output import OutputContext
-from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, FunctionToolset
+from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 
 from ..._methodology import Methodology, MethodologyDefinitionError
 from ...artifacts import Artifact
 from ...artifacts._artifact import adapter_for
 from ...contracts import Digest, FactoryError, Name, Record, check_name, digest_of
 from ...gates import Evidence, Gate, Verdict, escalate, failed, passed
-from ...stations import AskPerson
 
 Severity = Literal["Blocker", "Major", "Nit"]
 """How much a finding matters. A ``Blocker`` or a ``Major`` stops a round being clean."""
@@ -323,8 +322,9 @@ class ElephantGoldfish(Methodology):
     when the last round was clean for this exact output and nothing was contested or
     escalated; contested, escalated and still-open findings go to a person.
 
-    It includes :class:`~pydantic_ai_factory.AskPerson`, so the author may ask the person
-    up to ``max_questions`` scoping questions before drafting; 0 switches them off.
+    It adds no tool for asking a person. Give the author
+    :class:`~pydantic_ai_factory.AskPerson` beside it for that; a question asked mid-review
+    keeps the review, because the review is saved in each response's metadata.
     ``model`` is the goldfish's model; by default they use the author's.
 
     It is loaded eagerly, not with ``defer_loading``: its hook must see every draft, and
@@ -338,11 +338,9 @@ class ElephantGoldfish(Methodology):
     goldfish: Sequence[Goldfish]
     rounds: int = 2
     model: Model | str | None = None
-    max_questions: int = 3
     _agents: dict[str, Agent[None, Any]] = field(
         init=False, repr=False, compare=False, default_factory=lambda: {}
     )
-    _asker: AskPerson = field(init=False, repr=False, compare=False)
     _state: _Rounds | None = field(init=False, repr=False, compare=False, default=None)
 
     def __post_init__(self) -> None:
@@ -361,12 +359,9 @@ class ElephantGoldfish(Methodology):
             f"two goldfish are named {name!r}; give each its own name"
             for name in sorted({n for n in names if names.count(n) > 1})
         )
-        for label, value, least in (
-            ("rounds", self.rounds, 1),
-            ("max_questions", self.max_questions, 0),
-        ):
-            if isinstance(value, bool) or not isinstance(value, int) or value < least:  # pyright: ignore[reportUnnecessaryIsInstance]
-                problems.append(f"{label} must be a whole number, {least} or more")
+        rounds = self.rounds
+        if isinstance(rounds, bool) or not isinstance(rounds, int) or rounds < 1:  # pyright: ignore[reportUnnecessaryIsInstance]
+            problems.append("rounds must be a whole number, 1 or more")
         if problems:
             raise MethodologyDefinitionError("methodology 'elephant-goldfish'", problems)
         ordered = sorted(cast("tuple[Goldfish, ...]", fishes), key=lambda f: STAGES.index(f.stage))
@@ -375,7 +370,6 @@ class ElephantGoldfish(Methodology):
             self.id = self.name
         # Each round that finds something uses one output retry; ctx.run_agent adds this.
         setattr(self, "output_retries", self.rounds)  # noqa: B010
-        self._asker = AskPerson(max_questions=self.max_questions)
         self._agents = {
             fish.name: Agent(
                 self.model,
@@ -419,19 +413,13 @@ class ElephantGoldfish(Methodology):
         return response
 
     def get_instructions(self) -> str:
-        text = (
+        return (
             "You work by the Elephant Goldfish method. When you finish a draft, fresh "
             "reviewers who know nothing of this conversation read it. If they find a "
             "Blocker or a Major, you get their findings and revise. Answer every Blocker "
             "and Major: fix it, contest it with the contest tool and your evidence, or "
             "escalate it to a person with the escalate tool. Nits never block."
         )
-        if self.max_questions > 0:
-            text += (
-                " Before you draft, if the mission leaves open something that matters, "
-                "ask the person with ask_person, one question at a time."
-            )
-        return text
 
     def get_toolset(self) -> AbstractToolset[Any]:
         toolset: FunctionToolset[Any] = FunctionToolset(id="elephant-goldfish")
@@ -456,8 +444,7 @@ class ElephantGoldfish(Methodology):
             """
             return self._answer(finding_id, "escalated", reason)
 
-        asks = self._asker.get_toolset()
-        return toolset if asks is None else CombinedToolset([toolset, asks])
+        return toolset
 
     def _answer(self, finding_id: str, answer: Answer, note: str) -> str:
         state = self._state

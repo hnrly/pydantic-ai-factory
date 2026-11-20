@@ -164,6 +164,21 @@ STYLES = "The design does not say where the styles go."
 ONE_FILE = "The mission asks for one file, so there is no separate stylesheet."
 
 
+ROUND = (
+    {
+        "text": "Should ticked tasks survive a reload?",
+        "why_it_matters": "If they do, the page must save them.",
+        "options": ["Yes, in the browser's storage", "No, a reload clears the list"],
+        "recommended": 0,
+    },
+    {
+        "text": "Can a ticked task be unticked?",
+        "why_it_matters": "It decides whether a tick can be undone.",
+    },
+)
+"""A round of two questions, as an agent asks it with ``ask_person``."""
+
+
 def _todo(*rules: str) -> dict[str, Any]:
     return {**TODO, "behaviour": [*TODO["behaviour"], *rules]}
 
@@ -236,6 +251,10 @@ SCRIPTS: dict[str, Script] = {
     "docs/approvals.md": {
         "designer": [DESIGN, DESIGN_WITH_BLANK],
         "builder": [call("publish_page", path="index.html"), "Published index.html."],
+        "planner": [
+            call("ask_person", questions=list(ROUND)),
+            "One page. Ticked tasks are saved in the browser, and can be unticked.",
+        ],
     },
     "docs/stores.md": {"designer": [DESIGN]},
     "docs/missions.md": {"designer": [DESIGN], "builder": ["Built index.html."]},
