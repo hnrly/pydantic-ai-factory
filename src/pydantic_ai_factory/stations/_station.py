@@ -457,6 +457,8 @@ class Station(Generic[InT, OutT]):
     version: str = "0"
     agents: tuple[AbstractAgent[Any, Any], ...] = ()
     approval: bool = False
+    render: Callable[[Any], str] | None = None
+    """Turns one output into Markdown for a person to read. It is not part of the digest."""
 
     def __post_init__(self) -> None:
         problems: list[str] = []
@@ -483,6 +485,8 @@ class Station(Generic[InT, OutT]):
                 names.append(agent.name)
         for name in sorted({n for n in names if n and names.count(n) > 1}):
             problems.append(f"two agents are named {name!r}; give each agent its own name")
+        if self.render is not None and not callable(self.render):
+            problems.append("render must be a function that turns one output into Markdown")
         if not problems:
             try:
                 _ = self.methodologies
@@ -672,6 +676,7 @@ def _agent_station(
     version: str,
     gate: Gate[OutT] | None,
     approval: bool,
+    render: Callable[[OutT], str] | None,
 ) -> Station[str, OutT]:
     """Turn one agent into a station: the input is the prompt, the output is the agent's."""
     station_name = agent.name if name is None else name
@@ -702,6 +707,7 @@ def _agent_station(
         version=version,
         agents=(agent,),
         approval=approval,
+        render=render,
     )
 
 
@@ -718,6 +724,7 @@ def station(
     version: str = "0",
     gate: Gate[OutT] | None = None,
     approval: bool = False,
+    render: Callable[[OutT], str] | None = None,
 ) -> Station[str, OutT]: ...
 
 
@@ -729,6 +736,21 @@ def station(
     gate: Gate[Any] | None = None,
     agents: Sequence[AbstractAgent[Any, Any]] | None = None,
     approval: bool = False,
+    render: None = None,
+) -> Callable[[StationFn[InT, OutT]], Station[InT, OutT]]: ...
+
+
+# With ``render``, the output type is read from it, so a function whose output it cannot
+# render is refused by the type checker. Without it, the output type is left open.
+@overload
+def station(
+    *,
+    name: str | None = None,
+    version: str = "0",
+    gate: Gate[Any] | None = None,
+    agents: Sequence[AbstractAgent[Any, Any]] | None = None,
+    approval: bool = False,
+    render: Callable[[OutT], str],
 ) -> Callable[[StationFn[InT, OutT]], Station[InT, OutT]]: ...
 
 
@@ -741,6 +763,7 @@ def station(
     gate: Gate[Any] | None = None,
     agents: Sequence[AbstractAgent[Any, Any]] | None = None,
     approval: bool = False,
+    render: Callable[[Any], str] | None = None,
 ) -> Station[Any, Any] | Callable[[StationFn[InT, OutT]], Station[InT, OutT]]:
     """Declare a station from an async function, or from one agent.
 
@@ -753,6 +776,9 @@ def station(
     and hands on the agent's output. Its name is the agent's name.
 
     ``approval=True`` makes a person approve the output once every gate has passed.
+
+    ``render`` turns one output into Markdown for a person to read. It changes how the
+    output looks, not what the station does, so it is not part of the factory's digest.
     """
     if isinstance(fn, AbstractAgent):
         if agents is not None:
@@ -765,6 +791,7 @@ def station(
             version=version,
             gate=gate,
             approval=approval,
+            render=render,
         )
 
     def wrap(run: StationFn[InT, OutT]) -> Station[InT, OutT]:
@@ -792,6 +819,7 @@ def station(
             version=version,
             agents=agents_used_by(run) if agents is None else tuple(agents),
             approval=approval,
+            render=render,
         )
 
     return wrap if fn is None else wrap(fn)
