@@ -1,0 +1,5 @@
+{
+  "name": "sign-up",
+  "request": "Add accounts to the booking site. People sign up with their name, an email address and a password, and log in and out. A signed-in person sees a My bookings page that lists the bookings they made while signed in, newest first, and their name and email are filled in on the booking form. Booking while signed out keeps working, and those bookings belong to no account. One email address has at most one account, whatever its case. Passwords are never stored as written, and a failed login never says which field was wrong. A login lasts until the person logs out or 30 days pass.",
+  "rung": "r0"
+}
