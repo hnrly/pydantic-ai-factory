@@ -11,7 +11,7 @@ The file holds the factory's runs and artifacts, kept by the library's `SQLiteSt
 
 [Deploying a factory](https://hnrly.github.io/pydantic-ai-factory/deploying/) explains why the app is shaped this way, and what to change when you deploy your own.
 
-A small web interface, in `web/`, sits on top of the API. It shows the runs waiting for a person, every run, a box to start a new mission, and each run with the actions it allows.
+The web interface that sat on top of this API has moved into the library, as the board in [`web/board`](../../web/board/). See "The web interface" below.
 
 ## Try it offline
 
@@ -40,32 +40,16 @@ curl -s localhost:8000/api/runs/RUN_ID/answer -H 'content-type: application/json
 
 ## The web interface
 
-The interface is a Vite and React app in `web/`. You need Node 22 or later. Its look comes from `web/src/tokens.css`, an exact copy of the docs site's design tokens, so the folder builds on its own. Dark is the default; a button in the header switches to the light theme.
+The interface has moved to [`web/board`](../../web/board/) at the root of the repository, and is now the library's board. It shows the factory's work as cards in one column per station, then Done and Stopped, and is served by `board_app` in `pydantic_ai_factory.serve`, which the wheel ships with the interface built in. It talks to the board's API, not to this app's, so this app's web process serves the API alone. The next change shrinks this folder to one short file that serves the board.
 
-To work on it, run the worker and the web process as above, then in a third terminal:
-
-```bash
-cd web
-npm ci
-npm run dev        # http://localhost:5173, sending /api to the web process on port 8000
-```
-
-To serve it from the web process instead, build it once. The web process serves `web/dist` at `/` whenever that folder exists, so a person visits one address:
+To work on the board's interface, see its folder. You need Node 22 or later:
 
 ```bash
-cd web
+cd ../../web/board
 npm ci
-npm run build      # writes web/dist; restart the web process and visit http://localhost:8000
+npm test
+npm run build      # writes the library's src/pydantic_ai_factory/serve/_static/
 ```
-
-Type your name in the header before you act. It is kept in your browser and recorded with every answer. It is a name, not a sign-in: anyone can type any name.
-
-- **Inbox** lists the runs waiting for a person, longest wait first. It reloads every 10 seconds.
-- **All runs** lists every run, newest change first. A stalled run has a badge and the time it last changed.
-- **New mission** starts a run and opens its page.
-- **A run's page** shows the mission, the output, the steps and the actions its wait allows: approve, ask for changes or reject a design; answer an agent's question; approve or deny a tool call that needs sign-off. Approve is hidden when an escalation offers no work. A stalled run offers only "Start again", which queues a new run with the same mission. A run made by an earlier version of the factory offers nothing. A queued or running run is checked every 2 seconds until it waits or ends.
-
-After you act, the page follows your job every 2 seconds until it is done or failed. A failed job's reason is shown, and the run is reloaded. If someone answered first, the page says so and shows the run as it is now.
 
 ## Run it with a model
 
@@ -112,20 +96,10 @@ This folder reaches nothing outside itself. Inside the repository, `pyproject.to
 uv sync --no-sources
 ```
 
-The interface needs nothing outside `web/` either. Its `web/src/tokens.css` is a copy of the docs site's; inside the repository, CI fails when the two differ.
-
 ## Checks
 
 ```bash
 uv run ruff check .
 uv run pyright
 uv run pytest
-```
-
-And for the interface, in `web/`:
-
-```bash
-npm test             # component tests, against a faked API
-npm run typecheck
-npm run build
 ```
