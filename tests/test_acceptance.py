@@ -2,9 +2,8 @@
 
 Each test is named after its row in the "Today" table on ``docs/roadmap.md`` and proves
 that row end to end through the public API, with scripted models. If a row stops being
-true, its test fails. The test for running a factory behind a web page needs FastAPI,
-which this environment does not install, so it lives in
-``examples/software-factory-app/tests/test_acceptance.py``.
+true, its test fails. The test for serving a factory as a board runs the example as an
+operator would, so it lives in ``examples/software-factory-app/tests/test_acceptance.py``.
 """
 
 from __future__ import annotations

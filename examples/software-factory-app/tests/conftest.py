@@ -1,39 +1,36 @@
-"""Fixtures for the app's tests. Every test runs offline, on scripted models."""
+"""Fixtures for the example's tests. Every test runs offline, on scripted models."""
 
 from __future__ import annotations
 
+import importlib
 import os
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic_ai_factory import Factory, SQLiteStore
-from pydantic_ai_factory_software import offline_model
-
-from app.api import create_app
-from app.factory import build_factory
+from pydantic_ai_factory import SQLiteStore
+from pydantic_ai_factory.serve import SQLiteDispatcher
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 
-@pytest.fixture
-def db(tmp_path: Path) -> Path:
-    return tmp_path / "factory.db"
+@dataclass
+class Served:
+    """``board.py`` as loaded on a test's own file, and a client for its web process."""
+
+    client: TestClient
+    store: SQLiteStore
+    dispatcher: SQLiteDispatcher
 
 
 @pytest.fixture
-def store(db: Path) -> SQLiteStore:
-    return SQLiteStore(db)
+def served(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Served]:
+    """Load ``board.py`` afresh, pointed at a file of the test's own through ``FACTORY_DB``."""
+    monkeypatch.setenv("FACTORY_DB", str(tmp_path / "factory.db"))
+    import board
 
-
-@pytest.fixture
-def software() -> Factory:
-    """The factory the worker runs, on the software package's scripted model."""
-    return build_factory(offline_model())
-
-
-@pytest.fixture
-def client(db: Path) -> Iterator[TestClient]:
-    with TestClient(create_app(db)) as client:
-        yield client
+    importlib.reload(board)
+    with TestClient(board.app) as client:
+        yield Served(client, board.store, board.dispatcher)

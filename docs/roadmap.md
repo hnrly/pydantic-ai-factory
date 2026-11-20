@@ -9,7 +9,7 @@ This page says what the library can do today and what comes next. The library is
 
 ## Today
 
-The first delivery is complete. It is the core contract and one real station.
+The first delivery is complete. It is the core contract and one real station. Release 0.2 adds what it takes to run a factory for other people: a store any process can share, and a board that serves any factory that starts from a mission, from one short file.
 
 | You can | Read |
 |---|---|
@@ -25,6 +25,7 @@ The first delivery is complete. It is the core contract and one real station.
 | See a run as a trace | [Observability](observability.md) |
 | Score a methodology against doing without it | [Measuring a methodology](measuring.md) |
 | Find the runs waiting for a person, from any process that shares the store | [Operating a factory](operating.md) |
+| Serve a factory as a board, with its work done by a separate worker | [Serving a factory as a board](board.md) |
 | Run a factory behind a web page, with its work done by a separate worker | [Deploying a factory](deploying.md) |
 
 What "complete" does not mean: the API may still change before 1.0. The getting-started path is run against a real model by hand before each release, with the `live` test marker. The evaluation set has been run against a real model once, on 16 November 2026.
