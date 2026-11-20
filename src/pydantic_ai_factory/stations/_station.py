@@ -109,13 +109,52 @@ class AgentCall(Record):
     evidence: tuple[ArtifactRef, ...] = ()
 
 
+class Question(Record):
+    """A question an agent is waiting for a person to answer.
+
+    It prints as its text. When an agent asks more than one, answer each by using it
+    as a key: ``run.reply({first: "Yes.", second: "Grey."}, by="ada")``.
+    """
+
+    call_id: str
+    tool: str
+    text: str
+
+    def __str__(self) -> str:
+        return self.text
+
+    def __hash__(self) -> int:
+        return hash(self.call_id)
+
+
+class Action(Record):
+    """A tool call an agent is waiting for a person to allow or deny.
+
+    It prints as the call, such as ``delete_files(path='old/')``. When an agent waits
+    on more than one, answer each by using it as a key, with ``True`` to allow it and
+    ``False`` to deny it.
+    """
+
+    call_id: str
+    tool: str
+    args: dict[str, Any] = Field(default_factory=dict[str, Any])
+
+    def __str__(self) -> str:
+        args = ", ".join(f"{name}={value!r}" for name, value in self.args.items())
+        return f"{self.tool}({args})"
+
+    def __hash__(self) -> int:
+        return hash(self.call_id)
+
+
 class Waiting(Record):
     """What a person is being asked, when a station or a run is waiting.
 
     ``kind`` says why: ``"approval"`` when the station has ``approval=True`` and its gate
     passed, ``"escalation"`` when only a person should settle it, and ``"tool-calls"``
     when an agent asked a person something. ``artifact`` and ``output`` are the work
-    being decided on, when there is any. ``requests`` and ``agent`` are set for tool calls.
+    being decided on, when there is any. ``requests`` and ``agent`` are set for tool calls;
+    ``questions`` and ``actions`` say what those calls ask, in the order they were made.
     """
 
     kind: WaitingKind
@@ -126,6 +165,44 @@ class Waiting(Record):
     requests: DeferredToolRequests | None = None
     agent: Name | None = None
     conversation: ArtifactRef | None = None
+
+    @property
+    def questions(self) -> tuple[Question, ...]:
+        """Every tool call that waits for a person's answer, such as an ``AskPerson`` question."""
+        if self.requests is None:
+            return ()
+        return tuple(
+            Question(
+                call_id=call.tool_call_id,
+                tool=call.tool_name,
+                text=_question_text(
+                    self.requests.metadata.get(call.tool_call_id, {}), call.args_as_dict()
+                )
+                or str(
+                    Action(call_id=call.tool_call_id, tool=call.tool_name, args=call.args_as_dict())
+                ),
+            )
+            for call in self.requests.calls
+        )
+
+    @property
+    def actions(self) -> tuple[Action, ...]:
+        """Every tool call that waits for a person to allow or deny it."""
+        if self.requests is None:
+            return ()
+        return tuple(
+            Action(call_id=call.tool_call_id, tool=call.tool_name, args=call.args_as_dict())
+            for call in self.requests.approvals
+        )
+
+
+def _question_text(metadata: Mapping[str, Any], args: Mapping[str, Any]) -> str | None:
+    """The question a call asks: from its metadata, as ``AskPerson`` sends it, or its arguments."""
+    for source in (metadata, args):
+        text = source.get("question")
+        if isinstance(text, str) and text.strip():
+            return text
+    return None
 
 
 class _ToolCallsWait(BaseException):

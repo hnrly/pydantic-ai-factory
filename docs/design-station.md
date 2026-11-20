@@ -51,8 +51,8 @@ print(run.waiting.kind)
 print(run.waiting.reasons)
 #> ('clean_final_round: r1-readiness-1 contested: The design does not say where the styles go. (The mission asks for one file, so there is no separate stylesheet.)',)
 
-done = software.resume_sync(run, run.approve(by="ada", note="One file is right."), store=store)
-print(done.outcome, done.approvals[-1].overrode)
+done = software.resume_sync(run.approve(by="ada", note="One file is right."), store=store)
+print(done.outcome, done.answers[-1].overrode)
 #> passed True
 ```
 
@@ -68,7 +68,7 @@ software = SoftwareFactory("anthropic:claude-opus-5-5")
 store = MemoryStore()
 
 run = software.run_sync("A to-do list web page where I can add tasks and tick them off.", store=store)
-run = software.resume_sync(run, run.request_changes(by="ada", note="Add a way to delete tasks."), store=store)
+run = software.resume_sync(run.request_changes(by="ada", note="Add a way to delete tasks."), store=store)
 print(run.waiting.kind, run.waiting.output.behaviour[-1])
 #> approval Each task has a delete button that removes it.
 ```

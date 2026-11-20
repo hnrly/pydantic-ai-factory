@@ -16,14 +16,19 @@ from .artifacts import (
 )
 from .contracts import DefinitionError, FactoryError, MethodologyRef
 from .factory import (
+    Answer,
+    AnswerProblem,
     ApprovalRefused,
-    Decision,
+    Approve,
+    Changes,
     Declined,
     Factory,
     FactoryDefinitionError,
     IntakeError,
     Mission,
     Outcome,
+    Reject,
+    Reply,
     Rework,
     Run,
     RunConflict,
@@ -44,9 +49,11 @@ from .gates import (
     passed,
 )
 from .stations import (
+    Action,
     AskPerson,
     Escalate,
     Feedback,
+    Question,
     Station,
     StationClosed,
     StationContext,
@@ -61,7 +68,11 @@ from .stores import LocalStore, MemoryStore, SQLiteStore, StoreBusy, StoreSchema
 __version__ = "0.1.1"
 
 __all__ = [
+    "Action",
+    "Answer",
+    "AnswerProblem",
     "ApprovalRefused",
+    "Approve",
     "Artifact",
     "ArtifactCorrupt",
     "ArtifactInvalid",
@@ -69,7 +80,7 @@ __all__ = [
     "ArtifactRef",
     "ArtifactStore",
     "AskPerson",
-    "Decision",
+    "Changes",
     "Declined",
     "DefinitionError",
     "Escalate",
@@ -92,6 +103,9 @@ __all__ = [
     "NotEvaluated",
     "Outcome",
     "Producer",
+    "Question",
+    "Reject",
+    "Reply",
     "Rework",
     "Run",
     "RunConflict",

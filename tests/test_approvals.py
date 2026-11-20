@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
+from pydantic_ai import Agent, DeferredToolRequests
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
@@ -16,6 +16,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from queued import queued_reply
 
 from pydantic_ai_factory import (
     ApprovalRefused,
@@ -88,10 +89,12 @@ async def test_a_station_with_approval_waits_for_a_person_and_carries_on_when_ap
     assert (run.waiting.kind, run.waiting.output) == ("approval", "One page.")
     assert run.latest("builder") is None
 
-    done = await software.resume(run, run.approve(by="ada"), store=store)
+    done = await software.resume(run.approve(by="ada"), store=store)
 
     assert (done.outcome, done.output) == ("passed", "Built.")
-    assert [(a.decision, a.by, a.overrode) for a in done.approvals] == [("approved", "ada", False)]
+    assert [a.model_dump(include={"kind", "by", "overrode"}) for a in done.answers] == [
+        {"kind": "approve", "by": "ada", "overrode": False}
+    ]
 
 
 async def test_asking_for_changes_sends_the_work_back_once_with_the_note() -> None:
@@ -101,7 +104,7 @@ async def test_asking_for_changes_sends_the_work_back_once_with_the_note() -> No
     run = await software.run("A to-do list page.", store=store)
 
     again = await software.resume(
-        run, run.request_changes(by="ada", note="Blank tasks should not be added."), store=store
+        run.request_changes(by="ada", note="Blank tasks should not be added."), store=store
     )
 
     assert again.waiting is not None
@@ -110,7 +113,7 @@ async def test_asking_for_changes_sends_the_work_back_once_with_the_note() -> No
         "A to-do list page.",
         "A person asked for changes to your last output.\nada: Blank tasks should not be added.",
     ]
-    done = await software.resume(again, again.approve(by="ada"), store=store)
+    done = await software.resume(again.approve(by="ada"), store=store)
     assert done.outcome == "passed"
 
 
@@ -120,24 +123,28 @@ async def test_rejecting_ends_the_run_as_failed() -> None:
     store = MemoryStore()
     run = await software.run("A to-do list page.", store=store)
 
-    done = await software.resume(run, run.reject(by="ada", note="We don't need this."), store=store)
+    done = await software.resume(run.reject(by="ada", note="We don't need this."), store=store)
 
     assert (done.outcome, done.finished, done.stopped_at) == ("failed", False, "designer")
-    assert done.approvals[-1].note == "We don't need this."
+    assert done.answers[-1].model_dump(include={"kind", "note"}) == {
+        "kind": "reject",
+        "note": "We don't need this.",
+    }
 
 
-async def test_a_decision_is_bound_to_the_exact_output_it_was_made_on() -> None:
+async def test_an_answer_is_bound_to_the_exact_output_it_was_made_on() -> None:
     designer, _ = agent("designer", "One page.", "Two pages.")
     software = Factory("software", [station(designer, approval=True)])
     store = MemoryStore()
     first = await software.run("A to-do list page.", store=store)
-    stale = first.approve(by="ada")
-    second = await software.resume(
-        first, first.request_changes(by="ada", note="Shorter."), store=store
+    assert first.waiting is not None
+    second = await software.resume(first.request_changes(by="ada", note="Shorter."), store=store)
+    on_the_first_output = second.approve(by="ada").model_copy(
+        update={"work": first.waiting.artifact}
     )
 
-    with pytest.raises(ApprovalRefused, match="the decision was made on"):
-        await software.resume(second, stale, store=store)
+    with pytest.raises(ApprovalRefused, match="the answer was made on"):
+        await software.resume(on_the_first_output, store=store)
 
 
 async def test_asking_for_changes_and_rejecting_need_a_note() -> None:
@@ -167,10 +174,12 @@ async def test_approving_an_escalation_overrides_the_gate_without_asking_twice()
         ("whether one file is enough is for a person to say",),
     )
 
-    done = await software.resume(run, run.approve(by="ada", note="one file is right"), store=store)
+    done = await software.resume(run.approve(by="ada", note="one file is right"), store=store)
 
     assert (done.outcome, done.output) == ("passed", "One page, one file.")
-    assert [a.overrode for a in done.approvals] == [True]
+    assert [a.model_dump(include={"kind", "overrode"}) for a in done.answers] == [
+        {"kind": "approve", "overrode": True}
+    ]
 
 
 async def test_a_station_can_raise_escalate_and_offer_its_work() -> None:
@@ -184,7 +193,7 @@ async def test_a_station_can_raise_escalate_and_offer_its_work() -> None:
 
     assert run.waiting is not None
     assert (run.waiting.kind, run.waiting.output) == ("escalation", "Half built.")
-    done = await software.resume(run, run.approve(by="ada"), store=store)
+    done = await software.resume(run.approve(by="ada"), store=store)
     assert done.output == "Half built."
 
 
@@ -198,7 +207,7 @@ async def test_an_escalation_with_no_work_cannot_be_approved_only_changed_or_rej
     run = await software.run("One page.", store=store)
 
     with pytest.raises(ApprovalRefused, match="offered no work to accept"):
-        await software.resume(run, run.approve(by="ada"), store=store)
+        await software.resume(run.approve(by="ada"), store=store)
 
 
 async def test_rework_that_runs_out_can_escalate_to_a_person() -> None:
@@ -218,7 +227,7 @@ async def test_rework_that_runs_out_can_escalate_to_a_person() -> None:
 
     assert run.waiting is not None and run.waiting.kind == "escalation"
     assert run.waiting.reasons[0] == "rework ran out"
-    done = await software.resume(run, run.approve(by="ada"), store=store)
+    done = await software.resume(run.approve(by="ada"), store=store)
     assert (done.outcome, done.output) == ("passed", "One page.")
 
 
@@ -242,8 +251,8 @@ async def test_an_agent_question_makes_the_run_wait_until_the_person_answers() -
         "question": "Should ticked tasks survive a reload?"
     }
 
-    answer = requests.build_results(calls={requests.calls[0].tool_call_id: "Yes."})
-    done = await software.resume(run, answer, store=store)
+    assert str(run.question) == "Should ticked tasks survive a reload?"
+    done = await software.resume(run.reply("Yes.", by="ada"), store=store)
 
     assert (done.outcome, done.output) == ("passed", "One page. Ticked tasks are saved.")
     assert script.calls == 2
@@ -267,12 +276,7 @@ async def test_on_resume_finished_agent_calls_replay_without_calling_the_model()
     software = Factory("software", [build])
     store = MemoryStore()
     run = await software.run("One page.", store=store)
-    assert run.waiting is not None and run.waiting.requests is not None
-    call = run.waiting.requests.calls[0]
-
-    done = await software.resume(
-        run, run.waiting.requests.build_results(calls={call.tool_call_id: "Yes."}), store=store
-    )
+    done = await software.resume(run.reply("Yes.", by="ada"), store=store)
 
     assert done.output == "Built index.html. Nothing is wrong."
     assert built.calls == 1
@@ -295,11 +299,7 @@ async def test_a_tool_that_needs_approval_waits_and_runs_once_approved() -> None
     software = Factory("software", [station(builder)])
     store = MemoryStore()
     run = await software.run("Publish the page.", store=store)
-    assert run.waiting is not None and run.waiting.requests is not None
-    approval = run.waiting.requests.approvals[0]
-
-    answer = run.waiting.requests.build_results(approvals={approval.tool_call_id: True})
-    done = await software.resume(run, answer, store=store)
+    done = await software.resume(run.allow(by="ada"), store=store)
 
     assert (done.outcome, published) == ("passed", ["index.html"])
 
@@ -310,12 +310,12 @@ async def test_the_wrong_kind_of_answer_is_refused_and_changes_nothing() -> None
     store = MemoryStore()
     run = await software.run("A to-do list page.", store=store)
 
-    with pytest.raises(ApprovalRefused, match="waits for a decision"):
-        await software.resume(run, DeferredToolResults(), store=store)
-    done = await software.resume(run, run.approve(by="ada"), store=store)
+    with pytest.raises(ApprovalRefused, match=r"waits for approval; use run\.approve"):
+        run.reply("Yes.", by="ada")
+    with pytest.raises(ApprovalRefused, match=r"waits for approval; use run\.approve"):
+        await software.resume(queued_reply(run), store=store)
+    done = await software.resume(run.approve(by="ada"), store=store)
     with pytest.raises(ApprovalRefused, match="is not waiting"):
-        await software.resume(done, run.approve(by="ada"), store=store)
-    with pytest.raises(ApprovalRefused, match="is not waiting for a decision"):
         done.approve(by="ada")
 
 
@@ -326,7 +326,7 @@ async def test_a_run_is_resumed_only_on_a_factory_of_the_same_shape() -> None:
     reshaped = Factory("software", [station(designer, approval=True, version="2")])
 
     with pytest.raises(ApprovalRefused, match="another shape"):
-        await reshaped.resume(run, run.approve(by="ada"), store=store)
+        await reshaped.resume(run.approve(by="ada"), store=store)
 
 
 async def test_a_run_saved_in_a_folder_is_answered_from_another_store_object(
@@ -339,7 +339,7 @@ async def test_a_run_saved_in_a_folder_is_answered_from_another_store_object(
     later = LocalStore(tmp_path)
     loaded = await later.get_run(run.run_id)
     assert loaded.waiting is not None and loaded.waiting.output == "One page."
-    done = await software.resume(loaded, loaded.approve(by="ada"), store=later)
+    done = await software.resume(loaded.approve(by="ada"), store=later)
 
     assert done.outcome == "passed"
     assert (await later.get_run(run.run_id)).outcome == "passed"
@@ -352,11 +352,11 @@ async def test_two_answers_to_the_same_run_cannot_both_win(make_store: Any, tmp_
     software = Factory("software", [station(designer, approval=True)])
     run = await software.run("A to-do list page.", store=store)
 
-    await software.resume(run, run.approve(by="ada"), store=store)
+    await software.resume(run.approve(by="ada"), store=store)
 
     with pytest.raises(RunConflict, match="has moved on"):
-        await software.resume(run, run.reject(by="bob", note="No."), store=store)
-    assert (await store.get_run(run.run_id)).approvals[0].by == "ada"
+        await software.resume(run.reject(by="bob", note="No."), store=store)
+    assert (await store.get_run(run.run_id)).answers[0].by == "ada"
 
 
 async def test_an_answer_claims_the_run_before_any_resumed_work_starts() -> None:
@@ -375,17 +375,17 @@ async def test_an_answer_claims_the_run_before_any_resumed_work_starts() -> None
     software = Factory("software", [station(designer, approval=True), publish])
     run = await software.run("A to-do list page.", store=store)
 
-    approving = asyncio.create_task(software.resume(run, run.approve(by="ada"), store=store))
+    approving = asyncio.create_task(software.resume(run.approve(by="ada"), store=store))
     await started.wait()
     with pytest.raises(RunConflict, match="has moved on"):
-        await software.resume(run, run.reject(by="bob", note="No."), store=store)
+        await software.resume(run.reject(by="bob", note="No."), store=store)
     release.set()
     done = await approving
 
     assert done.outcome == "passed"
     assert published == ["One page."]
     saved = await store.get_run(run.run_id)
-    assert [(d.by, d.decision) for d in saved.approvals] == [("ada", "approved")]
+    assert [(a.by, a.kind) for a in saved.answers] == [("ada", "approve")]
 
 
 async def test_a_tool_call_answer_claims_the_run_before_the_station_runs_again() -> None:
@@ -393,22 +393,19 @@ async def test_a_tool_call_answer_claims_the_run_before_the_station_runs_again()
     asker, script = agent("asker", ask("Which colour?"), "Blue.", capabilities=[AskPerson()])
     software = Factory("software", [station(asker)])
     run = await software.run("Pick a colour.", store=store)
-    waiting = run.waiting
-    assert waiting is not None and waiting.requests is not None
-    call = waiting.requests.calls[0].tool_call_id
-    answer = DeferredToolResults(calls={call: "Blue"})
+    answer = run.reply("Blue", by="ada")
 
     claims: list[tuple[str, int]] = []
 
     async def watch(saved: Any) -> None:
         claims.append((saved.outcome, script.calls))
 
-    done = await software.resume(run, answer, store=store, on_step=watch)
+    done = await software.resume(answer, store=store, on_step=watch)
 
     assert done.outcome == "passed"
     assert claims[0] == ("running", 1)  # saved before the model was asked again
     with pytest.raises(RunConflict, match="has moved on"):
-        await software.resume(run, answer, store=store)
+        await software.resume(answer, store=store)
     assert script.calls == 2
 
 
@@ -450,13 +447,9 @@ async def test_a_resumed_station_that_runs_its_agents_in_another_order_did_not_r
     software = Factory("software", [fickle])
     store = MemoryStore()
     run = await software.run("x", store=store)
-    assert run.waiting is not None and run.waiting.requests is not None
-    call = run.waiting.requests.calls[0]
     order.reverse()
 
-    done = await software.resume(
-        run, run.waiting.requests.build_results(calls={call.tool_call_id: "Blue."}), store=store
-    )
+    done = await software.resume(run.reply("Blue.", by="ada"), store=store)
 
     assert done.outcome == "did_not_run"
     assert done.steps[-1].error_type == "StationDefinitionError"

@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models import Model
-from pydantic_ai_factory import Factory, Mission, Run, RunNotFound, SQLiteStore
+from pydantic_ai_factory import Factory, Mission, Reply, Run, RunNotFound, SQLiteStore
 from pydantic_ai_factory.factory import RunOutcome, Store
 from pydantic_ai_factory_software import offline_model
 
@@ -115,20 +115,19 @@ class StepView(BaseModel):
     reason: str | None = None
 
 
-class DecisionView(BaseModel):
-    decision: str
-    station: str
+class AnswerView(BaseModel):
+    kind: str
     by: str
+    station: str
     note: str | None = None
     at: datetime
-    overrode: bool
 
 
 class RunDetail(RunSummary):
-    """One run in full: its steps, decisions, output as Markdown and latest jobs."""
+    """One run in full: its steps, answers, output as Markdown and latest jobs."""
 
     steps: list[StepView] = []
-    approvals: list[DecisionView] = []
+    answers: list[AnswerView] = []
     output: str | None = None
     jobs: dict[str, JobView] = {}
 
@@ -288,16 +287,15 @@ def create_app(
                 )
                 for step in run.steps
             ],
-            approvals=[
-                DecisionView(
-                    decision=decision.decision,
-                    station=decision.station,
-                    by=decision.by,
-                    note=decision.note,
-                    at=decision.at,
-                    overrode=decision.overrode,
+            answers=[
+                AnswerView(
+                    kind=answer.kind,
+                    by=answer.by,
+                    station=answer.station,
+                    note=None if isinstance(answer, Reply) else answer.note,
+                    at=answer.at,
                 )
-                for decision in run.approvals
+                for answer in run.answers
             ],
             output=await render_output(run, store),
             jobs={kind: job_view(job) for kind, job in latest.items()},

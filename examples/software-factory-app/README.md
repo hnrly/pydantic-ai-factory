@@ -58,7 +58,7 @@ npm ci
 npm run build      # writes web/dist; restart the web process and visit http://localhost:8000
 ```
 
-Type your name in the header before you act. It is kept in your browser and recorded with every decision. It is a name, not a sign-in: anyone can type any name.
+Type your name in the header before you act. It is kept in your browser and recorded with every answer. It is a name, not a sign-in: anyone can type any name.
 
 - **Inbox** lists the runs waiting for a person, longest wait first. It reloads every 10 seconds.
 - **All runs** lists every run, newest change first. A stalled run has a badge and the time it last changed.
@@ -94,11 +94,11 @@ The worker also takes `--db` in place of `FACTORY_DB`. Stop it with Ctrl+C: it f
 |---|---|
 | `POST /api/runs` | Takes `{mission, by}`. Queues a start job and returns `{run_id, job_id}`. |
 | `GET /api/runs?outcome=&order=&limit=` | Lists runs, each with its display state, and `more` when more matched than were returned. |
-| `GET /api/runs/{run_id}` | One run: its state, steps, decisions, what it waits for, its output as Markdown and its latest job of each kind. |
+| `GET /api/runs/{run_id}` | One run: its state, steps, answers, what it waits for, its output as Markdown and its latest job of each kind. |
 | `POST /api/runs/{run_id}/answer` | Takes `{choice, by, revision, note, replies, approvals}`. Queues the answer, or returns `422` when it does not fit and `409` when the run has moved on. |
 | `GET /api/jobs/{job_id}` | One job's state, and why it failed if it did. |
 
-The name in `by` is recorded with every decision. It is a name, not a sign-in: anyone can type any name.
+The name in `by` is recorded with every answer. It is a name, not a sign-in: anyone can type any name.
 
 ## Your own factory
 

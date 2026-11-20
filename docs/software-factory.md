@@ -22,7 +22,7 @@ run = software.run_sync("A to-do list web page where I can add tasks and tick th
 print(run.waiting.output.title)
 #> To-do list
 
-done = software.resume_sync(run, run.approve(by="ada"), store=store)
+done = software.resume_sync(run.approve(by="ada"), store=store)
 print(done.outcome)
 #> passed
 ```

@@ -307,12 +307,8 @@ async def test_the_author_may_ask_a_question_and_the_run_waits_for_the_answer() 
     run = await software.run(MISSION, store=store)
 
     assert run.waiting is not None and run.waiting.kind == "tool-calls"
-    assert run.waiting.requests is not None
     assert pond.prompts["critique"] == []
-    asked = run.waiting.requests.calls[0]
-    done = await software.resume(
-        run, run.waiting.requests.build_results(calls={asked.tool_call_id: "Yes."}), store=store
-    )
+    done = await software.resume(run.reply("Yes.", by="ada"), store=store)
 
     assert (done.outcome, done.output) == ("passed", FIXED)
     assert "ask_person" in author.tools[0]
@@ -324,9 +320,7 @@ def both(*responses: ModelResponse) -> ModelResponse:
 
 async def answer_questions(software: Factory, run: Any, store: MemoryStore) -> Any:
     while run.outcome == "waiting" and run.waiting.kind == "tool-calls":
-        asked = run.waiting.requests.calls[0]
-        answer = run.waiting.requests.build_results(calls={asked.tool_call_id: "Yes."})
-        run = await software.resume(run, answer, store=store)
+        run = await software.resume(run.reply("Yes.", by="ada"), store=store)
     return run
 
 
@@ -418,12 +412,7 @@ async def test_on_resume_a_replayed_author_call_keeps_its_reports() -> None:
     software = Factory("software", [design])
     store = MemoryStore()
     run = await software.run(MISSION, store=store)
-    assert run.waiting is not None and run.waiting.requests is not None
-    asked = run.waiting.requests.calls[0]
-
-    done = await software.resume(
-        run, run.waiting.requests.build_results(calls={asked.tool_call_id: "Yes."}), store=store
-    )
+    done = await software.resume(run.reply("Yes.", by="ada"), store=store)
 
     assert done.outcome == "passed"
     assert author.calls == 2
