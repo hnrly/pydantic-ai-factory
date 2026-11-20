@@ -99,6 +99,41 @@ print(build.run_sync("One page, index.html.", store=MemoryStore()).outcome)
 
 If the gate needs evidence the station did not record, the gate is not evaluated and the attempt did not run. A check that never happened is never counted as a pass.
 
+## How a station's output looks
+
+A station's output is data. `render=` gives a function that turns one output into Markdown, so a page can show it to a person as text rather than as JSON.
+
+```python
+from pydantic import BaseModel
+from pydantic_ai import Agent
+
+from pydantic_ai_factory import Factory, MemoryStore, station
+
+
+class Plan(BaseModel):
+    title: str
+    steps: list[str]
+
+
+def plan_as_markdown(plan: Plan) -> str:
+    return "\n".join([f"# {plan.title}", "", *(f"- {step}" for step in plan.steps)])
+
+
+planner = Agent("anthropic:claude-opus-5-5", name="planner", output_type=Plan, instructions="Plan the work.")
+plan = station(planner, render=plan_as_markdown)
+
+run = Factory("planning", [plan]).run_sync("A to-do list web page.", store=MemoryStore())
+print(plan_as_markdown(run.output))
+"""
+# To-do list
+
+- Write index.html
+- Add a box for new tasks
+"""
+```
+
+`render` changes how an output looks, not what the station does. It is not part of the factory's [digest](factories.md#what-a-factory-looks-like), so adding or changing it never makes a saved run an earlier version. A station with no `render` has `render` set to `None`. The software factory's Design station renders each design with `render_markdown`.
+
 ## Options
 
 | Option | Default | Means |
@@ -108,5 +143,6 @@ If the gate needs evidence the station did not record, the gate is not evaluated
 | `agents` | inferred | The agents the station runs. See [which agents](agents.md#which-agents-a-station-runs). |
 | `name` | the function's name | The station's name in every record. |
 | `version` | `"0"` | Change it when the station's behaviour changes. |
+| `render` | none | A function that turns one output into Markdown for a person to read. |
 
 `Station.run_sync(input, store=...)` runs one attempt on its own, outside a factory. That is how a station is tested.

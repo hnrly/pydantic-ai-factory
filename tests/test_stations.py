@@ -9,11 +9,14 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
+from pydantic_ai import Agent
+from pydantic_ai.models.test import TestModel
 
 from pydantic_ai_factory import (
     Artifact,
     DefinitionError,
     Evidence,
+    Factory,
     Feedback,
     MemoryStore,
     Producer,
@@ -30,6 +33,7 @@ from pydantic_ai_factory import (
     passed,
     station,
 )
+from pydantic_ai_factory_software import SoftwareFactory, render_markdown
 
 pytestmark = pytest.mark.anyio
 
@@ -482,3 +486,55 @@ def test_a_result_that_contradicts_itself_is_refused() -> None:
     for wrong in contradictions:
         with pytest.raises(ValidationError):
             StationResult(**common, **wrong)
+
+
+def count_as_markdown(count: Count) -> str:
+    return f"**{count.words}** words"
+
+
+async def test_a_station_renders_its_output_with_its_render_function() -> None:
+    @station(gate=under_ten_words, render=count_as_markdown)
+    async def rendered(ctx: StationContext, text: Text) -> Count:
+        return Count(words=len(text.body.split()))
+
+    store = MemoryStore()
+    result = await rendered.run(Text(body="three short words"), store=store)
+
+    assert result.output_ref is not None
+    output = (await store.get(result.output_ref, Count)).payload
+    assert rendered.render is not None
+    assert rendered.render(output) == "**3** words"
+
+
+def test_a_station_made_from_an_agent_keeps_its_render_function() -> None:
+    counter = Agent(TestModel(), name="counter", output_type=Count)
+
+    counted = station(counter, render=count_as_markdown)
+
+    assert counted.render is count_as_markdown
+
+
+def test_a_station_declared_without_render_has_none() -> None:
+    assert count_words.render is None
+
+
+def test_a_render_that_is_not_a_function_is_refused_when_the_station_is_built() -> None:
+    with pytest.raises(StationDefinitionError, match="render must be a function"):
+        dataclasses.replace(count_words, render="# Not a function")  # pyright: ignore[reportArgumentType]
+
+
+def test_changing_render_does_not_change_the_factory_digest() -> None:
+    async def count(ctx: StationContext, text: Text) -> Count:
+        return Count(words=len(text.body.split()))
+
+    plain = station(name="count", gate=under_ten_words)(count)
+    rendered = station(name="count", gate=under_ten_words, render=count_as_markdown)(count)
+
+    assert Factory("words", [plain]).digest == Factory("words", [rendered]).digest
+    assert Factory("words", [plain]).shape() == Factory("words", [rendered]).shape()
+
+
+def test_the_software_factorys_design_station_renders_its_design_as_markdown() -> None:
+    (design,) = SoftwareFactory(TestModel()).stations
+
+    assert design.render is render_markdown
