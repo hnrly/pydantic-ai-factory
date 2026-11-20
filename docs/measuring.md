@@ -26,12 +26,20 @@ Each case belongs to a class:
 
 Each case also names its rung: the repository its snapshot starts from. `empty` is an empty repository, so the design starts a new app. `r0` and `r1` are reference versions of an app, so the design adds a feature to code that already exists. The case may lay a few files of its own on top.
 
-Today there is one case, the smoke case `todo` in the `smoke` split: a to-do page whose request says ticked tasks should not be kept for ever, on the `empty` rung. It exists to check the harness and is never scored. The `dev` and `test` splits, the reference apps behind `r0` and `r1`, and the checklists arrive in later pull requests.
+The cases sit in three splits:
+
+| Split | Cases | What they are for |
+|---|---|---|
+| `smoke` | `todo`: a to-do page whose request says ticked tasks should not be kept for ever, on the `empty` rung | Checking the harness. It has no checklist and is never scored |
+| `dev` | Four flight-booking cases, one of each class: `first-booking-site` on `empty`, `sign-up` and `past-bookings` on `r0`, and `change-or-cancel` on `r1`, whose fare rules are in its own files | Developing a system and trying the benchmark out. Scored results come only from the test split |
+| `test` | Eight cases, two of each class, written by the benchmark's author | The scored runs. They arrive in a later pull request |
+
+Every case but the smoke case carries a checklist of three to six directions a good design takes, which only the checklist judge reads. `tests/test_evals_cases.py` checks that no request holds a hidden value, a canary or a checklist item, that every snapshot passes the scan, and that each split holds the classes it should.
 
 ## Its limits
 
 - **Offline numbers prove the harness, nothing else.** Offline, every system and every model is scripted to behave a known way, so the result is true by construction. The command says so after every offline run.
-- **No result has been published yet.** The command prints a scorecard and a run card after every experiment, but the only case today is the smoke case, which is never scored.
+- **No result has been published yet.** The command prints a scorecard and a run card after every experiment, but only the smoke and dev cases exist today, and neither is scored.
 - **Small samples give wide intervals.** With about twelve cases, an interval on a rate is roughly 30 points either way, so only a large difference between arms can show. Every scorecard says so.
 - **One stakeholder.** Each case has one simulated person in a one-to-one conversation, as in a Claude Code session. Several roles come later.
 - **One model family.** Both the factory and Claude Code run on Claude Opus 5.5, and the checklist judge is Claude Sonnet 5.5. A result on other models is left for later.
