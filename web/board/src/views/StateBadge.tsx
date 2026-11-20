@@ -1,6 +1,6 @@
-import type { DisplayState } from '../api';
+import type { CardState } from '../api';
 import { STATE_LABEL } from '../words';
 
-export function StateBadge({ state }: { state: DisplayState }) {
+export function StateBadge({ state }: { state: CardState }) {
   return <span className={`badge badge-${state}`}>{STATE_LABEL[state]}</span>;
 }

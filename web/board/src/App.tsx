@@ -1,27 +1,30 @@
 import { useEffect, useState } from 'react';
-import { AllRuns } from './views/AllRuns';
+import type { ListColumn } from './api';
+import { BoardView } from './views/BoardView';
 import { Header, type Theme } from './views/Header';
-import { Inbox } from './views/Inbox';
-import { NewMission } from './views/NewMission';
+import { ListView } from './views/ListView';
 import { RunPage } from './views/RunPage';
 
 type Route =
-  | { page: 'inbox' }
-  | { page: 'runs' }
-  | { page: 'new' }
+  | { page: 'board' }
+  | { page: 'list'; column: ListColumn }
   | { page: 'run'; runId: string; jobId?: string };
 
-/** Read the page from the address: #/, #/runs, #/new or #/runs/RUN_ID?job=JOB_ID. */
+const COLUMNS: readonly ListColumn[] = ['all', 'done', 'stopped'];
+
+/** Read the page from the address: #/, #/list?column=done or #/runs/RUN_ID?job=JOB_ID. */
 export function parseRoute(hash: string): Route {
   const [path = '', query = ''] = hash.replace(/^#/, '').split('?');
   const parts = path.split('/').filter(Boolean).map(decodeURIComponent);
-  if (parts[0] === 'new') return { page: 'new' };
+  const params = new URLSearchParams(query);
   if (parts[0] === 'runs' && parts[1]) {
-    const jobId = new URLSearchParams(query).get('job') ?? undefined;
-    return { page: 'run', runId: parts[1], jobId };
+    return { page: 'run', runId: parts[1], jobId: params.get('job') ?? undefined };
   }
-  if (parts[0] === 'runs') return { page: 'runs' };
-  return { page: 'inbox' };
+  if (parts[0] === 'list') {
+    const asked = params.get('column') as ListColumn | null;
+    return { page: 'list', column: asked && COLUMNS.includes(asked) ? asked : 'all' };
+  }
+  return { page: 'board' };
 }
 
 // The name and theme are kept in this browser only. Storage can be blocked, so it may fail.
@@ -71,10 +74,9 @@ export function App() {
         }}
         page={route.page}
       />
-      <main>
-        {route.page === 'inbox' && <Inbox />}
-        {route.page === 'runs' && <AllRuns />}
-        {route.page === 'new' && <NewMission name={name} />}
+      <main className={route.page === 'board' ? 'wide' : undefined}>
+        {route.page === 'board' && <BoardView name={name} />}
+        {route.page === 'list' && <ListView column={route.column} name={name} />}
         {route.page === 'run' && (
           <RunPage key={`${route.runId}:${route.jobId ?? ''}`} runId={route.runId} jobId={route.jobId} name={name} />
         )}

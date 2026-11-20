@@ -68,13 +68,11 @@ describe('actions for each waiting kind', () => {
     await userEvent.click(screen.getByRole('radio', { name: 'Deny' }));
     await userEvent.click(screen.getByRole('button', { name: 'Send answers' }));
 
-    expect(api.answer).toHaveBeenCalledWith('run-1', {
-      choice: 'reply',
-      by: 'Ada',
-      revision: 3,
-      replies: { q1: 'Pink' },
-      approvals: { s1: false },
-    });
+    expect(api.answer).toHaveBeenCalledWith(
+      'run-1',
+      { kind: 'reply', revision: 3, replies: { q1: 'Pink' }, approvals: { s1: false } },
+      'Ada',
+    );
   });
 
   test('asking for changes needs a note, which is sent with the name and revision', async () => {
@@ -88,29 +86,33 @@ describe('actions for each waiting kind', () => {
     await userEvent.type(screen.getByLabelText(/note/i), 'Add due dates.');
     await userEvent.click(changes);
 
-    expect(api.answer).toHaveBeenCalledWith('run-1', {
-      choice: 'changes',
-      by: 'Ada',
-      revision: 3,
-      note: 'Add due dates.',
-    });
+    expect(api.answer).toHaveBeenCalledWith('run-1', { kind: 'changes', revision: 3, note: 'Add due dates.' }, 'Ada');
   });
 });
 
-test('a stalled run offers only "start again", which queues the same mission', async () => {
-  const run = detail({ state: 'stalled', outcome: 'running', actions: ['start_again'] });
-  const api = showRun(run, { startRun: async () => ({ run_id: 'run-2', job_id: 'job-2' }) });
+test('a stalled run offers only "start again", which asks first and warns the worker may be slow', async () => {
+  const run = detail({ column: 'stopped', state: 'stalled', actions: ['start_again'] });
+  const api = showRun(run, { restart: async () => ({ run_id: 'run-2', job_id: 'job-2' }) });
 
-  await screen.findByRole('button', { name: 'Start again' });
-  expect(buttons()).toEqual(['Start again']);
-  await userEvent.click(screen.getByRole('button', { name: 'Start again' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Start again' }));
+  expect(screen.getByText(/the worker may only be slow/i)).toBeTruthy();
+  expect(api.restart).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Yes, start again' }));
 
-  expect(api.startRun).toHaveBeenCalledWith('A to-do list web page.', 'Ada');
+  expect(api.restart).toHaveBeenCalledWith('run-1', 'Ada');
   expect(window.location.hash).toBe('#/runs/run-2?job=job-2');
 });
 
+test('a failed run that was started again links to the new run and offers nothing', async () => {
+  showRun(detail({ column: 'stopped', state: 'failed', restarted_as: 'run-2', actions: [] }));
+
+  const link = await screen.findByRole('link', { name: 'a new run' });
+  expect(link.getAttribute('href')).toBe('#/runs/run-2');
+  expect(buttons()).toEqual([]);
+});
+
 test('a run from an earlier version of the factory shows no actions', async () => {
-  const run = detail({ state: 'earlier_version', outcome: 'waiting', waiting: waiting(), actions: [] });
+  const run = detail({ column: 'stopped', state: 'earlier_version', wait: waiting(), actions: [] });
   showRun(run);
 
   expect(await screen.findByText(/earlier version of this factory/i)).toBeTruthy();
@@ -122,6 +124,7 @@ test('the run page shows the mission, the steps and the output rendered from Mar
   showRun(
     detail({
       output: '# To-do list\n\nTick tasks **off**.',
+      output_format: 'markdown',
       steps: [{ station: 'design', attempt: 1, outcome: 'waiting', reason: null }],
     }),
   );
@@ -149,7 +152,7 @@ test('after an action the page follows its job, shows a failed job\'s reason and
 
 test('a job given in the address is followed from the start', async () => {
   const api = fakeApi({
-    getRun: async () => detail({ state: 'queued', outcome: null, revision: null }),
+    getRun: async () => detail({ column: 'station', station: 'design', state: 'queued', revision: null }),
     getJob: async () => job({ kind: 'start', state: 'failed', error: 'No mission.' }),
   });
   renderWith(<RunPage runId="run-1" jobId="job-3" name="Ada" />, api);
@@ -159,7 +162,7 @@ test('a job given in the address is followed from the start', async () => {
 });
 
 test('a queued or running run is checked again until it waits', async () => {
-  const runs = [detail({ state: 'queued', outcome: null }), detail({ state: 'running', outcome: 'running' })];
+  const runs = [detail({ state: 'queued', column: 'station' }), detail({ state: 'running', column: 'station' })];
   const api = fakeApi({ getRun: async () => runs.shift() ?? waitingRun(waiting()) });
   renderWith(<RunPage runId="run-1" name="Ada" />, api);
 
@@ -171,7 +174,7 @@ test('a queued or running run is checked again until it waits', async () => {
 });
 
 test('when someone answered first the page says so and shows the run as it is now', async () => {
-  const now = detail({ state: 'running', outcome: 'running' });
+  const now = detail({ state: 'running', column: 'station', station: 'design' });
   const runs = [waitingRun(waiting())];
   showRun(now, {
     getRun: async () => runs.shift() ?? now,

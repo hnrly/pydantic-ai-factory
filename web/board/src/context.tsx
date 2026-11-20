@@ -5,11 +5,11 @@ import { httpApi, type Api } from './api';
 export interface Intervals {
   /** A queued or running run, or a job a person is following. */
   moving: number;
-  /** The inbox and the list of all runs. */
-  lists: number;
+  /** The board, while its tab is visible. */
+  board: number;
 }
 
-export const INTERVALS: Intervals = { moving: 2_000, lists: 10_000 };
+export const INTERVALS: Intervals = { moving: 2_000, board: 3_000 };
 
 interface Services {
   api: Api;

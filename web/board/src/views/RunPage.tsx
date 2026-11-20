@@ -4,9 +4,10 @@ import { Conflict, type Answer, type Job, type RunDetail, type ToolCall } from '
 import { useServices } from '../context';
 import { useRepeat } from '../poll';
 import { ANSWER_LABEL, NEEDS_NAME, reason, WAITING_LABEL, when } from '../words';
+import { StartAgain } from './StartAgain';
 import { StateBadge } from './StateBadge';
 
-type Choice = Omit<Answer, 'by' | 'revision'>;
+type Choice = Omit<Answer, 'revision'>;
 
 const MOVING = new Set(['queued', 'running']);
 const JOB_WORDS: Record<Job['state'], string> = {
@@ -16,10 +17,9 @@ const JOB_WORDS: Record<Job['state'], string> = {
   failed: 'It failed.',
 };
 
-/** The newest of a run's latest jobs, when it failed. */
+/** The run's newest job, when it failed. */
 function lastFailure(run: RunDetail): Job | null {
-  const newest = Object.values(run.jobs).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-  return newest?.state === 'failed' ? newest : null;
+  return run.job?.state === 'failed' ? run.job : null;
 }
 
 /**
@@ -48,7 +48,7 @@ export function RunPage({ runId, jobId, name }: { runId: string; jobId?: string;
         const fresh = await api.getRun(runId);
         setRun(fresh);
         setLoadError(null);
-        return MOVING.has(fresh.state);
+        return MOVING.has(fresh.state) || fresh.queued;
       } catch (caught) {
         setLoadError(reason(caught));
         return true;
@@ -81,7 +81,7 @@ export function RunPage({ runId, jobId, name }: { runId: string; jobId?: string;
     setNotice(null);
     setJobFailure(null);
     try {
-      const queued = await api.answer(run.run_id, { ...choice, by: name.trim(), revision: run.revision });
+      const queued = await api.answer(run.run_id, { ...choice, revision: run.revision }, name.trim());
       setJobState('queued');
       setFollowing(queued.job_id);
     } catch (caught) {
@@ -91,19 +91,6 @@ export function RunPage({ runId, jobId, name }: { runId: string; jobId?: string;
         reload();
       }
     } finally {
-      setBusy(false);
-    }
-  }
-
-  async function startAgain() {
-    if (!run) return;
-    setBusy(true);
-    setNotice(null);
-    try {
-      const queued = await api.startRun(run.mission, name.trim());
-      window.location.hash = `#/runs/${queued.run_id}?job=${queued.job_id}`;
-    } catch (caught) {
-      setNotice(reason(caught));
       setBusy(false);
     }
   }
@@ -131,7 +118,14 @@ export function RunPage({ runId, jobId, name }: { runId: string; jobId?: string;
       </p>
       <h1>{run.mission || 'A run with no mission'}</h1>
       <p className="meta">
-        <StateBadge state={run.state} /> Last change {when(run.last_change)}
+        <StateBadge state={run.state} />
+        {run.queued && run.state !== 'queued' && <span className="badge badge-queued">Queued</span>}
+        {run.rework && (
+          <span className="badge badge-rework">
+            Rework {run.rework.count} of {run.rework.limit}
+          </span>
+        )}{' '}
+        Last change {when(run.updated_at)}
       </p>
 
       <Explanation run={run} />
@@ -142,15 +136,15 @@ export function RunPage({ runId, jobId, name }: { runId: string; jobId?: string;
       {loadError && <p className="notice notice-error">The run could not reload: {loadError}</p>}
 
       {run.actions.length > 0 && !name.trim() && <p className="quiet">{NEEDS_NAME}</p>}
-      {run.actions.includes('start_again') && (
-        <div className="actions">
-          <button type="button" className="primary" disabled={blocked} onClick={startAgain}>
-            Start again
-          </button>
-        </div>
+      {run.restarted_as && (
+        <p className="notice">
+          This run was started again as <a href={`#/runs/${run.restarted_as}`}>a new run</a>.
+        </p>
       )}
-      {run.waiting && run.actions.includes('reply') && (
-        <ReplyForm questions={run.waiting.questions} signOffs={run.waiting.sign_offs} blocked={blocked} onSend={act} />
+      {run.reason && <p className="notice">{run.reason}</p>}
+      {run.actions.includes('start_again') && !run.restarted_as && <StartAgain card={run} name={name} />}
+      {run.wait && run.actions.includes('reply') && (
+        <ReplyForm questions={run.wait.questions} signOffs={run.wait.sign_offs} blocked={blocked} onSend={act} />
       )}
       {run.actions.some((action) => action === 'approve' || action === 'changes' || action === 'reject') && (
         <DecisionForm actions={run.actions} blocked={blocked} onDecide={act} />
@@ -158,10 +152,14 @@ export function RunPage({ runId, jobId, name }: { runId: string; jobId?: string;
 
       {run.output && (
         <section className="output">
-          <h2 className="section-label">Output</h2>
-          <div className="markdown">
-            <Markdown>{run.output}</Markdown>
-          </div>
+          <h2 className="section-label">{run.state === 'waiting' ? 'The work on offer' : 'Output'}</h2>
+          {run.output_format === 'json' ? (
+            <pre className="json">{run.output}</pre>
+          ) : (
+            <div className="markdown">
+              <Markdown>{run.output}</Markdown>
+            </div>
+          )}
         </section>
       )}
 
@@ -199,20 +197,20 @@ export function RunPage({ runId, jobId, name }: { runId: string; jobId?: string;
 function Explanation({ run }: { run: RunDetail }) {
   switch (run.state) {
     case 'waiting':
-      return run.waiting ? (
+      return run.wait ? (
         <div className="explain">
           <p>
-            {WAITING_LABEL[run.waiting.kind]} at the <strong>{run.waiting.station}</strong> station
-            {run.waiting.agent ? `, from the ${run.waiting.agent} agent` : ''}.
+            {WAITING_LABEL[run.wait.kind]} at the <strong>{run.wait.station}</strong> station
+            {run.wait.agent ? `, from the ${run.wait.agent} agent` : ''}.
           </p>
-          {run.waiting.reasons.length > 0 && (
+          {run.wait.reasons.length > 0 && (
             <ul>
-              {run.waiting.reasons.map((text, index) => (
+              {run.wait.reasons.map((text, index) => (
                 <li key={index}>{text}</li>
               ))}
             </ul>
           )}
-          {run.waiting.kind === 'escalation' && !run.waiting.offers_work && (
+          {run.wait.kind === 'escalation' && !run.wait.offers_work && (
             <p className="quiet">There is no work to accept, so you can ask for changes or reject.</p>
           )}
         </div>
@@ -220,9 +218,9 @@ function Explanation({ run }: { run: RunDetail }) {
     case 'stalled':
       return (
         <p className="explain">
-          This run has stalled: nothing has changed for a long time, so its worker probably stopped
-          part-way. It cannot be carried on. Start again queues a new run with the same mission; this
-          run stays as it is.
+          This run has stalled: the worker's job ended, or its claim lapsed, while the run was part-way
+          through. It cannot be carried on. Start again ends this run and queues a new run of the same
+          mission.
         </p>
       );
     case 'earlier_version':
@@ -258,7 +256,7 @@ function DecisionForm({
       <textarea id="note" rows={3} value={note} onChange={(event) => setNote(event.target.value)} />
       <div className="actions">
         {actions.includes('approve') && (
-          <button type="button" className="primary" disabled={blocked} onClick={() => onDecide({ choice: 'approve' })}>
+          <button type="button" className="primary" disabled={blocked} onClick={() => onDecide({ kind: 'approve' })}>
             Approve
           </button>
         )}
@@ -266,7 +264,7 @@ function DecisionForm({
           <button
             type="button"
             disabled={blocked || !hasNote}
-            onClick={() => onDecide({ choice: 'changes', note: note.trim() })}
+            onClick={() => onDecide({ kind: 'changes', note: note.trim() })}
           >
             Ask for changes
           </button>
@@ -275,7 +273,7 @@ function DecisionForm({
           <button
             type="button"
             disabled={blocked || !hasNote}
-            onClick={() => onDecide({ choice: 'reject', note: note.trim() })}
+            onClick={() => onDecide({ kind: 'reject', note: note.trim() })}
           >
             Reject
           </button>
@@ -308,7 +306,7 @@ function ReplyForm({
     signOffs.every((call) => call.id in approvals);
 
   function send() {
-    const choice: Choice = { choice: 'reply' };
+    const choice: Choice = { kind: 'reply' };
     if (questions.length > 0) {
       choice.replies = Object.fromEntries(questions.map((call) => [call.id, (replies[call.id] ?? '').trim()]));
     }

@@ -1,9 +1,9 @@
-// The web process's JSON API, as the interface uses it. Types mirror app/api.py.
+// The board's JSON API, as the interface uses it. Types mirror serve/_app.py.
 
-export type DisplayState =
+export type CardState =
+  | 'passed'
   | 'earlier_version'
   | 'waiting'
-  | 'passed'
   | 'failed'
   | 'did_not_run'
   | 'stalled'
@@ -11,6 +11,59 @@ export type DisplayState =
   | 'running';
 
 export type Action = 'approve' | 'changes' | 'reject' | 'reply' | 'start_again';
+
+export type WaitingKind = 'approval' | 'escalation' | 'tool-calls';
+
+/** One run, or one mission queued but not yet started, as the board shows it. */
+export interface Card {
+  run_id: string;
+  mission: string;
+  /** A station's column, with the station in `station`, or Done or Stopped. */
+  column: 'station' | 'done' | 'stopped';
+  station: string | null;
+  state: CardState;
+  /** An answer is queued, or claimed by a worker whose claim has not lapsed. */
+  queued: boolean;
+  /** The card waits for a person, and no answer is queued. */
+  needs_you: boolean;
+  waiting: { kind: WaitingKind; station: string; since: string } | null;
+  rework: { count: number; limit: number } | null;
+  revision: number | null;
+  updated_at: string;
+  restarted_as: string | null;
+  reason: string | null;
+  actions: Action[];
+}
+
+export interface StationShape {
+  name: string;
+  version: string;
+  approval: boolean;
+}
+
+export interface FactoryShape {
+  name: string;
+  version: string;
+  digest: string;
+  stations: StationShape[];
+}
+
+export interface Board {
+  shape: FactoryShape;
+  cards: Card[];
+  /** What to send as `since` on the next poll. */
+  since: string;
+  /** On a full load, whether Done and Stopped hold more cards than were sent. */
+  more: { done: boolean; stopped: boolean } | null;
+}
+
+export type ListColumn = 'all' | 'done' | 'stopped';
+
+export interface CardPage {
+  cards: Card[];
+  /** Send back as `before` for the next page, or null when there is none. */
+  before: string | null;
+}
 
 export interface ToolCall {
   id: string;
@@ -20,26 +73,13 @@ export interface ToolCall {
 }
 
 export interface Waiting {
-  kind: 'approval' | 'escalation' | 'tool-calls';
+  kind: WaitingKind;
   station: string;
   agent: string | null;
   reasons: string[];
   offers_work: boolean;
   questions: ToolCall[];
   sign_offs: ToolCall[];
-}
-
-export interface RunSummary {
-  run_id: string;
-  mission: string;
-  state: DisplayState;
-  outcome: string | null;
-  revision: number | null;
-  created_at: string | null;
-  updated_at: string | null;
-  last_change: string;
-  waiting: Waiting | null;
-  actions: Action[];
 }
 
 export interface Step {
@@ -59,28 +99,27 @@ export interface AnswerGiven {
 }
 
 export interface Job {
-  id: string;
-  kind: 'start' | 'answer';
+  job_id: string;
   run_id: string;
-  body: Record<string, unknown>;
+  kind: 'start' | 'answer';
   state: 'queued' | 'claimed' | 'done' | 'failed';
-  created_at: string;
-  claimed_at: string | null;
-  finished_at: string | null;
+  by: string;
+  restart_of: string | null;
+  refused: boolean;
   error: string | null;
+  created_at: string;
+  updated_at: string;
+  claimed_until: string | null;
   stalled: boolean;
 }
 
-export interface RunDetail extends RunSummary {
+export interface RunDetail extends Card {
+  wait: Waiting | null;
+  output: string | null;
+  output_format: 'markdown' | 'json' | null;
   steps: Step[];
   answers: AnswerGiven[];
-  output: string | null;
-  jobs: Record<string, Job>;
-}
-
-export interface RunList {
-  runs: RunSummary[];
-  more: boolean;
+  job: Job | null;
 }
 
 export interface Queued {
@@ -88,27 +127,23 @@ export interface Queued {
   job_id: string;
 }
 
+/** What a person decided. Who decided is sent in a header, not here. */
 export interface Answer {
-  choice: 'approve' | 'changes' | 'reject' | 'reply';
-  by: string;
+  kind: 'approve' | 'changes' | 'reject' | 'reply';
   revision: number;
   note?: string;
   replies?: Record<string, string>;
   approvals?: Record<string, boolean>;
 }
 
-export interface ListQuery {
-  outcome?: 'waiting';
-  order?: 'newest' | 'oldest';
-  limit?: number;
-}
-
 /** Everything the interface asks of the web process. Tests pass a fake one. */
 export interface Api {
-  listRuns(query: ListQuery): Promise<RunList>;
+  board(since?: string): Promise<Board>;
+  listCards(column: ListColumn, before?: string): Promise<CardPage>;
   getRun(runId: string): Promise<RunDetail>;
   startRun(mission: string, by: string): Promise<Queued>;
-  answer(runId: string, answer: Answer): Promise<Queued>;
+  answer(runId: string, answer: Answer, by: string): Promise<Queued>;
+  restart(runId: string, by: string): Promise<Queued>;
   getJob(jobId: string): Promise<Job>;
 }
 
@@ -123,7 +158,7 @@ export class ApiError extends Error {
   }
 }
 
-/** Someone answered first. `run` is the run as it is now. */
+/** Someone acted first. `run` is the run as it is now. */
 export class Conflict extends ApiError {
   readonly run: RunDetail;
 
@@ -143,11 +178,17 @@ function reasonFrom(body: unknown, status: number): string {
   const detail = (body as { detail?: unknown } | null)?.detail;
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) {
-    return (detail as ValidationIssue[])
-      .map((issue) => issue.msg ?? 'Invalid value')
-      .join(' ');
+    return (detail as ValidationIssue[]).map((issue) => issue.msg ?? 'Invalid value').join(' ');
   }
   return `The request failed with status ${status}.`;
+}
+
+/**
+ * The header that carries the typed name. Browsers refuse header values outside
+ * Latin-1, so the name is percent-encoded, and the server decodes it.
+ */
+export function nameHeader(by: string): Record<string, string> {
+  return { 'X-Factory-Name': encodeURIComponent(by) };
 }
 
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
@@ -166,24 +207,29 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
 
 /** The real API, over `fetch`, on the same origin as the page. */
 export const httpApi: Api = {
-  listRuns({ outcome, order, limit }) {
-    const query = new URLSearchParams();
-    if (outcome) query.set('outcome', outcome);
-    if (order) query.set('order', order);
-    if (limit) query.set('limit', String(limit));
+  board(since) {
+    return send(since ? `/api/board?${new URLSearchParams({ since })}` : '/api/board');
+  },
+  listCards(column, before) {
+    const query = new URLSearchParams({ column });
+    if (before) query.set('before', before);
     return send(`/api/runs?${query}`);
   },
   getRun(runId) {
     return send(`/api/runs/${encodeURIComponent(runId)}`);
   },
   startRun(mission, by) {
-    return send('/api/runs', { method: 'POST', body: JSON.stringify({ mission, by }) });
+    return send('/api/runs', { method: 'POST', body: JSON.stringify({ mission }), headers: nameHeader(by) });
   },
-  answer(runId, answer) {
+  answer(runId, answer, by) {
     return send(`/api/runs/${encodeURIComponent(runId)}/answer`, {
       method: 'POST',
       body: JSON.stringify(answer),
+      headers: nameHeader(by),
     });
+  },
+  restart(runId, by) {
+    return send(`/api/runs/${encodeURIComponent(runId)}/restart`, { method: 'POST', headers: nameHeader(by) });
   },
   getJob(jobId) {
     return send(`/api/jobs/${encodeURIComponent(jobId)}`);

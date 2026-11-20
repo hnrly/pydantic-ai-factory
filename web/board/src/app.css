@@ -281,3 +281,137 @@ legend {
 .steps {
   padding-left: 1.25rem;
 }
+
+/* The board: columns side by side, scrolling sideways when the screen is narrow. */
+main.wide {
+  max-width: none;
+}
+.board-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+}
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+.columns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(16rem, 1fr);
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+}
+.column {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--hn-gray-5);
+  border-radius: 16px;
+}
+.column-title {
+  margin: 0;
+  font-family: var(--hn-font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--hn-gray-2);
+}
+.column-title .count {
+  color: var(--hn-gray-3);
+}
+.needs-you,
+.list {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 40rem;
+  margin-block: 1rem;
+}
+.list-columns {
+  flex: none;
+  margin-bottom: 1rem;
+}
+
+/* A card: hairline, with its badges in a row. */
+.card {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--hn-gray-5);
+  border-radius: 12px;
+  background: var(--hn-gray-6);
+}
+.card-title {
+  color: var(--hn-white);
+  text-decoration: none;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.card-title:hover {
+  color: var(--hn-pink);
+}
+.card .meta {
+  margin: 0;
+}
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.badge-queued,
+.badge-rework {
+  color: var(--hn-gray-2);
+}
+.badge-link {
+  text-decoration: none;
+}
+.see-all {
+  font-size: 0.875rem;
+}
+.confirm {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--hn-pink);
+  border-radius: 12px;
+}
+.confirm p {
+  margin: 0;
+}
+.warning {
+  color: var(--hn-pink);
+}
+
+/* The header's New mission form. */
+.new-mission {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  width: 100%;
+}
+.new-mission textarea {
+  flex: 1 1 20rem;
+  width: auto;
+}
+.new-mission p {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.json {
+  overflow-x: auto;
+  padding: 1rem 1.5rem;
+  border: 1px solid var(--hn-gray-5);
+  border-radius: 20px;
+  background: var(--hn-gray-6);
+  font-family: var(--hn-font-mono);
+  font-size: 0.875rem;
+}

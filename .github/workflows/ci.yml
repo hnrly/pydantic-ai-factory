@@ -87,30 +87,35 @@ jobs:
       - run: uv run --locked ruff check .
       - run: uv run --locked pyright
       - run: uv run --locked pytest
+
+  board:
+    name: Board interface
+    # The board's web interface, which the wheel ships built into serve/_static/.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web/board
+    steps:
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: examples/software-factory-app/web/package-lock.json
+          cache-dependency-path: web/board/package-lock.json
       - run: npm ci
-        working-directory: examples/software-factory-app/web
       - run: npm test
-        working-directory: examples/software-factory-app/web
       - run: npm run typecheck
-        working-directory: examples/software-factory-app/web
       - name: Check the interface's copy of the design tokens matches the docs site's
         run: |
-          cmp web/src/tokens.css ../../site/src/styles/tokens.css || {
-            echo "::error::web/src/tokens.css differs from site/src/styles/tokens.css. Copy the site's file over it."
+          cmp src/tokens.css ../../site/src/styles/tokens.css || {
+            echo "::error::web/board/src/tokens.css differs from site/src/styles/tokens.css. Copy the site's file over it."
             exit 1
           }
-      - name: Build the interface from a copy of its folder, to prove it needs nothing outside it
+      - name: Build the interface into the library
         run: |
-          copy="$RUNNER_TEMP/web"
-          rsync -a --exclude /node_modules --exclude /dist web/ "$copy/"
-          cd "$copy"
-          npm ci
           npm run build
+          test -f ../../src/pydantic_ai_factory/serve/_static/index.html
 
   keep-out:
     runs-on: ubuntu-latest

@@ -1,8 +1,10 @@
+import { NewMission } from './NewMission';
+
 export type Theme = 'dark' | 'light';
 
 export const BANNER = 'This is a name, not a sign-in. Anyone can type any name.';
 
-/** The name field, the banner that says what it is, the pages and the theme switch. */
+/** The mark, the board and list toggle, the theme switch, the name field and the New mission form. */
 export function Header({
   name,
   onName,
@@ -25,12 +27,11 @@ export function Header({
     <header className="header">
       <div className="bar">
         <a className="mark" href="#/">
-          Software factory<i>.</i>
+          Factory board<i>.</i>
         </a>
-        <nav>
-          {link('#/', 'Inbox', page === 'inbox')}
-          {link('#/runs', 'All runs', page === 'runs')}
-          {link('#/new', 'New mission', page === 'new')}
+        <nav aria-label="View">
+          {link('#/', 'Columns', page === 'board')}
+          {link('#/list', 'List', page === 'list')}
         </nav>
         <button
           type="button"
@@ -50,6 +51,9 @@ export function Header({
           onChange={(event) => onName(event.target.value)}
         />
         <p className="banner">{BANNER}</p>
+      </div>
+      <div className="who">
+        <NewMission name={name} />
       </div>
     </header>
   );
