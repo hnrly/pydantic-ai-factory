@@ -27,7 +27,7 @@ print(done.outcome)
 #> passed
 ```
 
-Before the run waited for you, a designer drafted the design and fresh reviewers read it under the [Elephant Goldfish](elephant-goldfish.md) method. The designer revised it until a round of review was clean. Only then were you asked.
+Before the run waited for you, a designer drafted the design and fresh reviewers read it under the [Elephant Goldfish](elephant-goldfish.md) method. The designer revised it until two rounds of review in a row were clean. Only then were you asked.
 
 ## The stations
 
@@ -43,13 +43,43 @@ Before the run waited for you, a designer drafted the design and fresh reviewers
 | Option | Default | Means |
 |---|---|---|
 | `model` | required | The model that drafts the design. |
-| `rounds` | 2 | Rounds of review before what is left goes to a person. |
+| `design` | `design_station(model)` | The [Design](design-station.md) station. |
 | `repairs` | 2 | How many times a design that fails its gate, [`design_is_buildable`](design-station.md#the-gate), is sent back to the designer before a person decides. |
-| `goldfish` | `DESIGN_GOLDFISH` | The reviewers. |
-| `review_model` | `model` | The model the reviewers use. |
 | `accept` | none | A function that reads [signals](missions.md#signals) and returns a mission, as for any factory. |
 
-To change more than these allow, build the factory yourself from the same parts: a designer agent with the `ElephantGoldfish` and `AskPerson` capabilities, in a station with `approval=True`.
+The factory takes one keyword for each station, never a method. A method belongs to a station: a factory will have several, each with its own review or none. Build and Quality will add `build=` and `quality=` with their stations.
+
+## Your own Design station
+
+`design_station(model, method=...)` builds the Design station, and `design_review(model=None)` builds its default method: [Elephant Goldfish](elephant-goldfish.md) with the three design goldfish, up to four rounds, two clean rounds in a row, contests that code checks settled, and drafts read as Markdown. `model` there is the goldfish's model; by default they use the designer's. Pass the station to `SoftwareFactory`, or put it in a factory of your own.
+
+```python
+from pydantic_ai_factory import Factory
+from pydantic_ai_factory.methodologies import ElephantGoldfish
+from pydantic_ai_factory_software import SoftwareFactory, design_station
+
+model = "anthropic:claude-opus-5-5"
+shipped = SoftwareFactory(model)
+simple = SoftwareFactory(model, design=design_station(model, method=ElephantGoldfish(goldfish=())))
+plain = SoftwareFactory(model, design=design_station(model, method=None))
+ours = Factory("ours", [design_station(model)])
+
+print([str(m.ref) for m in simple.methodologies()["design"]], plain.methodologies()["design"])
+#> ['elephant-goldfish@2'] ()
+print([agent.name for agent in ours.agents()["design"]])
+#> ['designer']
+```
+
+`simple` keeps the same designer, its skills, `AskPerson` and the gate, and leaves out only the review. `plain` has no method at all.
+
+### Deprecated in 0.2
+
+These still work in 0.2, raise a `DeprecationWarning`, and go in 0.3.
+
+| Deprecated | Use instead |
+|---|---|
+| `SoftwareFactory(model, rounds=..., goldfish=..., review_model=...)` | `SoftwareFactory(model, design=design_station(model, method=...))`. The old keywords are mapped onto `design_review()`, and cannot be given with `design=`. |
+| The attributes `software.model`, `software.rounds`, `software.repairs`, `software.goldfish` and `software.review_model` | Keep what you passed, or read it from the Design station's method, `software.methodologies()["design"]`. |
 
 `SoftwareFactory` is a `Factory`, so everything on the [factories](factories.md) page works on it, such as `software.agents()` and `software.intake_sync(...)`.
 
@@ -67,7 +97,7 @@ factory run "A to-do list web page where I can add tasks and tick them off."
 A to-do list web page where I can add tasks and tick them off.
 ...
 
-design: reviewed in 2 rounds by 3 goldfish; the last round was clean.
+design: reviewed in 3 rounds by 3 goldfish; the last round was clean.
 Waiting for approval of Design@37619731dd69.
 Approve, ask for changes, or reject? [a/c/r]
 ```

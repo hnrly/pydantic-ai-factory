@@ -5,7 +5,9 @@ description: The first station of the software factory. It drafts a design, has 
 
 # Design
 
-The Design station turns a mission into a design a person can approve and a builder can follow. A designer agent drafts it. Fresh reviewers read each draft, and the designer revises in the same conversation until a round of review is clean. Then a person approves.
+The Design station turns a mission into a design a person can approve and a builder can follow. A designer agent drafts it. Fresh reviewers read each draft, and the designer revises in the same conversation until two rounds of review in a row are clean. Then a person approves.
+
+`design_station(model)` builds the station, and `SoftwareFactory(model)` runs it. Its review is `design_review()`, [Elephant Goldfish](elephant-goldfish.md) tuned for software designs; pass `method=` another, or `None` for a designer with no review at all. See [the software factory](software-factory.md#your-own-design-station).
 
 ## The design
 
@@ -36,6 +38,19 @@ A design stored before 0.2 still loads: its `goal` becomes `summary` and its `ex
 
 The designer asks for prompt caching, `model_settings={"cache": True}`. Each review round resends the whole conversation, so the provider can serve all but the newest part from its cache.
 
+## The designer's skills
+
+The designer's method is written as [Agent Skills](https://agentskills.io/specification), which it loads when it needs them with the `load_capability` tool. It is offered exactly four: two from Elephant Goldfish, and two from this package.
+
+| Skill | Ships with | Carries |
+|---|---|---|
+| `design-interview` | Elephant Goldfish | What only a person can decide, and how to ask it in rounds. |
+| `design-resolve` | Elephant Goldfish | How to answer a finding: fix, contest with a citation, or escalate. |
+| `design-read-code` | This package | How to ground a design: what to read first, what to take from the code, and how to cite every path exactly. |
+| `design-doc` | This package | The design template, field by field, the Alternatives Rule, the Zero-Decision Rule, and when a choice is an assumption or an open question. |
+
+The designer's instructions say "Load design-read-code before you ask anything, and design-doc before you draft." With no review, `design_station(model, method=ElephantGoldfish(goldfish=()))`, the designer is offered the same four. A third skill in this package, `goldfish-readiness`, is a goldfish's, not the designer's.
+
 Before drafting, and during review, the designer may ask you what the mission leaves open. It has [`AskPerson`](approvals.md#asking-a-person) beside Elephant Goldfish, so it asks in rounds: up to four questions at a time, each with why it matters and up to three options, the recommended one first. It may ask three rounds; the run waits once for each.
 
 ## The gate
@@ -54,13 +69,23 @@ Each failure names the item, such as `AC2 is proved by no verification item`. A 
 
 ## The review
 
-Three goldfish read every draft: `comprehension` explains it back, `critique` checks it against its goal, which restates the mission, and `readiness` asks whether a builder could start without questions. Their standards are `DESIGN_STANDARDS`, and the three together are `DESIGN_GOLDFISH`. On the to-do list's first draft, `critique` reported:
+Three goldfish read every draft, as Markdown from `render_markdown`. Each one's job, kinds and standard are the body of its skill. Together they are `DESIGN_GOLDFISH`, and their standards `DESIGN_STANDARDS`.
+
+| Goldfish | Sees | Kinds of finding | Standard | Ported from |
+|---|---|---|---|---|
+| `comprehension` | The design only | `unclear` | `clear`: someone who has never seen the mission can explain it back without guessing | Google's comprehension agent; coship-dev's `check-comprehension` |
+| `critique` | The design, the mission and the explain-back | `gap`, `yagni`, `failure_mode`, `contradiction`, `risk`, `missing_alternative`, `unjustified_decision`; at most seven | `faithful`: everything the mission needs and nothing it does not, with a rejected alternative | Google's design critic and feature specification standard; coship-dev's `critique-design` |
+| `readiness` | The design and the mission | `missing_path`, `contradicts_code` (always a Blocker), `nonexistent_reference`, `ambiguous_interface`, `decision_left_to_builder`, `no_oracle`, `order_conflict` | `buildable`, the Zero-Decision Rule: a builder could make the right change the first time without asking | Google's implementation readiness and codebase details agents; coship-dev's `check-readiness` |
+
+Comprehension and critique are [Elephant Goldfish's own](elephant-goldfish.md#the-method-as-skills). Readiness is built from this package's `goldfish-readiness` skill with `Goldfish.from_skill`.
+
+`design_review()` runs them for up to four rounds, until two clean rounds run in a row: after a clean round, the goldfish read the same draft once more. A contest that cites a field of the design, such as `field:non_goals`, settles its finding when code checks it. On the to-do list's first draft, `critique` reported:
 
 ```text
-r1-critique-1  Major  The design never says what happens to a blank task.
+r1-critique-1  Major  gap  The design never says what happens to a blank task.
 ```
 
-The designer revised. The second round was clean, so the run waited for a person.
+The designer revised. The second and third rounds were clean, so the run waited for a person.
 
 ## When the designer disagrees
 

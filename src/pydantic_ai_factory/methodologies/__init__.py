@@ -22,6 +22,7 @@ except ModuleNotFoundError as error:
 from ._elephant_goldfish import (
     Answer,
     ElephantGoldfish,
+    ExplainBack,
     Finding,
     Goldfish,
     GoldfishFailed,
@@ -35,6 +36,7 @@ from ._elephant_goldfish import (
 __all__ = [
     "Answer",
     "ElephantGoldfish",
+    "ExplainBack",
     "Finding",
     "Goldfish",
     "GoldfishFailed",

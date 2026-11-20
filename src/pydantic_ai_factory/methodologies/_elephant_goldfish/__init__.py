@@ -16,10 +16,12 @@ from ._method import (
     Stage,
     Standard,
 )
+from ._skills import ExplainBack
 
 __all__ = [
     "Answer",
     "ElephantGoldfish",
+    "ExplainBack",
     "Finding",
     "Goldfish",
     "GoldfishFailed",

@@ -67,7 +67,7 @@ def test_answering_a_writes_the_reviewed_design_to_a_file_named_after_it(tmp_pat
 
     assert code == PASSED
     review = terminal.lines.index(
-        "design: reviewed in 2 rounds by 3 goldfish; the last round was clean."
+        "design: reviewed in 3 rounds by 3 goldfish; the last round was clean."
     )
     assert re.fullmatch(
         r"Waiting for approval of Design@[0-9a-f]{12}\.", terminal.lines[review + 1]

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import re
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,9 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import UsageLimits
+from pydantic_ai.workspaces import LocalWorkspaceBackend, ReadOnlyWorkspace, Workspace
+from pydantic_ai_harness.skills import Skills
+from pydantic_ai_harness.skills._loader import parse_skill
 
 from pydantic_ai_factory import (
     AskPerson,
@@ -34,6 +39,7 @@ from pydantic_ai_factory import (
 )
 from pydantic_ai_factory.methodologies import (
     ElephantGoldfish,
+    ExplainBack,
     Goldfish,
     GoldfishReport,
     Standard,
@@ -49,10 +55,14 @@ BLANK: dict[str, Any] = {
     "issue": "It does not say what happens to a blank task.",
 }
 NIT: dict[str, Any] = {"severity": "Nit", "issue": "Say 'tick box', not 'box'."}
-CLEAR: dict[str, Any] = {
-    "paraphrase": "A page that keeps a list of tasks you can tick off.",
-    "findings": [],
-}
+EXPLAINED = ExplainBack(
+    problem="Keeping track of tasks.",
+    who="One person with a list of tasks.",
+    done_when=["Tasks can be added and ticked off."],
+    approach="A page that keeps a list of tasks you can tick off.",
+)
+PARAPHRASE = EXPLAINED.to_text()
+CLEAR: dict[str, Any] = {"explain_back": EXPLAINED.model_dump(), "findings": []}
 
 ACCESSIBLE = Standard("accessible", "Everything works with a keyboard and a screen reader.")
 POND = (
@@ -68,6 +78,7 @@ class Author:
         self.replies = list(replies)
         self.seen: list[list[ModelMessage]] = []
         self.tools: list[list[str]] = []
+        self.instructions: list[str] = []
 
     @property
     def calls(self) -> int:
@@ -76,6 +87,7 @@ class Author:
     def __call__(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         self.seen.append(list(messages))
         self.tools.append([tool.name for tool in info.function_tools])
+        self.instructions.append(info.instructions or "")
         reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
         if isinstance(reply, dict):  # a structured draft, sent through the output tool
             return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply)])
@@ -158,7 +170,7 @@ async def test_a_clean_first_round_passes_and_stamps_the_methodology() -> None:
     assert author.calls == 1
     [report] = await reports_of(result, store)
     assert (report.round, report.goldfish, report.findings) == (1, ("newcomer", "critique"), ())
-    assert report.results[0].paraphrase == CLEAR["paraphrase"]
+    assert report.results[0].paraphrase == PARAPHRASE
     stored = await store.get(result.evidence[0], GoldfishReport)
     assert [str(m) for m in stored.methodologies] == ["elephant-goldfish@2"]
 
@@ -193,7 +205,7 @@ async def test_a_major_goes_back_to_the_author_who_fixes_it_in_the_same_conversa
     [feedback] = retries(author.seen[1])
     assert "round 1 of 2" in feedback
     assert "r1-critique-1, Major: It does not say what happens to a blank task." in feedback
-    assert CLEAR["paraphrase"] in feedback
+    assert PARAPHRASE in feedback
     assert any(DRAFT in str(part) for m in author.seen[1] for part in m.parts)
     assert [r.round for r in await reports_of(result, store)] == [1, 2]
     assert len(result.calls) == 1
@@ -414,7 +426,8 @@ async def test_elephant_goldfish_adds_no_ask_tool() -> None:
 
     await station(agent).run(MISSION, store=MemoryStore())
 
-    assert sorted(author.tools[0]) == ["contest", "escalate"]
+    # load_capability is how the author loads the method's skills; it asks nobody.
+    assert sorted(author.tools[0]) == ["contest", "escalate", "load_capability"]
     assert "ask_person" not in method.get_instructions()
 
 
@@ -454,7 +467,9 @@ async def test_on_resume_a_replayed_author_call_keeps_its_reports() -> None:
 async def test_by_default_the_goldfish_use_the_authors_model() -> None:
     def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         if "goldfish" in (info.instructions or "") and info.output_tools:
-            args = CLEAR if "paraphrase" in str(info.output_tools[0].parameters_json_schema) else {}
+            args = (
+                CLEAR if "explain_back" in str(info.output_tools[0].parameters_json_schema) else {}
+            )
             return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
         return ModelResponse(parts=[TextPart(DRAFT)])
 
@@ -522,7 +537,6 @@ def test_a_factory_lists_elephant_goldfish_among_its_methodologies() -> None:
 @pytest.mark.parametrize(
     ("settings", "problem"),
     [
-        ({"goldfish": ()}, "at least one goldfish"),
         ({"goldfish": "newcomer"}, "must be a list of Goldfish"),
         ({"goldfish": (POND[0], POND[0])}, "two goldfish are named 'newcomer'"),
         ({"goldfish": POND, "rounds": 0}, "rounds must be a whole number, 1 or more"),
@@ -628,7 +642,7 @@ async def test_critique_gets_the_explain_back() -> None:
     marker = critique.split("The marker for this review is ")[1].split(".")[0]
     assert (
         f"<explained-{marker}>\nGoldfish newcomer explained the work as:\n"
-        f"{CLEAR['paraphrase']}\n</explained-{marker}>"
+        f"{PARAPHRASE}\n</explained-{marker}>"
     ) in critique
     assert critique.index("<explained-") < critique.index("<work-")
     assert "<explained-" not in pond.prompts["ready"][0]
@@ -1053,3 +1067,216 @@ async def test_defaults_keep_one_clean_round() -> None:
     assert result.outcome == "passed"
     assert len(await reports_of(result, store)) == 1
     assert len(pond.prompts["critique"]) == 1
+
+
+# The method as skills.
+
+METHOD = Path(__file__).resolve().parents[1] / (
+    "src/pydantic_ai_factory/methodologies/_elephant_goldfish/skills"
+)
+AUTHOR_SKILLS = ("design-interview", "design-resolve")
+LOADS_ITS_SKILLS = (
+    "Load design-interview before you ask a person, and design-resolve when review findings "
+    "come back."
+)
+
+
+def catalogue(instructions: str) -> list[str]:
+    """The skills the author was offered to load, by name, in the order listed."""
+    return re.findall(r"^- ([a-z0-9-]+): ", instructions, re.MULTILINE)
+
+
+def skill_texts() -> dict[str, str]:
+    return {
+        folder.name: (folder / "SKILL.md").read_text(encoding="utf-8")
+        for folder in sorted(METHOD.iterdir())
+        if (folder / "SKILL.md").is_file()
+    }
+
+
+def write_skill(root: Path, name: str, metadata: str, body: str) -> Path:
+    folder = root / name
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: A goldfish for tests.\n{metadata}---\n\n{body}\n",
+        encoding="utf-8",
+    )
+    return folder
+
+
+def test_default_goldfish_are_built_from_the_method_skills() -> None:
+    method = ElephantGoldfish()
+
+    assert method.goldfish == ElephantGoldfish.GOLDFISH
+    comprehension, critique = ElephantGoldfish.GOLDFISH
+    assert (comprehension.name, comprehension.stage, comprehension.kinds) == (
+        "comprehension",
+        "comprehension",
+        ("unclear",),
+    )
+    assert not comprehension.sees_request
+    assert (critique.name, critique.stage, critique.max_findings) == ("critique", "critique", 7)
+    assert critique.sees_request
+    assert critique.kinds == (
+        "gap",
+        "yagni",
+        "failure_mode",
+        "contradiction",
+        "risk",
+        "missing_alternative",
+        "unjustified_decision",
+    )
+    assert [fish.standard.name for fish in method.goldfish if fish.standard] == [
+        "clear",
+        "faithful",
+    ]
+    texts = skill_texts()
+    assert "Read the work as a capable reader" in comprehension.job
+    assert "Read the work as a capable reader" in texts["goldfish-comprehension"]
+    assert "sceptical expert" in critique.job
+    # The standard and the credits are not part of the job.
+    assert "## Standard" not in critique.job and "## Sources" not in critique.job
+    assert critique.standard is not None and "single path fails" in critique.standard.text
+
+
+async def test_the_author_is_offered_the_method_skills() -> None:
+    author = Author(call("load_capability", id="design-resolve"), DRAFT)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": []}])
+    agent, method = designer(author, pond)
+
+    result = await agent.run(MISSION)
+
+    assert result.output == DRAFT
+    assert catalogue(author.instructions[0]) == list(AUTHOR_SKILLS)
+    assert LOADS_ITS_SKILLS in method.get_instructions()
+    assert "load_capability" in author.tools[0]
+    sent = " ".join(
+        str(getattr(part, "content", "")) for message in author.seen[-1] for part in message.parts
+    )
+    assert "Capability 'design-resolve' loaded" in sent
+    assert "# Skill: design-resolve" in sent
+    assert "Never contest a comprehension finding." in sent
+
+
+async def test_no_goldfish_means_no_review() -> None:
+    author = Author(DRAFT)
+    method = ElephantGoldfish(goldfish=())
+    agent = Agent(FunctionModel(author), name="designer", capabilities=[method, AskPerson()])
+    store = MemoryStore()
+
+    result = await station(agent).run(MISSION, store=store)
+
+    assert result.outcome == "passed"
+    assert result.decision is not None
+    assert result.decision.reasons == (
+        "no review was asked for: Elephant Goldfish has no goldfish",
+    )
+    assert await reports_of(result, store) == []
+    assert author.calls == 1
+    assert "contest" not in author.tools[0] and "escalate" not in author.tools[0]
+    assert "Elephant Goldfish method" not in method.get_instructions()
+    with pytest.raises(MethodologyDefinitionError, match="rounds must be a whole number"):
+        ElephantGoldfish(goldfish=(), rounds=0)
+
+
+async def test_no_goldfish_still_offers_the_method_skills() -> None:
+    author = Author(DRAFT)
+    method = ElephantGoldfish(goldfish=())
+    agent = Agent(FunctionModel(author), name="designer", capabilities=[method])
+
+    await agent.run(MISSION)
+
+    assert catalogue(author.instructions[0]) == list(AUTHOR_SKILLS)
+    assert method.get_instructions() == LOADS_ITS_SKILLS
+    assert author.tools[0] == ["load_capability"]
+
+
+def test_goldfish_from_skill_reads_name_stage_and_kinds(tmp_path: Path) -> None:
+    folder = write_skill(
+        tmp_path,
+        "goldfish-readiness",
+        "metadata:\n  kinds: missing_path order_conflict\n  standard: ready\n  max_findings: '5'\n",
+        "Say what a builder would ask.\n\n## Standard\n\nNothing is left to ask.\n\n"
+        "## Sources\n\nWritten for this test.",
+    )
+
+    fish = Goldfish.from_skill(folder)
+    renamed = Goldfish.from_skill(
+        folder / "SKILL.md", name="ready", stage="critique", kinds=["gap"], sees_request=True
+    )
+
+    assert (fish.name, fish.stage, fish.kinds, fish.max_findings) == (
+        "readiness",
+        "readiness",
+        ("missing_path", "order_conflict"),
+        5,
+    )
+    assert fish.job == "Say what a builder would ask."
+    assert fish.standard == Standard("ready", "Nothing is left to ask.")
+    assert not fish.sees_request
+    assert (renamed.name, renamed.stage, renamed.kinds, renamed.sees_request) == (
+        "ready",
+        "critique",
+        ("gap",),
+        True,
+    )
+
+
+def test_goldfish_from_skill_refuses_a_skill_with_no_stage(tmp_path: Path) -> None:
+    folder = write_skill(tmp_path, "goldfish-proofread", "", "Check the spelling.")
+
+    with pytest.raises(MethodologyDefinitionError, match="'proofread' is not a stage; pass stage="):
+        Goldfish.from_skill(folder)
+    assert Goldfish.from_skill(folder, stage="critique").name == "proofread"
+    with pytest.raises(MethodologyDefinitionError, match="cannot read"):
+        Goldfish.from_skill(tmp_path / "goldfish-missing")
+
+
+async def test_every_method_skill_parses_and_names_its_sources() -> None:
+    texts = skill_texts()
+
+    assert sorted(texts) == [
+        "design-interview",
+        "design-resolve",
+        "goldfish-comprehension",
+        "goldfish-critique",
+    ]
+    for name, text in texts.items():
+        skill = parse_skill(text, f"{name}/SKILL.md")
+        assert skill.name == name
+        assert 0 < len(skill.description) <= 1024
+        sources = skill.body.split("## Sources", 1)[1]
+        assert "Google" in sources, name
+    # The author's catalogue, as Pydantic AI Harness reads it, holds the two author skills.
+    folder = ReadOnlyWorkspace(Workspace(LocalWorkspaceBackend(METHOD)))
+    loaded = await Skills(".", include=AUTHOR_SKILLS, workspace=folder).load()
+    assert [skill.name for skill in loaded.skills] == list(AUTHOR_SKILLS)
+    assert loaded.skipped == ()
+
+
+SOFTWARE_WORDS = ("code", "codebase", "software", "engineer", "repository", "developer")
+
+
+def test_method_skills_never_mention_code() -> None:
+    for name, text in skill_texts().items():
+        found = [
+            word for word in SOFTWARE_WORDS if re.search(rf"\b{word}s?\b", text, re.IGNORECASE)
+        ]
+        assert found == [], f"{name} mentions {found}"
+
+
+def test_the_wheel_includes_the_method_skills() -> None:
+    """The wheel ships the whole package folder, so the skills go with the code.
+
+    Hatchling leaves out only files git ignores, and nothing ignores a skill. The CI
+    job "distributions" lists every SKILL.md in the built wheels.
+    """
+    root = Path(__file__).resolve().parents[1]
+    build = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    wheel = build["tool"]["hatch"]["build"]["targets"]["wheel"]
+    assert wheel == {"packages": ["src/pydantic_ai_factory"]}
+    for name in skill_texts():
+        relative = (METHOD / name / "SKILL.md").relative_to(root)
+        assert relative.parts[:2] == ("src", "pydantic_ai_factory")
+    ignored = (root / ".gitignore").read_text(encoding="utf-8").split()
+    assert not [line for line in ignored if "skill" in line.lower() and line != "skills-lock.json"]

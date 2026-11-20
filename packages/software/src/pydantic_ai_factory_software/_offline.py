@@ -134,10 +134,14 @@ def _goldfish(messages: list[ModelMessage], info: AgentInfo, fields: set[str]) -
     findings: list[dict[str, str]] = []
     instructions = info.instructions or ""
     if "Stage: critique" in instructions and "blank" not in work.lower():
-        findings.append({"severity": "Major", "issue": BLANK_ISSUE})
+        findings.append({"severity": "Major", "kind": "gap", "issue": BLANK_ISSUE})
     reply: dict[str, Any] = {"findings": findings}
-    if "paraphrase" in fields:
-        reply["paraphrase"] = "A design for what the mission asks, explained back in brief."
+    if "explain_back" in fields:
+        reply["explain_back"] = {
+            "problem": "What the mission asks for.",
+            "who": "The person who wrote the mission.",
+            "approach": "A design for what the mission asks, explained back in brief.",
+        }
     return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply)])
 
 
