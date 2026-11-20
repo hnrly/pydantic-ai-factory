@@ -101,11 +101,11 @@ def test_you_can_build_a_factory_of_your_own_run_a_mission_through_it_and_approv
     assert run.waiting is not None
     assert (run.waiting.kind, run.waiting.output) == ("approval", DESIGN)
 
-    done = software.resume_sync(run, run.approve(by="ada"), store=store)
+    done = software.resume_sync(run.approve(by="ada"), store=store)
     assert done.outcome == "passed"
     assert done.output == "The page matches the design. Nothing is wrong."
     assert [step.station for step in done.steps] == ["designer", "build"]
-    assert done.approvals[0].by == "ada"
+    assert done.answers[0].by == "ada"
 
 
 def test_you_can_run_the_software_factory_on_a_mission_from_python_or_a_terminal(
@@ -116,7 +116,7 @@ def test_you_can_run_the_software_factory_on_a_mission_from_python_or_a_terminal
     store = MemoryStore()
     run = software.run_sync(MISSION, store=store)
     assert run.waiting is not None and run.waiting.kind == "approval"
-    done = software.resume_sync(run, run.approve(by="ada"), store=store)
+    done = software.resume_sync(run.approve(by="ada"), store=store)
     assert done.outcome == "passed" and isinstance(done.output, Design)
 
     command = shutil.which("factory", path=str(Path(sys.executable).parent))
@@ -230,7 +230,7 @@ if sys.argv[2] == "start":
     print(software.run_sync({mission!r}, store=store).run_id)
 else:
     run = store.get_run_sync(sys.argv[2])
-    print(software.resume_sync(run, run.approve(by="ada"), store=store).outcome)
+    print(software.resume_sync(run.approve(by="ada"), store=store).outcome)
 """
 
 
@@ -265,8 +265,12 @@ def test_you_can_wait_for_a_person_settle_an_escalation_or_answer_a_tool_call_an
     store = MemoryStore()
     run = software.run_sync(MISSION, store=store)
     assert run.waiting is not None and run.waiting.kind == "escalation"
-    settled = software.resume_sync(run, run.approve(by="ada", note="That is fine."), store=store)
-    assert (settled.outcome, settled.approvals[-1].overrode) == ("passed", True)
+    settled = software.resume_sync(run.approve(by="ada", note="That is fine."), store=store)
+    assert settled.outcome == "passed"
+    assert settled.answers[-1].model_dump(include={"kind", "overrode"}) == {
+        "kind": "approve",
+        "overrode": True,
+    }
 
     # A tool call that needs sign-off, answered with Pydantic AI's own types.
     builder = agent(
@@ -286,7 +290,7 @@ def test_you_can_wait_for_a_person_settle_an_escalation_or_answer_a_tool_call_an
     assert run.waiting.requests is not None
     [request] = run.waiting.requests.approvals
     answer = run.waiting.requests.build_results(approvals={request.tool_call_id: True})
-    done = publishing.resume_sync(run, answer, store=store)
+    done = publishing.resume_sync(run.reply(by="ada", results=answer), store=store)
     assert (done.outcome, done.output) == ("passed", "Published index.html.")
 
 
@@ -425,7 +429,7 @@ def test_you_can_see_a_run_as_a_trace() -> None:
     software = Factory("software", [station(agent("designer", DESIGN), approval=True)])
     store = MemoryStore()
     run = software.run_sync(MISSION, store=store)
-    software.resume_sync(run, run.approve(by="ada"), store=store)
+    software.resume_sync(run.approve(by="ada"), store=store)
 
     names = [span.name for span in exporter.get_finished_spans()]
     assert "factory software" in names
@@ -470,7 +474,7 @@ designer = Agent(FunctionModel(reply), name="designer")
 software = Factory("software", [station(designer, approval=True)])
 store = SQLiteStore(sys.argv[1])
 for run in store.list_runs_sync(outcome="waiting", order="oldest"):
-    print(run.run_id, software.resume_sync(run, run.approve(by="ada"), store=store).outcome)
+    print(run.run_id, software.resume_sync(run.approve(by="ada"), store=store).outcome)
 """
 
 

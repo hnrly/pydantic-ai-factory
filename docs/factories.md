@@ -31,8 +31,9 @@ Name a factory for what it makes, such as `"software"`, not for one piece of wor
 | Call | Does |
 |---|---|
 | `factory.run(input, store=...)` | Runs the work and returns a `Run`. Async. |
-| `factory.resume(run, answer, store=...)` | Carries on a run that is [waiting for a person](approvals.md). Async. |
-| `run_sync`, `resume_sync` | The same, for code that is not async. |
+| `factory.resume(answer, store=...)` | Carries on a run that is [waiting for a person](approvals.md). The answer names its run. Async. |
+| `factory.check(run, answer)` | Says why an answer does not fit a run, without running anything. |
+| `run_sync`, `resume_sync` | The same as `run` and `resume`, for code that is not async. |
 
 `input` is the first station's input. A plain string becomes a [`Mission`](missions.md) when that station takes a mission or a string; a station that takes a string is given the mission as its prompt. Both calls also take `deps=`, which every station receives as `ctx.deps`.
 
@@ -44,7 +45,7 @@ Name a factory for what it makes, such as `"software"`, not for one piece of wor
 | `output` | The last station's output, once the run has finished. |
 | `waiting` | What a person is being asked, when the outcome is `"waiting"`. See [approvals](approvals.md). |
 | `steps` | One result per station attempt, in order. |
-| `approvals` | Every decision a person made. |
+| `answers` | Every answer a person gave, tool replies included. |
 | `created_at` | When the run was first saved, in UTC. It never changes. |
 | `updated_at` | When the run was last saved, in UTC. For a waiting run, that is when it started waiting. |
 

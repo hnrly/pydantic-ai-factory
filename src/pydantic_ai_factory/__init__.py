@@ -16,14 +16,19 @@ from .artifacts import (
 )
 from .contracts import DefinitionError, FactoryError, MethodologyRef
 from .factory import (
+    Answer,
+    AnswerProblem,
     ApprovalRefused,
-    Decision,
+    Approve,
+    Changes,
     Declined,
     Factory,
     FactoryDefinitionError,
     IntakeError,
     Mission,
     Outcome,
+    Reject,
+    Reply,
     Rework,
     Run,
     RunConflict,
@@ -61,7 +66,10 @@ from .stores import LocalStore, MemoryStore, SQLiteStore, StoreBusy, StoreSchema
 __version__ = "0.1.1"
 
 __all__ = [
+    "Answer",
+    "AnswerProblem",
     "ApprovalRefused",
+    "Approve",
     "Artifact",
     "ArtifactCorrupt",
     "ArtifactInvalid",
@@ -69,7 +77,7 @@ __all__ = [
     "ArtifactRef",
     "ArtifactStore",
     "AskPerson",
-    "Decision",
+    "Changes",
     "Declined",
     "DefinitionError",
     "Escalate",
@@ -92,6 +100,8 @@ __all__ = [
     "NotEvaluated",
     "Outcome",
     "Producer",
+    "Reject",
+    "Reply",
     "Rework",
     "Run",
     "RunConflict",

@@ -85,9 +85,7 @@ async def test_every_artifact_a_run_makes_carries_the_missions_id() -> None:
     mission = Mission("A to-do list web page.")
 
     run = await Factory("software", [design, build]).run(mission, store=store)
-    run = await Factory("software", [design, build]).resume(
-        run, run.approve(by="luke"), store=store
-    )
+    run = await Factory("software", [design, build]).resume(run.approve(by="luke"), store=store)
 
     refs = [run.input_ref, *(step.output_ref for step in run.steps if step.output_ref)]
     assert len(refs) == 3
@@ -322,9 +320,7 @@ async def test_a_waiting_run_emits_its_outcome_only_once_it_ends() -> None:
     waiting = await factory.run(mission, store=store)
     assert (waiting.outcome, waiting.outcome_signal) == ("waiting", None)
 
-    ended = await factory.resume(
-        waiting, waiting.reject(by="luke", note="not this way"), store=store
-    )
+    ended = await factory.resume(waiting.reject(by="luke", note="not this way"), store=store)
     assert ended.outcome_signal is not None
     outcome = (await store.get(ended.outcome_signal, Signal[Outcome])).payload.payload
     assert (outcome.outcome, outcome.finished, outcome.output_ref) == ("failed", False, None)

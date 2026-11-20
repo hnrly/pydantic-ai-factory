@@ -540,9 +540,7 @@ async def test_a_resumed_run_keeps_its_created_at_and_moves_its_updated_at(clock
     # A waiting run's last save is when it started waiting.
     assert waiting.updated_at == clock.readings[-1]
 
-    done = await waiting_factory.resume(
-        waiting, waiting.approve(by="ana"), store=store, deps=Deps()
-    )
+    done = await waiting_factory.resume(waiting.approve(by="ana"), store=store, deps=Deps())
 
     assert done.outcome == "passed"
     assert done.created_at == waiting.created_at == clock.readings[0]

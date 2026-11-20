@@ -296,9 +296,8 @@ async def test_a_replayed_agent_call_still_gives_its_methodology_evidence() -> N
     assert run.waiting is not None and run.waiting.requests is not None
     call = run.waiting.requests.calls[0]
 
-    done = await software.resume(
-        run, run.waiting.requests.build_results(calls={call.tool_call_id: "Yes."}), store=store
-    )
+    results = run.waiting.requests.build_results(calls={call.tool_call_id: "Yes."})
+    done = await software.resume(run.reply(by="ada", results=results), store=store)
 
     assert done.outcome == "passed"
     assert drafted.calls == 1

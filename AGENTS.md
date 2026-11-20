@@ -22,6 +22,14 @@ Before writing infrastructure, check what Pydantic AI already provides, against 
 - Give every `Agent` an explicit `name=`.
 - A model may produce evidence. It never decides a gate.
 
+## Before 1.0
+
+Until version 1.0, choose the best design over compatibility.
+
+- Change public APIs and stored formats when that gives the better shape. Do not add shims, aliases, deprecation periods or code that converts old data.
+- Say what broke, and what to do about it, in `CHANGELOG.md`.
+- A store that finds data in an older shape refuses it with a named error, such as `StoreSchemaMismatch`. It never reads that data wrongly or silently.
+
 ## Tests
 
 - Real model requests are off by default. Use `TestModel` or `FunctionModel` through `agent.override()`.
