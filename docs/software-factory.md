@@ -43,7 +43,8 @@ Before the run waited for you, a designer drafted the design and fresh reviewers
 | Option | Default | Means |
 |---|---|---|
 | `model` | required | The model that drafts the design. |
-| `design` | `design_station(model)` | The [Design](design-station.md) station. |
+| `workspace` | none | The code to design against, read-only: a capability that supplies a workspace, such as `LocalWorkspace(path)`. It is passed to the Design station the factory builds; a `design` you pass keeps its own. See [Designing in an existing codebase](design-station.md#designing-in-an-existing-codebase). |
+| `design` | `design_station(model, workspace=workspace)` | The [Design](design-station.md) station. |
 | `repairs` | 2 | How many times a design that fails its gate, [`design_is_buildable`](design-station.md#the-gate), is sent back to the designer before a person decides. |
 | `accept` | none | A function that reads [signals](missions.md#signals) and returns a mission, as for any factory. |
 
@@ -51,7 +52,7 @@ The factory takes one keyword for each station, never a method. A method belongs
 
 ## Your own Design station
 
-`design_station(model, method=...)` builds the Design station, and `design_review(model=None)` builds its default method: [Elephant Goldfish](elephant-goldfish.md) with the three design goldfish, up to four rounds, two clean rounds in a row, contests that code checks settled, and drafts read as Markdown. `model` there is the goldfish's model; by default they use the designer's. Pass the station to `SoftwareFactory`, or put it in a factory of your own.
+`design_station(model, method=..., workspace=None)` builds the Design station, and `design_review(model=None, workspace=None)` builds its default method: [Elephant Goldfish](elephant-goldfish.md) with the three design goldfish, up to four rounds, two clean rounds in a row, contests that code checks settled, and drafts read as Markdown. `model` there is the goldfish's model; by default they use the designer's. `workspace` gives the designer, or the goldfish, read-only file tools over the code; the station builds its default review with its own workspace. Pass the station to `SoftwareFactory`, or put it in a factory of your own.
 
 ```python
 from pydantic_ai_factory import Factory
