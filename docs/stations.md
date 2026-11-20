@@ -99,6 +99,43 @@ print(build.run_sync("One page, index.html.", store=MemoryStore()).outcome)
 
 If the gate needs evidence the station did not record, the gate is not evaluated and the attempt did not run. A check that never happened is never counted as a pass.
 
+## How a station's output looks
+
+A station's output is data that Pydantic can serialise. A station refuses an output type it cannot serialise when it is declared, so every output can be stored, replayed and shown to a person.
+
+`output_format=` says how a person sees the output. It is an `OutputFormat`: `TEXT`, `MARKDOWN` or `JSON`. Leave it out, and a string output is shown as text, as written, and anything else as Markdown. The library writes that Markdown from the output's shape, so no station has to:
+
+```python
+from pydantic import BaseModel
+from pydantic_ai import Agent
+
+from pydantic_ai_factory import Factory, MemoryStore, station
+
+
+class Plan(BaseModel):
+    title: str
+    steps: list[str]
+
+
+planner = Agent("anthropic:claude-opus-5-5", name="planner", output_type=Plan, instructions="Plan the work.")
+plan = station(planner)
+
+run = Factory("planning", [plan]).run_sync("A to-do list web page.", store=MemoryStore())
+print(plan.show(run.output))
+"""
+# To-do list
+
+## Steps
+
+- Write index.html
+- Add a box for new tasks
+"""
+```
+
+A `title` field, when the output has one, becomes the heading. Each other field becomes a section, headed by the field's `title` if you set one with `Field(title=...)`, or by its name in words. A list becomes bullet points, an empty list "None.", and a nested model a section one level down. `station.show(output)` takes an output or its JSON data, and `to_markdown(value)` writes any value as Markdown on its own.
+
+Pass `output_format=OutputFormat.JSON` to show the output as formatted JSON, or `OutputFormat.TEXT` to show a string as it was written. `output_format` changes how an output looks, not what the station does. It is not part of the factory's [digest](factories.md#what-a-factory-looks-like), so changing it never makes a saved run an earlier version.
+
 ## Options
 
 | Option | Default | Means |
@@ -108,5 +145,6 @@ If the gate needs evidence the station did not record, the gate is not evaluated
 | `agents` | inferred | The agents the station runs. See [which agents](agents.md#which-agents-a-station-runs). |
 | `name` | the function's name | The station's name in every record. |
 | `version` | `"0"` | Change it when the station's behaviour changes. |
+| `output_format` | from the output type | How a person sees the output: `OutputFormat.TEXT`, `MARKDOWN` or `JSON`. |
 
 `Station.run_sync(input, store=...)` runs one attempt on its own, outside a factory. That is how a station is tested.

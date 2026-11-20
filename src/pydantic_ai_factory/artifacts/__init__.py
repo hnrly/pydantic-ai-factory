@@ -1,6 +1,7 @@
 """Artifacts: unchangeable, content-addressed records of what a station handed on."""
 
 from ._artifact import Artifact, ArtifactCorrupt, ArtifactInvalid, ArtifactRef, Producer, Untyped
+from ._show import OutputFormat, to_markdown
 from ._store import (
     ArtifactNotFound,
     ArtifactStore,
@@ -15,8 +16,10 @@ __all__ = [
     "ArtifactNotFound",
     "ArtifactRef",
     "ArtifactStore",
+    "OutputFormat",
     "Producer",
     "Untyped",
     "decode_artifact",
     "encode_artifact",
+    "to_markdown",
 ]

@@ -241,7 +241,13 @@ SCRIPTS: dict[str, Script] = {
         "designer": [DESIGN, DESIGN_WITH_BLANK],
         "builder": ["Built index.html."],
     },
-    "docs/stations.md": {"builder": ["Built index.html."], "reviewer": [REVIEW]},
+    "docs/stations.md": {
+        "builder": ["Built index.html."],
+        "reviewer": [REVIEW],
+        "planner": [
+            {"title": "To-do list", "steps": ["Write index.html", "Add a box for new tasks"]}
+        ],
+    },
     "docs/agents.md": {"builder": ["Built index.html."], "reviewer": [REVIEW]},
     "docs/gates.md": {"designer": [DESIGN, DESIGN_WITH_BLANK]},
     "docs/approvals.md": {

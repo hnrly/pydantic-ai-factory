@@ -11,8 +11,10 @@ from .artifacts import (
     ArtifactNotFound,
     ArtifactRef,
     ArtifactStore,
+    OutputFormat,
     Producer,
     Untyped,
+    to_markdown,
 )
 from .contracts import DefinitionError, FactoryError, MethodologyRef
 from .factory import (
@@ -106,6 +108,7 @@ __all__ = [
     "Mission",
     "NotEvaluated",
     "Outcome",
+    "OutputFormat",
     "Producer",
     "Question",
     "Reject",
@@ -134,4 +137,5 @@ __all__ = [
     "gate",
     "passed",
     "station",
+    "to_markdown",
 ]

@@ -26,7 +26,7 @@ from pydantic_ai_factory import (
     Producer,
     Untyped,
 )
-from pydantic_ai_factory.artifacts import decode_artifact, encode_artifact
+from pydantic_ai_factory.artifacts import decode_artifact, encode_artifact, to_markdown
 from pydantic_ai_factory.contracts import canonical_json, digest_of
 
 pytestmark = pytest.mark.anyio
@@ -550,3 +550,43 @@ def test_encode_and_decode_are_the_two_halves_a_store_needs() -> None:
 def test_a_ref_must_carry_a_real_digest() -> None:
     with pytest.raises(ValidationError):
         ArtifactRef(type="Design", digest="sha256:nope")
+
+
+class Step(BaseModel):
+    title: str
+    done: bool
+
+
+class Owner(BaseModel):
+    name: str
+
+
+class Project(BaseModel):
+    title: str
+    owner: Owner
+    steps: list[Step]
+    labels: dict[str, str]
+    notes: list[str] = Field(default_factory=lambda: [], title="Things to remember")
+
+
+def test_to_markdown_writes_nested_models_lists_of_models_and_mappings_as_sections() -> None:
+    project = Project(
+        title="Launch",
+        owner=Owner(name="Ada"),
+        steps=[Step(title="Write it", done=True), Step(title="Ship it", done=False)],
+        labels={"team": "web"},
+    )
+
+    assert to_markdown(project) == (
+        "# Launch\n\n"
+        "## Owner\n\n### Name\n\nAda\n\n"
+        "## Steps\n\n### Write it\n\n#### Done\n\nYes\n\n### Ship it\n\n#### Done\n\nNo\n\n"
+        "## Labels\n\n- **team**: web\n\n"
+        "## Things to remember\n\nNone.\n"
+    )
+
+
+def test_to_markdown_writes_plain_values_without_headings() -> None:
+    assert to_markdown("Hello") == "Hello\n"
+    assert to_markdown(["a", "b"]) == "- a\n- b\n"
+    assert to_markdown([]) == "None.\n"

@@ -29,6 +29,7 @@ from .._methodology import (
 )
 from ..artifacts import Artifact, ArtifactInvalid, ArtifactRef, ArtifactStore, Producer
 from ..artifacts._artifact import adapter_for
+from ..artifacts._show import OutputFormat, format_for, show
 from ..contracts import DefinitionError, FactoryError, MethodologyRef, Name, Record, check_name
 from ..contracts import run_sync as _run_sync
 from ..gates import Evidence, Gate, GateDecision, NotEvaluated
@@ -534,6 +535,9 @@ class Station(Generic[InT, OutT]):
     version: str = "0"
     agents: tuple[AbstractAgent[Any, Any], ...] = ()
     approval: bool = False
+    output_format: OutputFormat | None = None
+    """How a person sees the output. ``None`` is worked out from the output type: a
+    string is text, and anything else is Markdown. It is not part of the digest."""
 
     def __post_init__(self) -> None:
         problems: list[str] = []
@@ -560,6 +564,16 @@ class Station(Generic[InT, OutT]):
                 names.append(agent.name)
         for name in sorted({n for n in names if n and names.count(n) > 1}):
             problems.append(f"two agents are named {name!r}; give each agent its own name")
+        if self.output_format is None:
+            object.__setattr__(self, "output_format", format_for(self.output_type))
+        elif not isinstance(self.output_format, OutputFormat):  # pyright: ignore[reportUnnecessaryIsInstance]
+            try:
+                object.__setattr__(self, "output_format", OutputFormat(self.output_format))
+            except ValueError:
+                formats = ", ".join(repr(str(f)) for f in OutputFormat)
+                problems.append(
+                    f"output_format must be one of {formats}, not {self.output_format!r}"
+                )
         if not problems:
             try:
                 _ = self.methodologies
@@ -567,6 +581,13 @@ class Station(Generic[InT, OutT]):
                 problems.extend(error.findings)
         if problems:
             raise StationDefinitionError(f"station {self.name!r}", problems)
+
+    def show(self, output: Any) -> str:
+        """Show one output, or the JSON data of one, to a person in :attr:`output_format`.
+
+        Raises ``pydantic.ValidationError`` when ``output`` is not this station's output.
+        """
+        return show(output, self.output_type, self.output_format or format_for(self.output_type))
 
     @property
     def methodologies(self) -> tuple[Methodology, ...]:
@@ -749,6 +770,7 @@ def _agent_station(
     version: str,
     gate: Gate[OutT] | None,
     approval: bool,
+    output_format: OutputFormat | None,
 ) -> Station[str, OutT]:
     """Turn one agent into a station: the input is the prompt, the output is the agent's."""
     station_name = agent.name if name is None else name
@@ -779,6 +801,7 @@ def _agent_station(
         version=version,
         agents=(agent,),
         approval=approval,
+        output_format=output_format,
     )
 
 
@@ -795,6 +818,7 @@ def station(
     version: str = "0",
     gate: Gate[OutT] | None = None,
     approval: bool = False,
+    output_format: OutputFormat | None = None,
 ) -> Station[str, OutT]: ...
 
 
@@ -806,6 +830,7 @@ def station(
     gate: Gate[Any] | None = None,
     agents: Sequence[AbstractAgent[Any, Any]] | None = None,
     approval: bool = False,
+    output_format: OutputFormat | None = None,
 ) -> Callable[[StationFn[InT, OutT]], Station[InT, OutT]]: ...
 
 
@@ -818,6 +843,7 @@ def station(
     gate: Gate[Any] | None = None,
     agents: Sequence[AbstractAgent[Any, Any]] | None = None,
     approval: bool = False,
+    output_format: OutputFormat | None = None,
 ) -> Station[Any, Any] | Callable[[StationFn[InT, OutT]], Station[InT, OutT]]:
     """Declare a station from an async function, or from one agent.
 
@@ -830,6 +856,11 @@ def station(
     and hands on the agent's output. Its name is the agent's name.
 
     ``approval=True`` makes a person approve the output once every gate has passed.
+
+    ``output_format`` says how a person sees the output: as text, Markdown or JSON. Left
+    out, a string output is text and anything else is Markdown, which the library writes
+    from the output's shape. It changes how the output looks, not what the station does,
+    so it is not part of the factory's digest.
     """
     if isinstance(fn, AbstractAgent):
         if agents is not None:
@@ -842,6 +873,7 @@ def station(
             version=version,
             gate=gate,
             approval=approval,
+            output_format=output_format,
         )
 
     def wrap(run: StationFn[InT, OutT]) -> Station[InT, OutT]:
@@ -869,6 +901,7 @@ def station(
             version=version,
             agents=agents_used_by(run) if agents is None else tuple(agents),
             approval=approval,
+            output_format=output_format,
         )
 
     return wrap if fn is None else wrap(fn)

@@ -18,7 +18,7 @@ The Design station turns a mission into a design a person can approve and a buil
 | `exclusions` | Accounts, sharing between devices |
 | `open_questions` | Anything the mission left undecided. |
 
-Each field but `title` and `goal` is a list of short sentences. Acceptance criteria are numbered by their place, so the second is AC2. `render_markdown(design)` turns a design into Markdown. If the designer wrote a label such as "AC2:" itself, `render_markdown` drops it, so the label is not printed twice.
+Each field but `title` and `goal` is a list of short sentences. The Design station shows a design as Markdown, which the library writes from its fields: the title as the heading, then a section for the goal and for each list. `to_markdown(design)`, from `pydantic_ai_factory`, gives the same text.
 
 The designer asks for prompt caching, `model_settings={"cache": True}`. Each review round resends the whole conversation, so the provider can serve all but the newest part from its cache.
 

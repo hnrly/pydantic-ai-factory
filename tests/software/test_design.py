@@ -11,14 +11,13 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.profiles import ModelProfile
 
 import pydantic_ai_factory_software as software_package
-from pydantic_ai_factory import Factory, FactoryDefinitionError, MemoryStore, Mission
+from pydantic_ai_factory import Factory, FactoryDefinitionError, MemoryStore, Mission, to_markdown
 from pydantic_ai_factory.methodologies import Goldfish, GoldfishReport
 from pydantic_ai_factory_software import (
     DESIGN_GOLDFISH,
     DESIGN_STANDARDS,
     Design,
     SoftwareFactory,
-    render_markdown,
 )
 from pydantic_ai_factory_software._design import DESIGNER_INSTRUCTIONS
 
@@ -306,15 +305,15 @@ def test_the_design_goldfish_read_in_order_each_held_to_its_own_standard() -> No
     assert tuple(f.standard for f in DESIGN_GOLDFISH) == DESIGN_STANDARDS
 
 
-def test_render_markdown_numbers_the_criteria_and_says_when_a_section_is_empty() -> None:
+def test_a_design_is_shown_as_markdown_with_a_section_per_field() -> None:
     design = Design.model_validate(TODO)
 
-    text = render_markdown(design)
+    text = to_markdown(design)
 
-    assert text.startswith("# To-do list\n\nKeep track of tasks in a browser.\n")
-    assert "- **AC2** Ticked tasks stay ticked after a reload." in text
+    assert text.startswith("# To-do list\n\n## Goal\n\nKeep track of tasks in a browser.\n")
+    assert "## Acceptance criteria\n\n- " in text
     assert "## Open questions\n\nNone.\n" in text
-    assert render_markdown(Design.model_validate(TODO)) == text
+    assert to_markdown(Design.model_validate(TODO)) == text
 
 
 def test_a_design_needs_behaviour_and_acceptance_criteria() -> None:
@@ -331,28 +330,8 @@ def test_the_package_exports_only_the_factory_its_design_parts_and_its_scripted_
             "SoftwareFactory",
             "__version__",
             "offline_model",
-            "render_markdown",
         ]
     )
-
-
-def test_render_markdown_does_not_repeat_a_label_the_designer_wrote() -> None:
-    design = Design.model_validate(
-        {
-            **TODO,
-            "acceptance_criteria": [
-                "AC1: A task typed and entered appears in the list.",
-                "ac2 - Ticked tasks stay ticked after a reload.",
-                "AC3 is not a label when no separator follows the number.",
-            ],
-        }
-    )
-
-    text = render_markdown(design)
-
-    assert "- **AC1** A task typed and entered appears in the list." in text
-    assert "- **AC2** Ticked tasks stay ticked after a reload." in text
-    assert "- **AC3** AC3 is not a label when no separator follows the number." in text
 
 
 def test_the_designer_is_told_not_to_repeat_a_contested_finding_as_an_open_question() -> None:
