@@ -21,17 +21,19 @@ from pydantic_ai_factory import (
     Mission,
     Verdict,
 )
-from pydantic_ai_factory.methodologies import Goldfish, GoldfishReport
+from pydantic_ai_factory.methodologies import ElephantGoldfish, Goldfish, GoldfishReport
 from pydantic_ai_factory_software import (
     DESIGN_GOLDFISH,
     DESIGN_STANDARDS,
+    DESIGNER_INSTRUCTIONS,
     Check,
     Design,
     SoftwareFactory,
     design_is_buildable,
+    design_review,
+    design_station,
     render_markdown,
 )
-from pydantic_ai_factory_software._design import DESIGNER_INSTRUCTIONS
 from pydantic_ai_factory_software._offline import offline_model
 
 MISSION = "A to-do list web page where I can add tasks and tick them off."
@@ -49,6 +51,7 @@ TODO: dict[str, Any] = {
 BLANK = "Pressing Enter on a blank task adds nothing."
 BLANK_FINDING = {
     "severity": "Major",
+    "kind": "gap",
     "issue": "The design never says what happens to a blank task.",
 }
 
@@ -97,14 +100,19 @@ class Pond:
         found = queue.pop(0) if len(queue) > 1 else queue[0]
         reply: dict[str, Any] = {"findings": found}
         if name == "comprehension":
-            reply["paraphrase"] = "A to-do list in the browser: add tasks, tick them off."
+            reply["explain_back"] = {
+                "problem": "Keeping track of tasks.",
+                "who": "One person.",
+                "approach": "A to-do list in the browser: add tasks, tick them off.",
+            }
         return output(info, reply)
 
 
 def factory(designer: Designer, pond: Pond | None = None, **options: Any) -> SoftwareFactory:
-    return SoftwareFactory(
-        FunctionModel(designer), review_model=FunctionModel(pond or Pond()), **options
-    )
+    """The software factory as shipped, with scripted models for the designer and goldfish."""
+    review = design_review(FunctionModel(pond or Pond()))
+    station = design_station(FunctionModel(designer), method=review)
+    return SoftwareFactory(FunctionModel(designer), design=station, **options)
 
 
 def reports(store: MemoryStore, refs: Any) -> list[GoldfishReport]:
@@ -125,10 +133,11 @@ def test_a_mission_is_drafted_reviewed_and_waits_for_a_person_to_approve_the_des
     assert isinstance(run.waiting.output, Design)
     assert run.waiting.output.title == "To-do list"
     assert run.mission_ref is not None
+    # Two clean rounds in a row: every goldfish reads the same draft twice.
     assert {name: len(texts) for name, texts in pond.read.items()} == {
-        "comprehension": 1,
-        "critique": 1,
-        "readiness": 1,
+        "comprehension": 2,
+        "critique": 2,
+        "readiness": 2,
     }
     assert "Ticked tasks stay ticked after a reload." in pond.read["readiness"][0]
 
@@ -183,7 +192,7 @@ def test_a_finding_goes_back_to_the_designer_who_revises_in_the_same_conversatio
     assert [(f.id, f.severity, f.issue) for f in rounds[0].findings] == [
         ("r1-critique-1", "Major", "The design never says what happens to a blank task.")
     ]
-    assert rounds[-1].clean and rounds[-1].round == 2
+    assert [r.clean for r in rounds] == [False, True, True]
     assert MISSION in said(designer.seen[-1])
     assert "r1-critique-1" in said(designer.seen[-1])
 
@@ -199,7 +208,11 @@ def test_a_contested_finding_goes_to_a_person_who_can_accept_the_design_once() -
         ]
     )
     one_file = {**TODO, "behaviour": [*TODO["behaviour"], BLANK, "Everything is in index.html."]}
-    styles = {"severity": "Major", "issue": "The design does not say where the styles go."}
+    styles = {
+        "severity": "Major",
+        "kind": "decision_left_to_builder",
+        "issue": "The design does not say where the styles go.",
+    }
     software = factory(Designer(one_file, contest, one_file), Pond(readiness=[[styles], []]))
     store = MemoryStore()
 
@@ -233,7 +246,7 @@ def test_asking_for_changes_sends_the_note_to_the_designer_and_reviews_afresh() 
     assert run.waiting.output.behaviour[-1] == "Each task has a delete button."
     assert "ada: Add a way to delete tasks." in said(designer.seen[-1])
     assert MISSION in said(designer.seen[-1])
-    assert [r.round for r in reports(store, run.steps[-1].evidence)] == [1]
+    assert [r.round for r in reports(store, run.steps[-1].evidence)] == [1, 2]
     assert "delete button" in pond.read["critique"][-1]
 
 
@@ -282,7 +295,7 @@ def test_the_goldfish_use_the_designers_model_unless_given_their_own() -> None:
     designer = Designer(TODO)
 
     def both(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        if "goldfish" in (info.instructions or ""):
+        if "You are a goldfish" in (info.instructions or ""):
             return pond(messages, info)
         return designer(messages, info)
 
@@ -290,7 +303,7 @@ def test_the_goldfish_use_the_designers_model_unless_given_their_own() -> None:
 
     assert run.waiting is not None and run.waiting.kind == "approval"
     assert len(designer.seen) == 1
-    assert len(pond.read["readiness"]) == 1
+    assert len(pond.read["readiness"]) == 2
 
 
 def test_the_factory_names_its_station_agent_and_methodology_before_a_run() -> None:
@@ -302,8 +315,11 @@ def test_the_factory_names_its_station_agent_and_methodology_before_a_run() -> N
     assert software.stations[0].approval
     assert [agent.name for agent in software.agents()["design"]] == ["designer"]
     assert [str(m.ref) for m in software.methodologies()["design"]] == ["elephant-goldfish@2"]
-    assert (software.rounds, software.repairs) == (2, 2)
-    assert software.goldfish == DESIGN_GOLDFISH
+    [review] = software.methodologies()["design"]
+    assert isinstance(review, ElephantGoldfish)
+    assert (review.rounds, review.clean_rounds, review.settle_contests) == (4, 2, True)
+    assert tuple(review.goldfish) == DESIGN_GOLDFISH
+    assert [rule.limit for rule in software.rework] == [2]
 
 
 def test_the_factory_cannot_be_changed_once_made() -> None:
@@ -315,7 +331,9 @@ def test_the_factory_cannot_be_changed_once_made() -> None:
 
 def test_options_reach_the_review_and_the_rework_rule() -> None:
     fish = (Goldfish("only", stage="critique", job="Find what is wrong."),)
-    software = SoftwareFactory(FunctionModel(Designer(TODO)), rounds=4, repairs=1, goldfish=fish)
+    model = FunctionModel(Designer(TODO))
+    method = ElephantGoldfish(goldfish=fish, rounds=4)
+    software = SoftwareFactory(model, design=design_station(model, method=method), repairs=1)
 
     review = software.methodologies()["design"][0]
     assert getattr(review, "rounds") == 4  # noqa: B009
@@ -632,6 +650,7 @@ def test_a_design_needs_behaviour_and_acceptance_criteria() -> None:
 def test_the_package_exports_only_the_factory_and_its_design_parts() -> None:
     assert sorted(software_package.__all__) == sorted(
         [
+            "DESIGNER_INSTRUCTIONS",
             "DESIGN_GOLDFISH",
             "DESIGN_STANDARDS",
             "Alternative",
@@ -645,6 +664,8 @@ def test_the_package_exports_only_the_factory_and_its_design_parts() -> None:
             "Step",
             "__version__",
             "design_is_buildable",
+            "design_review",
+            "design_station",
             "render_markdown",
         ]
     )
@@ -687,8 +708,11 @@ def test_the_designer_and_every_goldfish_ask_for_prompt_caching() -> None:
         return FunctionModel(respond, profile=ModelProfile(supports_cache=True))
 
     designer = Designer({**TODO, "behaviour": [*TODO["behaviour"], BLANK]})
-    software = SoftwareFactory(recording(designer), review_model=recording(Pond()))
+    review = design_review(recording(Pond()))
+    station = design_station(recording(designer), method=review)
+    software = SoftwareFactory(recording(designer), design=station)
 
     software.run_sync(MISSION, store=MemoryStore())
 
-    assert cached == [True] * (1 + len(DESIGN_GOLDFISH))
+    # One draft, read by every goldfish in each of two clean rounds.
+    assert cached == [True] * (1 + 2 * len(DESIGN_GOLDFISH))

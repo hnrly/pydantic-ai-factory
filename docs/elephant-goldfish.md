@@ -37,14 +37,14 @@ print(result.outcome, result.decision.reasons)
 
 for ref in result.evidence:
     report = store.get_sync(ref, GoldfishReport).payload
-    print(report.round, [(finding.id, finding.severity, finding.issue) for finding in report.findings])
-    #> 1 [('r1-critique-1', 'Major', 'It does not say what happens when you press Enter on a blank task.')]
+    print(report.round, [(finding.id, finding.severity, finding.kind, finding.issue) for finding in report.findings])
+    #> 1 [('r1-critique-1', 'Major', 'gap', 'It does not say what happens when you press Enter on a blank task.')]
     #> 2 []
 ```
 
 When the designer finishes a draft, the goldfish read it. Their findings go back to the designer in the same conversation, and it revises. This repeats until a round is clean or the rounds run out. Inside a [station](stations.md), each round's report is stored, and the station cannot pass unless the last round was clean for this exact draft.
 
-`DESIGN_GOLDFISH` comes from the [software factory](software-factory.md): three goldfish, `comprehension`, `critique` and `readiness`. Above, the first draft did not say what happens to a blank task. The `critique` goldfish found that, the designer added it, and the second round was clean. The station's gate, `clean_final_round`, read both reports. Each is stamped `elephant-goldfish@2`, so runs with the method and without it can be [measured](measuring.md) against each other.
+`DESIGN_GOLDFISH` comes from the [software factory](software-factory.md): three goldfish, `comprehension`, `critique` and `readiness`. Above, the first draft did not say what happens to a blank task. The `critique` goldfish found that, a finding of the kind `gap`, the designer added it, and the second round was clean. The station's gate, `clean_final_round`, read both reports. Each is stamped `elephant-goldfish@2`, so runs with the method and without it can be [measured](measuring.md) against each other.
 
 ## The goldfish
 
@@ -52,7 +52,7 @@ Each goldfish has one job, and they run in three stages.
 
 | Stage | Job |
 |---|---|
-| Comprehension | Explain the work back in its own words, from the work alone. A wrong paraphrase is a finding. |
+| Comprehension | Explain the work back in its own words, from the work alone. A wrong explain-back is a finding. |
 | Critique | Find what is wrong or missing, against one standard. |
 | Readiness | Say whether the next person could act on the work without asking anything. |
 
@@ -69,9 +69,63 @@ page_goldfish = (
 )
 ```
 
-When a round goes back to the author, each comprehension goldfish's paraphrase goes with it. If the paraphrase is not what the author meant, the work says something else, and the author fixes it.
+A comprehension goldfish explains the work back in five parts, an `ExplainBack`: the problem, who has it, what will be true when it is done, the approach, and what it will not do. The report keeps them as one paraphrase. When a round goes back to the author, each comprehension goldfish's paraphrase goes with it. If the paraphrase is not what the author meant, the work says something else, and the author fixes it.
 
 Each goldfish is an agent named `goldfish-<name>`, so it shows up by that name in traces. It uses the author's model unless you pass `model=`. Each goldfish asks for prompt caching, `model_settings={"cache": True}`, because it reads again in the next round with the same instructions.
+
+## The method as skills
+
+The method's guidance is written as [Agent Skills](https://agentskills.io/specification): one folder each, with a `SKILL.md` that has a name, a description and a Markdown body. A person can read and change the method without touching Python. Four ship with Elephant Goldfish, and each body credits the Google or coship-dev text it was ported from. They speak of "the work" and "the request", never of software, so they serve any kind of work.
+
+| Skill | Used by | Carries |
+|---|---|---|
+| `design-interview` | The author | What only a person can decide, and how to ask it: rounds of up to four questions, options with what each costs and when it fails, the recommended option first. |
+| `design-resolve` | The author | How to answer a finding: fix it, contest it with a citation anyone can check, or escalate it. Never contest a comprehension finding, and never change a severity. |
+| `goldfish-comprehension` | The comprehension goldfish | Its job, its kind, `unclear`, and its standard, `clear`. |
+| `goldfish-critique` | The critique goldfish | Its job, its seven kinds, such as `gap` and `failure_mode`, and its standard, `faithful`. At most seven findings. |
+
+**The author** is offered the two author skills by name and description, through Pydantic AI Harness's `Skills`, and loads one with the `load_capability` tool when it needs it. Its instructions say when: "Load design-interview before you ask a person, and design-resolve when review findings come back." The skills are read from the method's own folder, so this works whatever the run's workspace is, or with none. There is no switch to turn it off.
+
+**Each goldfish** gets its skill's body as its instructions, read once when the goldfish is built. A reviewer whose whole job is one skill should not have to choose to load it.
+
+**The default goldfish.** `goldfish` defaults to `ElephantGoldfish.GOLDFISH`: comprehension and critique, built from the method's skills. Critique also reads the request. Pass your own goldfish and you get exactly your own.
+
+**No review.** `ElephantGoldfish(goldfish=())` means no review: no goldfish run, the `contest` and `escalate` tools and the review instructions are left out, and the gate passes. The author is still offered the method's skills.
+
+```python
+from pydantic_ai_factory.methodologies import ElephantGoldfish
+
+print([fish.name for fish in ElephantGoldfish().goldfish])
+#> ['comprehension', 'critique']
+print(ElephantGoldfish(goldfish=()).get_instructions())
+#> Load design-interview before you ask a person, and design-resolve when review findings come back.
+```
+
+A goldfish of your own can be a skill too. `Goldfish.from_skill(path)` builds one from a `SKILL.md`, or its folder. The body is its job; a `## Standard` section, named by `metadata.standard`, is its standard; a `## Sources` section is for people and is left out. By default its name is the skill's name without `goldfish-`, its stage is that name when it is a stage, and its kinds come from `metadata.kinds`. Pass `name=`, `stage=`, `kinds=` or `sees_request=` to choose them. A skill whose stage cannot be told is refused.
+
+```python
+from pathlib import Path
+from tempfile import mkdtemp
+
+from pydantic_ai_factory.methodologies import Goldfish
+
+folder = Path(mkdtemp()) / "goldfish-plain-words"
+folder.mkdir()
+folder.joinpath("SKILL.md").write_text(
+    "---\n"
+    "name: goldfish-plain-words\n"
+    "description: Finds words a newcomer would not know.\n"
+    "metadata:\n"
+    "  kinds: jargon\n"
+    "---\n\n"
+    "Report every word a newcomer would not know.\n"
+)
+plain = Goldfish.from_skill(folder, stage="critique")
+print(plain.name, plain.stage, plain.kinds, plain.job)
+#> plain-words critique ('jargon',) Report every word a newcomer would not know.
+```
+
+An author may hold other skills as well, such as the [software factory's](design-station.md#the-designers-skills). A second `Skills` on the same agent joins the method's catalogue, so the author sees one list. Attach Elephant Goldfish first and give the later `Skills` `duplicate_names="keep_first"`: then a later skill with a method skill's name is skipped with a warning, and never replaces it. Attached the other way round, the run fails on the duplicate name.
 
 ## What each goldfish sees
 
@@ -135,7 +189,7 @@ Code checks what a goldfish returns before the author sees it. Every quote must 
 
 The author answers every finding: it fixes it, contests it with evidence, escalates it to a person, or leaves a nit alone. It contests with the `contest` tool and escalates with the `escalate` tool. Escalated findings always go to a person as an [escalation](approvals.md#escalation); code never waves them through. So does anything still open when the rounds run out.
 
-A contest goes to a person too, unless it cites something anyone can check and you ask for that to settle it. The `contest` tool takes `cites`: `path:symbol` for code, such as `app/tasks.py:add_task`, or `field:name` for a part of the author's output, such as `field:exclusions`. Code checks that the field is on the output, or that the path exists in the run's workspace, the one Pydantic AI gives the author's run. A path cannot be checked without a workspace. With `ElephantGoldfish(settle_contests=True)`, a contest whose citation checks out settles its finding, and no person is asked about it. With the default, `False`, every contest goes to a person, as in 0.1. The tool's reply tells the author which happened.
+A contest goes to a person too, unless it cites something anyone can check and you ask for that to settle it. The `contest` tool takes `cites`: `path:symbol` for code, such as `app/tasks.py:add_task`, or `field:name` for a part of the author's output, such as `field:non_goals`. Code checks that the field is on the output, or that the path exists in the run's workspace, the one Pydantic AI gives the author's run. A path cannot be checked without a workspace. With `ElephantGoldfish(settle_contests=True)`, a contest whose citation checks out settles its finding, and no person is asked about it. With the default, `False`, every contest goes to a person, as in 0.1. The tool's reply tells the author which happened.
 
 A settled finding stays settled. When a goldfish raises a finding in a later round with the same `where` and `kind` as one it raised before that has since settled, the new one is settled at once and names the first in `same_as`. It is not sent to the author again. A finding with neither a `where` nor a `kind` names nothing to match, so it is never settled this way.
 
@@ -168,7 +222,7 @@ Elephant Goldfish does not give the author a way to ask a person. Asking is its 
 
 | Setting | Default | Means |
 |---|---|---|
-| `goldfish` | required | The reviewers. |
+| `goldfish` | `ElephantGoldfish.GOLDFISH`: comprehension and critique | The reviewers. `()` means no review. |
 | `rounds` | 2 | Rounds of review before what is left goes to a person. |
 | `model` | the author's | The model the goldfish use. |
 | `to_text` | `None`: a structured draft as JSON | A function that turns a draft into the text the goldfish read. |

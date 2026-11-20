@@ -15,11 +15,12 @@ import re
 import secrets
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal, cast
+from pathlib import Path
+from typing import Any, ClassVar, Literal, cast
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, DeferredToolRequests, ModelRetry, RunContext
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
     ModelMessage,
@@ -38,6 +39,13 @@ from ...artifacts import Artifact
 from ...artifacts._artifact import adapter_for
 from ...contracts import Digest, FactoryError, Name, Record, check_name, digest_of
 from ...gates import Evidence, Gate, Verdict, escalate, failed, passed
+from ._skills import (
+    AUTHOR_SENTENCE,
+    METHOD_SKILLS,
+    ExplainBack,
+    author_skills,
+    read_goldfish_skill,
+)
 
 Severity = Literal["Blocker", "Major", "Nit"]
 """How much a finding matters. A ``Blocker`` or a ``Major`` stops a round being clean."""
@@ -116,6 +124,61 @@ class Goldfish:
             raise MethodologyDefinitionError(f"goldfish {self.name!r}", problems)
         # A list is accepted, and kept as a tuple so the goldfish stays frozen data.
         object.__setattr__(self, "kinds", tuple(cast("Sequence[str]", self.kinds)))
+
+    @classmethod
+    def from_skill(
+        cls,
+        path: str | Path,
+        *,
+        name: str | None = None,
+        stage: Stage | None = None,
+        kinds: Sequence[str] | None = None,
+        sees_request: bool = False,
+    ) -> Goldfish:
+        """A goldfish whose instructions are an Agent Skill: a ``SKILL.md``, or its folder.
+
+        The skill's body is the goldfish's job, and its ``## Standard`` section, named by
+        ``metadata.standard``, the standard it holds the work to. The ``## Sources``
+        section is for people and is left out. By default the name is the skill's name
+        without its ``goldfish-`` prefix, the stage is that name when it is a stage, and the
+        kinds come from ``metadata.kinds``. ``metadata.max_findings`` caps the findings.
+        A skill whose stage cannot be told is refused with a message.
+        """
+        try:
+            skill = read_goldfish_skill(path)
+        except ValueError as error:
+            raise MethodologyDefinitionError(
+                f"goldfish skill {str(path)!r}", [str(error)]
+            ) from None
+        fish = name if name is not None else skill.name.removeprefix("goldfish-")
+        if stage is None:
+            if fish not in STAGES:
+                raise MethodologyDefinitionError(
+                    f"goldfish skill {skill.name!r}",
+                    [f"its name {fish!r} is not a stage; pass stage=, one of " + ", ".join(STAGES)],
+                )
+            stage = fish  # narrowed to a stage by the check above
+        problems: list[str] = []
+        if (skill.standard_name is None) != (skill.standard_text is None):
+            problems.append(
+                "a standard needs both metadata.standard, its name, and a '## Standard' section"
+            )
+        if problems:
+            raise MethodologyDefinitionError(f"goldfish skill {skill.name!r}", problems)
+        standard = (
+            Standard(skill.standard_name, skill.standard_text)
+            if skill.standard_name is not None and skill.standard_text is not None
+            else None
+        )
+        return cls(
+            fish,
+            stage=stage,
+            job=skill.job,
+            standard=standard,
+            sees_request=sees_request,
+            kinds=tuple(kinds) if kinds is not None else skill.kinds,
+            max_findings=skill.max_findings or MAX_FINDINGS,
+        )
 
 
 def _kind_problems(kinds: object) -> list[str]:
@@ -267,8 +330,8 @@ class _Found(BaseModel):
 class _Explained(_Found):
     """What a comprehension goldfish returns: the work in its own words, then its findings."""
 
-    paraphrase: str = Field(
-        min_length=1, description="What the work says, explained back in your own words."
+    explain_back: ExplainBack = Field(
+        description="What the work says, explained back in your own words, from the work alone."
     )
 
 
@@ -535,6 +598,13 @@ def _settle_repeats(
     )
 
 
+COMPREHENSION = Goldfish.from_skill(METHOD_SKILLS / "goldfish-comprehension")
+"""Explains the work back from the work alone; reports what a capable reader could not follow."""
+
+CRITIQUE = Goldfish.from_skill(METHOD_SKILLS / "goldfish-critique", sees_request=True)
+"""Compares the work with the request and the explain-back: at most seven findings, worst first."""
+
+
 @dataclass
 class ElephantGoldfish(Methodology):
     """Google's Elephant Goldfish method, as one Pydantic AI capability.
@@ -557,6 +627,16 @@ class ElephantGoldfish(Methodology):
     when the last round was clean for this exact output and nothing unsettled was
     contested or escalated; those, and still-open findings, go to a person.
 
+    ``goldfish`` defaults to :attr:`GOLDFISH`, comprehension and critique built from the
+    method's own skills. ``goldfish=()`` means no review: no goldfish run, and the
+    ``contest`` and ``escalate`` tools and the review instructions are left out.
+
+    Either way the author is offered the method's two author skills, ``design-interview``
+    and ``design-resolve``, through Pydantic AI Harness's ``Skills``, read from the method's
+    own folder. Another ``Skills`` on the same agent joins the same catalogue; attach the
+    method first, and give the later one ``duplicate_names='keep_first'``, so a later skill
+    with a method skill's name never replaces it.
+
     It adds no tool for asking a person. Give the author
     :class:`~pydantic_ai_factory.AskPerson` beside it for that; a question asked mid-review
     keeps the review, because the review is saved in each response's metadata.
@@ -575,7 +655,10 @@ class ElephantGoldfish(Methodology):
     version = "2"
     evidence = (GoldfishReport,)
 
-    goldfish: Sequence[Goldfish]
+    GOLDFISH: ClassVar[tuple[Goldfish, ...]] = (COMPREHENSION, CRITIQUE)
+    """The default goldfish: comprehension and critique, built from the method's skills."""
+
+    goldfish: Sequence[Goldfish] = (COMPREHENSION, CRITIQUE)
     rounds: int = 2
     model: Model | str | None = None
     to_text: Callable[[Any], str] | None = None
@@ -587,6 +670,10 @@ class ElephantGoldfish(Methodology):
         init=False, repr=False, compare=False, default_factory=lambda: {}
     )
     _state: _Rounds | None = field(init=False, repr=False, compare=False, default=None)
+    # The author's catalogue. ``None`` once it has joined another Skills on the same agent.
+    _skills: AbstractCapability[Any] | None = field(
+        init=False, repr=False, compare=False, default=None
+    )
 
     def __post_init__(self) -> None:
         listed: object = self.goldfish
@@ -595,8 +682,6 @@ class ElephantGoldfish(Methodology):
             problems.append("goldfish must be a list of Goldfish")
             listed = ()
         fishes = tuple(cast("Sequence[object]", listed))
-        if not fishes and not problems:
-            problems.append("give it at least one goldfish")
         strangers = [fish for fish in fishes if not isinstance(fish, Goldfish)]
         problems.extend(f"{stranger!r} is not a Goldfish" for stranger in strangers)
         names = [fish.name for fish in fishes if isinstance(fish, Goldfish)]
@@ -635,7 +720,8 @@ class ElephantGoldfish(Methodology):
         if self.id is None:
             self.id = self.name
         # Each round that finds something uses one output retry; ctx.run_agent adds this.
-        setattr(self, "output_retries", self.rounds)  # noqa: B010
+        setattr(self, "output_retries", self.rounds if self.goldfish else 0)  # noqa: B010
+        self._skills = author_skills()
         self._agents = {}
         for fish in self.goldfish:
             agent: Agent[str, Any] = Agent(
@@ -653,7 +739,28 @@ class ElephantGoldfish(Methodology):
             agent.output_validator(_checker(fish))
             self._agents[fish.name] = agent
 
-    async def for_run(self, ctx: RunContext[Any]) -> ElephantGoldfish:
+    def apply(self, visitor: Callable[[AbstractCapability[Any]], None]) -> None:
+        # The author's catalogue is a child of this capability, so a Skills elsewhere on
+        # the agent combines with it into one catalogue, as two Skills on one agent do.
+        visitor(self)
+        if self._skills is not None:
+            self._skills.apply(visitor)
+
+    def visit_and_replace(
+        self, visitor: Callable[[AbstractCapability[Any]], AbstractCapability[Any] | None]
+    ) -> AbstractCapability[Any] | None:
+        replaced = visitor(self)
+        if replaced is not self or self._skills is None:
+            return replaced
+        skills = self._skills.visit_and_replace(visitor)
+        if skills is self._skills:
+            return self
+        # The catalogue was combined elsewhere (None), or holds the combined one now.
+        changed = copy.copy(self)
+        changed._skills = skills
+        return changed
+
+    async def for_run(self, ctx: RunContext[Any]) -> AbstractCapability[Any]:
         fresh = copy.copy(self)
         fresh._state = _Rounds.restored(ctx.messages)
         # Answers given in the response the run stopped at ran after it was saved.
@@ -661,7 +768,11 @@ class ElephantGoldfish(Methodology):
         if fresh._state.pending is not None and last is not None:
             for part in last.tool_calls:
                 await fresh._replay(ctx, part)
-        return fresh
+        if self._skills is None:
+            return fresh
+        # The agent runs this capability's own children no other way: offer the catalogue here.
+        fresh._skills = None
+        return CombinedCapability([fresh, await self._skills.for_run(ctx)])
 
     async def _replay(self, ctx: RunContext[Any], part: ToolCallPart) -> None:
         args = part.args_as_dict()
@@ -688,6 +799,8 @@ class ElephantGoldfish(Methodology):
         return response
 
     def get_instructions(self) -> str:
+        if not self.goldfish:
+            return AUTHOR_SENTENCE
         return (
             "You work by the Elephant Goldfish method. When you finish a draft, fresh "
             "reviewers who know nothing of this conversation read it. If they find a "
@@ -695,10 +808,12 @@ class ElephantGoldfish(Methodology):
             "and Major: fix it, contest it with the contest tool and your evidence, or "
             "escalate it to a person with the escalate tool. When you contest, cite what "
             "anyone can check: path:symbol for code, or field:name for a part of your output. "
-            "Nits never block."
+            "Nits never block. " + AUTHOR_SENTENCE
         )
 
-    def get_toolset(self) -> AbstractToolset[Any]:
+    def get_toolset(self) -> AbstractToolset[Any] | None:
+        if not self.goldfish:
+            return None  # no review: nothing to contest or escalate
         toolset: FunctionToolset[Any] = FunctionToolset(id="elephant-goldfish")
 
         @toolset.tool(name="contest")
@@ -711,7 +826,7 @@ class ElephantGoldfish(Methodology):
                 finding_id: The finding's id, such as r1-critique-1.
                 evidence: Why the finding is wrong, with evidence.
                 cites: What anyone can check: path:symbol for code, such as src/app.py:add,
-                    or field:name for a part of your output, such as field:exclusions.
+                    or field:name for a part of your output, such as field:non_goals.
             """
             return await self._contest(ctx, finding_id, evidence, cites)
 
@@ -791,7 +906,7 @@ class ElephantGoldfish(Methodology):
     async def after_output_process(
         self, ctx: RunContext[Any], *, output_context: OutputContext, output: Any
     ) -> Any:
-        if ctx.partial_output or isinstance(output, DeferredToolRequests):
+        if ctx.partial_output or isinstance(output, DeferredToolRequests) or not self.goldfish:
             return output
         if self._state is None:
             self._state = _Rounds()
@@ -877,7 +992,9 @@ class ElephantGoldfish(Methodology):
                 GoldfishResult(
                     goldfish=fish.name,
                     stage=fish.stage,
-                    paraphrase=outcome.paraphrase if isinstance(outcome, _Explained) else None,
+                    paraphrase=(
+                        outcome.explain_back.to_text() if isinstance(outcome, _Explained) else None
+                    ),
                     findings=tuple(
                         Finding(
                             id=f"r{round}-{fish.name}-{n}",
@@ -928,8 +1045,12 @@ class ElephantGoldfish(Methodology):
 
     @property
     def gate(self) -> Gate[Any]:
-        """The gate ``clean_final_round``: :meth:`judge`, requiring a :class:`GoldfishReport`."""
-        return Gate(name=GATE_NAME, version=self.version, check=self.judge, requires=self.evidence)
+        """The gate ``clean_final_round``: :meth:`judge`, requiring a :class:`GoldfishReport`.
+
+        With no goldfish there is no review, so nothing is required and the gate passes.
+        """
+        requires = self.evidence if self.goldfish else ()
+        return Gate(name=GATE_NAME, version=self.version, check=self.judge, requires=requires)
 
     def judge(self, output: Artifact[Any], evidence: Evidence) -> Verdict:
         """Pass only if the last round was clean for this exact output and nothing went to a person.
@@ -938,6 +1059,8 @@ class ElephantGoldfish(Methodology):
         to a person; settled findings do not. A last round that read a different draft from
         the output fails.
         """
+        if not self.goldfish:
+            return passed("no review was asked for: Elephant Goldfish has no goldfish")
         reports = [artifact.payload for artifact in evidence.of(GoldfishReport)]
         final = reports[-1]
         if final.draft_digest != digest_of(output.body()["payload"]):

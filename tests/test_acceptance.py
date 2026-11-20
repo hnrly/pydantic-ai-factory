@@ -386,7 +386,8 @@ def test_you_can_have_work_reviewed_by_fresh_goldfish_revised_in_the_authors_own
             return critique(messages, info)
         if "Stage: readiness" in stage:
             return readiness(messages, info)
-        explained: dict[str, Any] = {"paraphrase": "A to-do list page.", "findings": []}
+        explain_back = {"problem": "Tasks.", "who": "One person.", "approach": "A to-do list page."}
+        explained: dict[str, Any] = {"explain_back": explain_back, "findings": []}
         return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, explained)])
 
     designer = Agent(
