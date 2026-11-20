@@ -16,6 +16,10 @@ the case's repository, so each run is in a Docker container: the experiment refu
 start one when ``docker info`` fails. Offline they run on the scripted designer; otherwise
 on ``--model``, by default :data:`~evals.version.PINNED_MODEL`. With no arm named, an
 offline experiment runs every arm it can: the factory arms too when Docker is running.
+
+The ``claude-code`` arm starts the real Claude Code program in a Docker container, on
+the pinned model, so it runs only on real models and never offline. ``--model`` does not
+change it.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from pydantic_ai.models import Model
 from pydantic_evals import Case, Dataset
 
 from evals import facts
+from evals.adapters.claude_code import CLAUDE_CODE_ARM, ClaudeCodeAdapter
 from evals.adapters.factory import FACTORY_ARM, SIMPLE_ARM, FactoryAdapter
 from evals.adapters.scripted import ARM_PREFIX, KINDS, Kind, scripted_designer, scripted_system
 from evals.cases import PublicCase, cases
@@ -52,9 +57,11 @@ SCRIPTED_ARMS: dict[str, Kind] = {ARM_PREFIX + kind: kind for kind in KINDS}
 FACTORY_ARMS: dict[str, bool] = {FACTORY_ARM: True, SIMPLE_ARM: False}
 """The two factory arms, and whether each has the review. They run offline and on real models."""
 
-SANDBOX_ARMS: frozenset[str] = frozenset(FACTORY_ARMS)
-"""The arms that read files, each in its own Docker container. The Claude Code arm joins
-it when its adapter is added."""
+REAL_ONLY_ARMS: frozenset[str] = frozenset({CLAUDE_CODE_ARM})
+"""The arms that start a real program on a real model, so never run offline."""
+
+SANDBOX_ARMS: frozenset[str] = frozenset({*FACTORY_ARMS, CLAUDE_CODE_ARM})
+"""The arms that read files, each in its own Docker container."""
 
 DOCKER_NEEDED = "Docker is needed to run the {arms} arm(s), and `docker info` failed."
 
@@ -102,13 +109,16 @@ def run_experiment(
         print(f"--repeat is at least 1, not {repeat}")
         return 2
     chosen, left_out = (list(arms), []) if arms else default_arms(offline)
-    known = [*SCRIPTED_ARMS, *FACTORY_ARMS]
+    known = [*SCRIPTED_ARMS, *FACTORY_ARMS, CLAUDE_CODE_ARM]
     for arm in chosen:
         if arm not in known:
             print(f"There is no arm called {arm!r}. The arms are {', '.join(known)}.")
             return 2
         if arm in SCRIPTED_ARMS and not offline:
             print(f"The {arm} arm is a scripted test fixture and runs only with --offline.")
+            return 2
+        if arm in REAL_ONLY_ARMS and offline:
+            print(f"The {arm} arm starts the real program on a real model, so not with --offline.")
             return 2
     refusal = docker_refusal(chosen)
     if refusal is not None:
@@ -127,10 +137,10 @@ def default_arms(offline: bool) -> tuple[list[str], list[str]]:
 
     Offline, that is the scripted systems, and the factory arms when Docker is running;
     when it is not, they are left out, and the experiment says so when it ends. On real
-    models it is the factory arms.
+    models it is the Claude Code arm and the factory arms.
     """
     if not offline:
-        return list(FACTORY_ARMS), []
+        return [CLAUDE_CODE_ARM, *FACTORY_ARMS], []
     if docker_available():
         return [*SCRIPTED_ARMS, *FACTORY_ARMS], []
     return list(SCRIPTED_ARMS), list(FACTORY_ARMS)
@@ -259,6 +269,8 @@ def _system(
     """The system an arm runs on one case."""
     if arm in SCRIPTED_ARMS:
         return scripted_system(SCRIPTED_ARMS[arm], sheet)
+    if arm == CLAUDE_CODE_ARM:
+        return ClaudeCodeAdapter(cap_usd=CAP_USD)
     designer = scripted_designer(sheet, overlay=overlay_of(case)) if offline else model
     return FactoryAdapter(designer, review=FACTORY_ARMS[arm])
 

@@ -18,6 +18,9 @@ MAX_QUESTIONS_PER_CALL = 4
 PINNED_MODEL = "anthropic:claude-opus-5-5"
 """The model both factory arms run on, the designer's and the goldfish's alike."""
 
+CLAUDE_CODE_MODEL = PINNED_MODEL.removeprefix("anthropic:")
+"""The same pinned model, as Claude Code names it: the model the ``claude-code`` arm runs on."""
+
 JUDGE_MODEL = "anthropic:claude-sonnet-5-5"
 """The model that reads a case's hidden checklist. It never decides a run's outcome."""
 

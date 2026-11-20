@@ -44,6 +44,8 @@ ANTHROPIC_API_KEY=... uv run pytest -m live
 
 Tests marked `live` are skipped unless asked for with `-m live`. They make real, paid requests to `anthropic:claude-opus-5-5`. Report the date, the model and what each test returned.
 
+`-m live` also runs the benchmark's smoke case through Claude Code, inside a Docker container. That test needs Docker running, the sandbox image built with `uv run python -m evals --build-image`, and the long-lived sign-in token in `CLAUDE_CODE_OAUTH_TOKEN`. It also needs Claude Code installed and signed in, so that `claude auth status` reports an account. It is skipped, with the reason, when any of these is missing.
+
 ## The two boundaries
 
 The import check enforces two rules. They are part of the design, not style.
