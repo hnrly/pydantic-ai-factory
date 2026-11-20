@@ -29,7 +29,7 @@ def test_the_software_package_pins_the_core_it_was_built_with() -> None:
     )
 
     assert software["project"]["dependencies"] == [
-        f"pydantic-ai-factory=={pydantic_ai_factory.__version__}"
+        f"pydantic-ai-factory[methodologies]=={pydantic_ai_factory.__version__}"
     ]
 
 

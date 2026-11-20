@@ -2,6 +2,10 @@
 
 Every change a user can see is listed here, newest first.
 
+## Unreleased
+
+- Put Elephant Goldfish behind a new optional extra, `pydantic-ai-factory[methodologies]`, which adds Pydantic AI Harness. Importing `pydantic_ai_factory.methodologies` now needs it; without it the import fails at once with `ImportError: Elephant Goldfish needs the methodologies extra: pip install "pydantic-ai-factory[methodologies]"`. Every name imports from where it did, and the rest of the core imports and runs without the extra. `pydantic-ai-factory-software` depends on the extra, so its users see no change. An import check stops any core layer below `methodologies` importing the harness.
+
 ## 0.1.1
 
 - Document `on_step` on the Factories page: it is awaited with the run after every save, and an error raised in it leaves the run saved as `"running"`. List `"running"` among a run's outcomes, as a run saved between stations has it.

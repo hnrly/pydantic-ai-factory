@@ -85,6 +85,14 @@ The words used below each have a page under Concepts, starting with [factories](
 
 **Why.** The claim that the core is generic should rest on a package boundary, not on discipline.
 
+## Elephant Goldfish sits behind the methodologies extra
+
+**Decided.** Elephant Goldfish ships in `pydantic-ai-factory`, in `pydantic_ai_factory.methodologies`, behind an optional extra: `pip install "pydantic-ai-factory[methodologies]"`. The extra adds Pydantic AI Harness. Importing `pydantic_ai_factory.methodologies` without it fails at once with a message naming that command. Only `methodologies` may import the harness, and the import check enforces it. The software package depends on the extra, so its users see no change.
+
+**Why.** The method's skills load through Pydantic AI Harness. The core should not require the harness of someone who writes their own methodology, and an extra keeps the import path `pydantic_ai_factory.methodologies` where it was in 0.1.
+
+**Rejected.** A separate `pydantic-ai-factory-methodologies` distribution. It would be a third distribution to version and release in step, and it would move the import path, needing a shim and a deprecation for 0.1 users.
+
 ## The type is `Artifact`
 
 **Decided.** The type is spelled `Artifact`, and these pages use "artifact" as a defined term. All other prose is British.

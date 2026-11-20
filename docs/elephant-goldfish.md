@@ -7,6 +7,14 @@ description: Google's method for design-driven development. The author keeps the
 
 Elephant Goldfish is Google's [method](https://github.com/google/elephant-goldfish-model) for design-driven development. The author, the elephant, remembers everything: the mission, the conversation, every decision. The reviewers, the goldfish, remember nothing. Each is a fresh agent that sees only the finished work and one standard. A goldfish cannot read what the author meant, only what the author wrote, so what it finds is what a real reader would find.
 
+Elephant Goldfish needs the core's `methodologies` extra, which brings [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/). The software package below depends on it, so installing `pydantic-ai-factory-software` is enough for this sample:
+
+```bash
+pip install "pydantic-ai-factory[methodologies]"
+```
+
+Without the extra, `import pydantic_ai_factory.methodologies` fails at once with a message that names that command. The rest of the core imports and runs without it.
+
 ```python
 from pydantic_ai import Agent
 

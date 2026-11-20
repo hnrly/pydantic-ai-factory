@@ -119,7 +119,7 @@ Include the version, your platform, the command you ran with secrets removed, wh
 Only the maintainer releases. A release is a tag; GitHub Actions does the rest.
 
 1. Run the `live` tests against a real model, as above, on the commit you will release.
-2. In a pull request, rename `## Unreleased` in `CHANGELOG.md` to `## <version>` and set that version in both `pyproject.toml` files. The software package pins the core at the same version. Check it with `uv run python scripts/release_check.py v<version>`.
+2. In a pull request, rename `## Unreleased` in `CHANGELOG.md` to `## <version>` and set that version in both `pyproject.toml` files. The software package pins the core, with its `methodologies` extra, at the same version. Check it with `uv run python scripts/release_check.py v<version>`.
 3. Once it has merged, tag `main` and push the tag: `git tag v<version> && git push origin v<version>`.
 
 The Release workflow checks the tag again, builds both packages and imports the built wheels. It then publishes the core and then the software package to PyPI with trusted publishing, so no PyPI token is stored anywhere. Last, it makes the GitHub release, with the changelog lines as its notes. Running the workflow by hand with a tag is a dry run that publishes nothing.

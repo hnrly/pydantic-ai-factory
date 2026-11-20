@@ -589,6 +589,11 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 
+[package.optional-dependencies]
+methodologies = [
+    { name = "pydantic-ai-harness", extra = ["skills"] },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "anyio" },
@@ -607,9 +612,11 @@ dev = [
 requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.30,<2" },
     { name = "pydantic", specifier = ">=2.14,<3" },
+    { name = "pydantic-ai-harness", extras = ["skills"], marker = "extra == 'methodologies'", specifier = ">=0.68,<0.69" },
     { name = "pydantic-ai-slim", specifier = ">=2.68,<3" },
     { name = "typing-extensions", specifier = ">=4.12" },
 ]
+provides-extras = ["methodologies"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -630,7 +637,7 @@ name = "pydantic-ai-factory-software"
 version = "0.1.1"
 source = { editable = "packages/software" }
 dependencies = [
-    { name = "pydantic-ai-factory" },
+    { name = "pydantic-ai-factory", extra = ["methodologies"] },
 ]
 
 [package.optional-dependencies]
@@ -640,7 +647,7 @@ anthropic = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pydantic-ai-factory", editable = "." },
+    { name = "pydantic-ai-factory", extras = ["methodologies"], editable = "." },
     { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'anthropic'", specifier = ">=2.68,<3" },
 ]
 provides-extras = ["anthropic"]
@@ -666,6 +673,9 @@ anthropic = [
 coder = [
     { name = "json-repair" },
     { name = "ripgrep", marker = "sys_platform != 'android'" },
+]
+skills = [
+    { name = "pyyaml" },
 ]
 
 [[package]]

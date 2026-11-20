@@ -20,7 +20,8 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Typing :: Typed",
 ]
-dependencies = ["pydantic-ai-factory==0.1.1"]
+# Its designer uses Elephant Goldfish, which needs the core's `methodologies` extra.
+dependencies = ["pydantic-ai-factory[methodologies]==0.1.1"]
 
 [project.scripts]
 factory = "pydantic_ai_factory_software.cli:entry"
