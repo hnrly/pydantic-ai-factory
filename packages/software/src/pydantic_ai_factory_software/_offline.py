@@ -57,16 +57,60 @@ def title_of(mission: str) -> str:
 
 
 def _design(mission: str, *, revised: bool, notes: list[str]) -> dict[str, Any]:
+    """A design that passes the gate: every criterion proved, every change in a step."""
     objective = mission.split("\n\n", 1)[0]
     sentences = _sentences(objective) or ["Do what the mission asks."]
     behaviour = [*sentences, *([BLANK_RULE] if revised else []), *notes]
+    criteria = [f"A person can check this works: {line}" for line in behaviour]
     return {
         "title": title_of(objective),
-        "goal": sentences[0],
+        "summary": sentences[0],
+        "problem": "The mission asks for this, and nothing does it yet.",
+        "goals": sentences,
+        "non_goals": ["Anything the mission does not ask for."],
         "behaviour": behaviour,
-        "acceptance_criteria": [f"A person can check this works: {line}" for line in behaviour],
-        "exclusions": ["Anything the mission does not ask for."],
-        "open_questions": [],
+        "acceptance_criteria": criteria,
+        "architecture": "One page, index.html, that opens in a browser with nothing to install.",
+        "decisions": [
+            {
+                "topic": "Scope",
+                "choice": "Only what the mission asks for.",
+                "reason": "The mission says what is wanted, and nothing more is needed.",
+                "source": "request",
+            }
+        ],
+        "alternatives": [
+            {
+                "title": "A server with a database",
+                "pros": "Data could be shared between devices.",
+                "cons": "Something to install and run.",
+                "rejected_because": "The mission does not ask for it.",
+                "rejected_by": "drafting",
+            }
+        ],
+        "changes": [
+            {
+                "path": "index.html",
+                "action": "create",
+                "what": "The whole page.",
+                "why": "It is all the mission needs.",
+            }
+        ],
+        "steps": [
+            {
+                "title": "Write the page",
+                "changes": ["index.html"],
+                "depends_on": [],
+                "done_when": "Every acceptance criterion holds in a browser.",
+            }
+        ],
+        "verification": [
+            {
+                "kind": "manual",
+                "check": "Open index.html in a browser and try each criterion",
+                "proves": list(range(1, len(criteria) + 1)),
+            }
+        ],
     }
 
 
