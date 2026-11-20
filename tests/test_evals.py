@@ -114,7 +114,7 @@ def test_both_arms_share_a_name_and_differ_only_in_the_methodology() -> None:
     without = evals.design_factory(plain_designer).methodologies()["design"]
 
     assert designer.name == plain_designer.name == "designer"
-    assert [str(m.ref) for m in with_review] == ["elephant-goldfish@1"]
+    assert [str(m.ref) for m in with_review] == ["elephant-goldfish@2"]
     assert without == ()
 
 

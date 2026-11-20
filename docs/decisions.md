@@ -109,6 +109,14 @@ The words used below each have a page under Concepts, starting with [factories](
 
 **Rejected.** Making people add `AskPerson` beside Elephant Goldfish themselves, which they would forget. Keeping our own `ask_person` tool and `Question` model, and a cap that counts questions rather than rounds, which refused an agent for asking its questions together.
 
+## A contest that cites what anyone can check may settle a finding
+
+**Decided.** The `contest` tool takes `cites`: `path:symbol` for code, or `field:name` for a part of the author's output. Code checks the citation: that the field is on the output, or that the path exists in the run's workspace. With `ElephantGoldfish(settle_contests=True)`, a contest whose citation checks out settles its finding without a person. A settled finding stays settled: a later finding from the same goldfish with the same `where` and `kind` is settled at once and is not sent to the author again. Escalations always go to a person. The core default is unchanged: `settle_contests=False`, so every contest still goes to a person unless you choose otherwise. This narrows the rule in [Elephant Goldfish](elephant-goldfish.md#findings-and-answers) that code never waves a contested finding through, for those who choose it.
+
+**Why.** A contest that cites a file anyone can open, or a field anyone can read, should not stop a run for a question code can answer. Code checks the citation, so a model never decides the gate. Keeping the old default means other users see no change unless they choose it.
+
+**Rejected.** Sending every contested finding to a person, as 0.1 does, for the software factory's own review. It stops a run for questions code can answer. Also rejected: a contest that settles without a citation code can check. Then a model would wave its own finding through.
+
 ## The type is `Artifact`
 
 **Decided.** The type is spelled `Artifact`, and these pages use "artifact" as a defined term. All other prose is British.
