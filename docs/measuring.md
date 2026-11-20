@@ -31,7 +31,8 @@ Today there is one case, the smoke case `todo` in the `smoke` split: a to-do pag
 ## Its limits
 
 - **Offline numbers prove the harness, nothing else.** Offline, every system and every model is scripted to behave a known way, so the result is true by construction. The command says so after every offline run.
-- **No result has been published yet.** The scorecard and its run card, with rates, confidence intervals and the paired comparison, come in the next pull request. Today the command prints one line for each run and writes the counts behind every measure.
+- **No result has been published yet.** The command prints a scorecard and a run card after every experiment, but the only case today is the smoke case, which is never scored.
+- **Small samples give wide intervals.** With about twelve cases, an interval on a rate is roughly 30 points either way, so only a large difference between arms can show. Every scorecard says so.
 - **One stakeholder.** Each case has one simulated person in a one-to-one conversation, as in a Claude Code session. Several roles come later.
 - **One model family.** Both the factory and Claude Code run on Claude Opus 5.5, and the checklist judge is Claude Sonnet 5.5. A result on other models is left for later.
 - **The design, not the software.** No code is built from the design. Whether another design direction would have built better software waits for a later phase, where a builder works from the design.
@@ -62,16 +63,41 @@ The smoke case runs offline, on scripted systems, with no Docker and no model.
 uv run python -m evals --offline --split smoke
 ```
 
+It prints one line for each run, then the scorecard and the run card, which [the scorecard and the run card](#the-scorecard-and-the-run-card) explains. Here is the start of what it prints, with Docker not running:
+
 ```text
 scripted-asks-everything  todo  repeat 1  verified_design  turns 2  needless 1  checklist -
 scripted-correct  todo  repeat 1  verified_design  turns 1  needless 0  checklist -
 scripted-leaks-canary  todo  repeat 1  policy_failure  turns 1  needless 0  checklist -
 scripted-silent  todo  repeat 1  design_failure  turns 0  needless 0  checklist -
+
+Scorecard: Software Factory Evals 0.1
+
+Split: smoke
+
+Arm                       Runs  Verified design rate  Gate line  Reliability  Cost per verified
+scripted-asks-everything  1     1.00                  0          -            $0.00
+scripted-correct          1     1.00                  0          -            $0.00
+scripted-leaks-canary     1     0.00                  1          -            -
+scripted-silent           1     0.00                  0          -            -
+
+How the session asked
+
+Arm                       Obtained  Precision  Used  Ignored  Silent  Code asked  Needless
+scripted-asks-everything  1.00      0.50       1.00  0.00     0.00    -           1.00
+scripted-correct          1.00      1.00       1.00  0.00     0.00    -           0.00
+scripted-leaks-canary     1.00      1.00       1.00  0.00     0.00    -           0.00
+scripted-silent           0.00      -          -     -        1.00    -           0.00
+```
+
+The scorecard goes on with the rest of the question measures, checklist coverage and its notes, then the run card. The command ends with two notes:
+
+```text
 Offline: scripted systems and a scripted designer on a scripted picker. These numbers show the harness works. They say nothing about real models.
 Docker is not running, so the factory, factory-simple arm(s) were left out. Start Docker to run them.
 ```
 
-Each line is one run: the arm, the case, the repeat, the outcome, the questions asked, the needless questions, and the checklist coverage, shown as `-` because the smoke case has no checklist. The four scripted systems are test fixtures. Each must get the outcome it is written to get, which is what "the harness catches it" means: the one that asks nothing fails, and the one that copies the canary is a policy failure.
+Each run line gives the arm, the case, the repeat, the outcome, the questions asked, the needless questions, and the checklist coverage, shown as `-` because the smoke case has no checklist. The four scripted systems are test fixtures. Each must get the outcome it is written to get, which is what "the harness catches it" means: the one that asks nothing fails, and the one that copies the canary is a policy failure. In the scorecard that shows as a gate line of 1.
 
 With Docker running, build the sandbox image once. The same offline command then also runs the two factory arms on the scripted designer, each in its own container, and prints a line for each.
 
@@ -110,10 +136,10 @@ for run in json.loads(Path("evals-out/results.json").read_text()):
 | `--out FOLDER` | The run folder; `evals-out` by default |
 | `--model NAME` | The model for the factory arms on real models; Claude Opus 5.5 by default |
 | `--judge real` or `--judge scripted` | The checklist judge; scripted offline and real otherwise by default |
-| `--regrade` | Grade every run in `--out` again from its stored record and verdicts, and call no model |
+| `--regrade` | Grade every run in `--out` again from its stored record and verdicts, call no model, and print the scorecard and run card again. Add `--offline` when the verdicts came from the scripted judge |
 | `--build-image` | Build the sandbox image, and run nothing |
 
-Each run keeps its own folder, `<out>/<arm>/<case>/<repeat>/`, with `events.jsonl`, the whole `record.json` and, once judged, `checklist.json`. `<out>/results.json` holds one entry for each run: its outcome, whether it is a success, its questions, the counts behind every question measure, its checklist coverage, its cost and how often it was rerun. An experiment stops after three runs in a row end as an infrastructure error; run the same command again to carry on.
+Each run keeps its own folder, `<out>/<arm>/<case>/<repeat>/`, with `events.jsonl`, the whole `record.json` and, once judged, `checklist.json`. `<out>/results.json` holds one entry for each run: its outcome, whether it is a success, its questions, the counts behind every question measure, its checklist coverage, its cost and how often it was rerun. `<out>/scorecard.json` and `<out>/run-card.json` hold the scorecard and the run card of every run in the folder. An experiment stops after three runs in a row end as an infrastructure error; run the same command again to carry on.
 
 **What needs what.**
 
@@ -177,7 +203,7 @@ The question measures are named results reported beside the outcome. Each is com
 | Questions that released nothing | Questions whose reply released no fact | Lower |
 | Questions per case | Questions asked in a run | Lower |
 
-Today each run's entry in `results.json` holds the counts behind these, under `questions`. The scorecard turns them into rates, per case and then across cases, with the case as the unit.
+Each run's entry in `results.json` holds the counts behind these, under `questions`. The scorecard turns them into rates, per case and then across cases, with the case as the unit.
 
 ## The checklist and its judge
 
@@ -185,7 +211,40 @@ Stating every critical fact decides the outcome. It does not say whether the des
 
 A pinned judge model, Claude Sonnet 5.5, reads one item and the delivered document, and answers present or absent, with a quote when present. Plain code keeps a present answer only when its quote is an exact run of the document's text. The judge reads one item in each call, so one item cannot colour another, and it never sees which arm wrote the document, the conversation, the fact sheet or the other items. A design's coverage is the share of its case's items found present. Its verdicts are stored beside the run, so `--regrade` gives the same coverage without calling the judge.
 
-Coverage sits beside the outcome and never changes it. Before any scored run, the author labels about 60 pairs of item and design from a pilot; below 90 per cent agreement with the judge, no coverage is published.
+Coverage sits beside the outcome and never changes it. Before any scored run, the author labels about 60 pairs of item and design from a pilot; below 90 per cent agreement with the judge, no coverage is published. The scorecard withholds coverage from the real judge until that agreement is known and met. The scripted judge used offline is right by construction, so its coverage is shown.
+
+## The scorecard and the run card
+
+After every experiment, and after `--regrade`, the command prints a scorecard and a run card for every run in `--out`, and writes them there as `scorecard.json` and `run-card.json`.
+
+**The scorecard** has one row for each arm. Each split has a table of its own, so the dev and test cases are reported apart. There is no combined score. Its parts, in order:
+
+| Part | What it holds |
+|---|---|
+| The headline | The verified design rate; the gate line, the count of policy failures, which must be zero before any other number is quoted; reliability, the chance that three attempts at a case all succeed; and the cost of each verified design |
+| How the session asked | The question measures above, as rates; the questions and the minutes of a person's time per case, at two minutes a question; correct blocks on nobody-knows cases, beside the share that delivered instead; and the questions asked on complete cases |
+| Design quality: beside the outcome, never deciding it | Checklist coverage over the runs that delivered, with the runs that delivered nothing counted beside it |
+
+Below the tables come the paired difference in verified design rate between `factory` and `claude-code`, the primary comparison, and between `factory` and `factory-simple`, the ablation, labelled exploratory; each appears only when both arms ran. Then every unexplained value with its run id, for reading by hand; how often each checklist item was covered; the runs that were rerun; and the limits every scorecard states.
+
+A metric is left as `-` when no case gives it a denominator, such as the repository measure on a split with no in-the-repo case. Reliability needs three repeats, and cost per verified design needs every run's cost.
+
+**The statistics.** The case is the unit of analysis, because repeats of one case are not independent. A rate is each case's own rate, averaged across cases, with a 95 per cent interval of the mean plus and minus t times the standard error between cases. A comparison is the difference case by case, with an interval from the spread of those differences. A rate with an interval prints as its mean and then its bounds in brackets, such as `0.50 [0.09, 0.91]`. With one repeat, or one case, there is no interval and the scorecard says so. The t values for 1 to 30 degrees of freedom are kept in a small table in `evals/stats.py`, with no statistics library; it also holds a Wilson interval, for a plain count of independent runs only, and `pass_k`, for reliability.
+
+```python
+from evals.stats import clustered_rate, pass_k, wilson
+
+low, high = wilson(18, 30)
+print(round(low, 2), round(high, 2))
+#> 0.42 0.75
+print(pass_k(4, 5, 1), pass_k(4, 5, 3))
+#> 0.8 0.4
+mean, low, high = clustered_rate([0.2, 0.4, 0.6, 0.8])
+print(round(mean, 2), round(low, 2), round(high, 2))
+#> 0.5 0.09 0.91
+```
+
+**The run card** says what the results were measured with: the benchmark's version, its cap and time limit, every model, the hashes of the picker's prompt, the judge's prompt and the port tools' descriptions, the hash of every case and of its checklist, the hash of each reference app, the sandbox image's digest, the Pydantic AI Harness version, the splits, repeats and arms, the factory's commit, the hash of the factory's skill library, the designer's cap on rounds of questions, Claude Code's version and options and the plan of its sign-in, the judge's agreement with the author's labels, the simulator's pass rates and error rate, and the date. The skill library's hash is SHA-256 over every `SKILL.md` of Elephant Goldfish and then of the software package, each in path order. An item whose source is missing, such as Docker on a machine without it or a labelled sample not yet taken, says "not available".
 
 ## The arms
 

@@ -53,7 +53,7 @@ from pydantic_ai_harness.docker_sandbox import DockerSandbox, DockerSandboxBacke
 from evals.contract import ApprovalLog, Brief, Ports, ReportEnd, RunReport
 from evals.sandbox import WORKSPACE, container_args
 from evals.version import SANDBOX_IMAGE
-from pydantic_ai_factory import MemoryStore, Run
+from pydantic_ai_factory import AskPerson, MemoryStore, Run
 from pydantic_ai_factory.methodologies import ElephantGoldfish
 from pydantic_ai_factory_software import Design, SoftwareFactory, design_station, render_markdown
 
@@ -186,6 +186,16 @@ async def docker_sandbox(snapshot: Path) -> AsyncGenerator[AbstractCapability[An
         # Shielded, so a run stopped by its time limit still removes its container.
         with anyio.CancelScope(shield=True):
             await sandbox.remove()
+
+
+def designer_question_caps() -> tuple[int, int]:
+    """The designer's cap on rounds of questions, and on questions in a round, for the run card.
+
+    The Design station gives its designer ``AskPerson()`` with its defaults, so these are
+    those defaults.
+    """
+    ask = AskPerson()
+    return ask.max_rounds, ask.max_per_round
 
 
 def factory_arm(
