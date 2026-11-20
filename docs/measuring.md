@@ -96,7 +96,7 @@ Both arms use the same model, the same missions and the same designer instructio
 | | With review | Without review |
 |---|---|---|
 | The agent | `designer`, with `capabilities=[ElephantGoldfish(...)]` | `plain_designer`, the same agent with no capabilities |
-| Methodologies in force | `elephant-goldfish@1` | none |
+| Methodologies in force | `elephant-goldfish@2` | none |
 | A draft reaches a person | After a clean round, or as an escalation | Straight away |
 
 In both arms the evaluation approves whatever reaches a person, and accepts every escalation, without reading it. That would be wrong in real use. Here it is the point: the scores measure what the factory would have put in front of someone. A question the designer asks is answered with "Decide for yourself, and say what you decided in the design."
