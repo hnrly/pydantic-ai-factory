@@ -462,7 +462,10 @@ def test_offline_the_default_arms_include_the_factory_arms_when_docker_runs(
     arms, left_out = experiment.default_arms(offline=True)
 
     assert arms[-2:] == ["factory", "factory-simple"] and left_out == []
-    assert experiment.default_arms(offline=False) == (["factory", "factory-simple"], [])
+    assert experiment.default_arms(offline=False) == (
+        ["claude-code", "factory", "factory-simple"],
+        [],
+    )
 
 
 def test_offline_without_docker_the_factory_arms_are_left_out_and_a_line_says_so(
