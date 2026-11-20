@@ -9,6 +9,8 @@ Operating a factory means looking after its runs once they have started. Most of
 
 Everything here works through the [store](stores.md). A run keeps nothing in the process that started it, so any process that shares the store can operate it: a web app, a worker, a script run by hand. The samples use `SQLiteStore`, which lets several processes on one machine share the work.
 
+If you serve the factory as a [board](board.md), the board does this work for people: it shows the waiting runs, takes their answers and marks the stalled ones. This page is the same work from code, which a script, a chat bot or your own interface can do.
+
 ## Finding waiting runs
 
 `list_runs` finds runs without knowing their ids. Ask for the waiting ones, oldest first, and you have an inbox: the run at the top has waited longest.
@@ -184,15 +186,33 @@ except ConnectionError:
 
 print(len(stalled_runs(store)))
 #> 0
-print(len(stalled_runs(store, now=datetime.now(UTC) + timedelta(minutes=11))))
+later = datetime.now(UTC) + timedelta(minutes=11)
+print(len(stalled_runs(store, now=later)))
 #> 1
+
+for run in stalled_runs(store, now=later):
+    ended = software.abandon_sync(run, reason="Its worker died.", by="ada", store=store)
+    print(ended.outcome, ended.abandoned.reason)
+    #> did_not_run Its worker died.
 ```
 
 The run is not stalled straight away: it looks like a live station for the first ten minutes.
 
-To end a stalled run whose worker has died, call [`factory.abandon`](factories.md#ending-a-run-that-is-stuck). It saves the run as `"did_not_run"` with your reason, and a worker that was only slow gets `RunConflict` on its next save.
+To end a stalled run whose worker has died, call [`factory.abandon`](factories.md#ending-a-run-that-is-stuck), as the loop above does. It saves the run as `"did_not_run"` with your reason, and a worker that was only slow gets `RunConflict` on its next save, so nothing it does afterwards reaches the store.
 
 A stalled run cannot be resumed yet. `factory.resume` carries on only a run that is waiting for a person. Carrying on a run that stopped part-way needs [durable runs](roadmap.md#next), which are on the roadmap. Until then, start the mission again as a new run.
+
+### Stalled runs on the board
+
+A factory served as a [board](board.md) needs no threshold of yours. Its worker, `work`, renews its claim on the job in hand every quarter of its lease, which is two minutes by default. When a worker stops renewing, its claim lapses, and the board moves the card to Stopped, marked stalled. A worker that catches an error ends its own run with `factory.abandon` before it gives up the job, so that card goes to Stopped with the error as the reason.
+
+A person presses "Start again" on a stalled card. The board abandons the old run, with "Started again by" and their name as the reason, and queues a new run of the same mission. Three things follow:
+
+- **The new run starts at the first station.** It does not carry on where the old run stopped.
+- **Earlier answers stay on the old run.** If the worker died while applying an answer, that answer is recorded on the old run only. The new run waits for its answers again.
+- **A slow worker can leave a duplicate run.** A worker that stalled on a start job before it saved any run has nothing to conflict with. If it was only slow, it saves its run when it finishes, beside the one started again. Both cards appear on the board. When the one you do not want waits for a person, reject it.
+
+On every poll, the board reads every running run and every open job, because a claim can lapse with no new save. Abandoning ends the stuck ones, so that set holds only live work and stalled work nobody has started again. It grows only when stalled cards are left alone. Start them again, or abandon the runs from code as above, to keep it small.
 
 ## Before changing a factory's shape
 

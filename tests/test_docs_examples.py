@@ -6,7 +6,8 @@ line above printed, so a page cannot show code or output that is not true. Sampl
 a real model; while one runs, each agent gets the scripted replies listed for its page in
 ``tests/scripted.py``, so no sample calls a model. Each sample runs in an empty
 temporary folder, so one that writes files, as the getting-started builder does, never
-writes into the repository. A block that is
+writes into the repository. On the board page, the worker stops once no job is queued,
+so a sample that starts the worker as a service would still ends. A block that is
 only a sketch opts out with ``python test="skip"`` on its opening fence, and the page
 should say why.
 
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pytest_examples import CodeExample, EvalExample, find_examples
@@ -54,11 +56,29 @@ def test_a_documentation_sample_runs_and_prints_what_it_says(
     eval_example.set_config(line_length=200)
     page = Path(example.path).relative_to(ROOT).as_posix()
     monkeypatch.chdir(tmp_path)
+    if page == "docs/board.md":
+        stop_the_worker_when_idle(monkeypatch)
     with sample_models(SCRIPTS.get(page, {})):
         if eval_example.update_examples:
             eval_example.run_print_update(example)
         else:
             eval_example.run_print_check(example)
+
+
+def stop_the_worker_when_idle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``serve.work`` return once no job is queued, as ``until_idle=True`` does.
+
+    A sample imports ``work`` from ``pydantic_ai_factory.serve`` when it runs, so it gets
+    this wrapper. A worker that would run until stopped then does any queued work and ends.
+    """
+    from pydantic_ai_factory import serve
+
+    real_work = serve.work
+
+    def work_until_idle(*args: Any, **kwargs: Any) -> None:
+        real_work(*args, **{**kwargs, "until_idle": True})
+
+    monkeypatch.setattr(serve, "work", work_until_idle)
 
 
 def test_the_harness_finds_runs_and_fails_samples(
