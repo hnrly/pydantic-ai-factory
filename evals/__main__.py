@@ -15,7 +15,7 @@ from pathlib import Path
 
 from evals.experiment import regrade, run_experiment
 from evals.sandbox import SandboxError, build_image
-from evals.version import SANDBOX_IMAGE
+from evals.version import PINNED_MODEL, SANDBOX_IMAGE
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -36,7 +36,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--repeat", type=int, default=1, help="runs for each case in each arm")
     parser.add_argument("--out", type=Path, default=Path("evals-out"), help="the run folder")
-    parser.add_argument("--model", default=None, help="the model for the factory arms")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=f"the model for the factory arms on real models (default: {PINNED_MODEL})",
+    )
     parser.add_argument(
         "--judge",
         choices=("real", "scripted"),

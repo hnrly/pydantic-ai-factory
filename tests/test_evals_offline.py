@@ -312,8 +312,11 @@ async def test_each_run_takes_the_lowest_repeat_number_not_yet_used(tmp_path: Pa
 
 
 def test_the_command_prints_one_line_for_each_run_offline(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # The factory arms need Docker; tests/test_evals_factory_adapter.py runs them.
+    monkeypatch.setattr(experiment, "docker_available", lambda: False)
+
     code = main(["--offline", "--split", "smoke", "--out", str(tmp_path)])
 
     lines = capsys.readouterr().out.splitlines()
@@ -326,6 +329,7 @@ def test_the_command_prints_one_line_for_each_run_offline(
     ]
     assert "policy_failure" in lines[2]
     assert "say nothing about real models" in lines[4]
+    assert "factory, factory-simple arm(s) were left out" in lines[5]
     results = json.loads((tmp_path / "results.json").read_text())
     assert [r["outcome"] for r in results] == [
         "verified_design",

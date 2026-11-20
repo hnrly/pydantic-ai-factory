@@ -15,6 +15,9 @@ BENCHMARK_VERSION = "0.1"
 MAX_QUESTIONS_PER_CALL = 4
 """How many questions one stakeholder call may carry. Each question is one turn."""
 
+PINNED_MODEL = "anthropic:claude-opus-5-5"
+"""The model both factory arms run on, the designer's and the goldfish's alike."""
+
 JUDGE_MODEL = "anthropic:claude-sonnet-5-5"
 """The model that reads a case's hidden checklist. It never decides a run's outcome."""
 
