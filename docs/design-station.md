@@ -7,7 +7,7 @@ description: The first station of the software factory. It drafts a design, has 
 
 The Design station turns a mission into a design a person can approve and a builder can follow. A designer agent drafts it. Fresh reviewers read each draft, and the designer revises in the same conversation until two rounds of review in a row are clean. Then a person approves.
 
-`design_station(model)` builds the station, and `SoftwareFactory(model)` runs it. Its review is `design_review()`, [Elephant Goldfish](elephant-goldfish.md) tuned for software designs; pass `method=` another, or `None` for a designer with no review at all. See [the software factory](software-factory.md#your-own-design-station).
+`design_station(model)` builds the station, and `SoftwareFactory(model)` runs it. Its review is `design_review()`, [Elephant Goldfish](elephant-goldfish.md) tuned for software designs; pass `method=` another, or `None` for a designer with no review at all. See [the software factory](software-factory.md#your-own-design-station). Pass `workspace=` to design against code that exists: see [Designing in an existing codebase](#designing-in-an-existing-codebase).
 
 ## The design
 
@@ -40,7 +40,7 @@ The designer asks for prompt caching, `model_settings={"cache": True}`. Each rev
 
 ## The designer's skills
 
-The designer's method is written as [Agent Skills](https://agentskills.io/specification), which it loads when it needs them with the `load_capability` tool. It is offered exactly four: two from Elephant Goldfish, and two from this package.
+The designer's method is written as [Agent Skills](https://agentskills.io/specification), which it loads when it needs them with the `load_capability` tool. Without a workspace it is offered exactly four: two from Elephant Goldfish, and two from this package. With a workspace it is also offered [the repository's own skills](#the-repositorys-skills).
 
 | Skill | Ships with | Carries |
 |---|---|---|
@@ -49,9 +49,54 @@ The designer's method is written as [Agent Skills](https://agentskills.io/specif
 | `design-read-code` | This package | How to ground a design: what to read first, what to take from the code, and how to cite every path exactly. |
 | `design-doc` | This package | The design template, field by field, the Alternatives Rule, the Zero-Decision Rule, and when a choice is an assumption or an open question. |
 
-The designer's instructions say "Load design-read-code before you ask anything, and design-doc before you draft." With no review, `design_station(model, method=ElephantGoldfish(goldfish=()))`, the designer is offered the same four. A third skill in this package, `goldfish-readiness`, is a goldfish's, not the designer's.
+The designer's instructions say "Load design-read-code before you ask anything, and design-doc before you draft. Load a skill from the repository's own library when its description fits the work." With no review, `design_station(model, method=ElephantGoldfish(goldfish=()))`, the designer is offered the same four. A third skill in this package, `goldfish-readiness`, is a goldfish's, not the designer's.
 
 Before drafting, and during review, the designer may ask you what the mission leaves open. It has [`AskPerson`](approvals.md#asking-a-person) beside Elephant Goldfish, so it asks in rounds: up to four questions at a time, each with why it matters and up to three options, the recommended one first. It may ask three rounds; the run waits once for each.
+
+## Designing in an existing codebase
+
+Give the station a workspace, and the designer reads the code before it asks you anything. A workspace is a Pydantic AI capability that supplies one: `LocalWorkspace(path)` for a folder on this machine, or a sandbox from Pydantic AI Harness. Pass it to `design_station(model, workspace=...)`, or to `SoftwareFactory(model, workspace=...)`, which passes it on to the Design station it builds.
+
+```python
+from pathlib import Path
+
+from pydantic_ai.capabilities import LocalWorkspace
+
+from pydantic_ai_factory import MemoryStore
+from pydantic_ai_factory_software import SoftwareFactory
+
+Path("AGENTS.md").write_text("Keep the whole app in one file.\n")
+software = SoftwareFactory("anthropic:claude-opus-5-5", workspace=LocalWorkspace("."))
+
+run = software.run_sync("A to-do list web page where I can add tasks and tick them off.", store=MemoryStore())
+print(run.waiting.kind, [f"{change.action} {change.path}" for change in run.waiting.output.changes])
+#> approval ['create index.html']
+```
+
+Nothing in the station can change the workspace. It is wrapped in Pydantic AI's `ReadOnlyWorkspace`, which refuses commands and every write, and every file tool is read-only.
+
+| Who | Gets | Never gets |
+|---|---|---|
+| The designer | The workspace; read-only file tools (`FileSystem(read_only=True)` from Pydantic AI Harness: `read_file`, `list_directory`, `search_files`, `find_files`, `file_info`); the repository's instruction files, such as `AGENTS.md`, through `RepoContext`; the repository's skills | Any tool that writes or runs a command |
+| Each goldfish of `design_review(workspace=...)` | The workspace and the same read-only file tools, so readiness can check every path the design cites | The repository's instruction files and skills: code is evidence to a goldfish, never instructions |
+
+`design_station` builds its default review with the same workspace. If you pass your own method, give it the tools you choose: `design_review(workspace=...)`, or `ElephantGoldfish(capabilities=...)`.
+
+### The path check
+
+Before any review, code checks each path in the design's `changes` against the workspace. A path to `modify` or `delete` must exist, and a path to `create` must not. A wrong path goes back to the designer at once, with every wrong path listed, such as `` `src/app.js` does not exist, so it cannot be modified ``. Without a workspace there is nothing to check against, and the check passes. The [gate](#the-gate) cannot do this, because a gate has the design but not the workspace.
+
+### The repository's skills
+
+With a workspace, the designer is also offered the skills the repository keeps in `.agents/skills` and `.claude/skills`, after Elephant Goldfish's and this package's. A folder the repository does not have is skipped. A repository skill with the same name as one of the library's, such as its own `design-doc`, is left out with a warning, so a repository can add to the method but never replace it. Goldfish never load repository skills.
+
+Pydantic AI Harness's artifact scanner reads each repository skill first. A skill it flags, such as one that says to ignore earlier instructions, is left out with a warning.
+
+### A repository you do not trust
+
+The designer follows the repository's instruction files and skills as instructions. That is the point: they say how the team works. It also means a repository can steer the designer. The scanner catches common tricks, not all of them. Read the `AGENTS.md`, `CLAUDE.md` and skills of a repository you did not write before you design in it.
+
+Read-only file tools bound what the designer can do, but they are not isolation: `LocalWorkspace` reads this machine's files as your user. For code you would not run or do not trust, pass a sandboxed workspace from Pydantic AI Harness, such as its Docker sandbox, in place of `LocalWorkspace`.
 
 ## The gate
 

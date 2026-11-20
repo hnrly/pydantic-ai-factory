@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 
 from pydantic_ai_factory import Factory, FactoryDefinitionError, Rework, Station
@@ -45,6 +46,10 @@ class SoftwareFactory(Factory):
     that passes waits for a person to approve it. Before drafting, or during review, the
     designer may ask you rounds of questions with :class:`~pydantic_ai_factory.AskPerson`.
 
+    ``workspace``, a capability that supplies one such as ``LocalWorkspace(path)``, is the
+    code the design is grounded in, read-only. It is passed to the Design station this
+    factory builds; a ``design`` you pass keeps the workspace you gave it.
+
     It takes one keyword for each station, never a method: to change the review, pass
     ``design=design_station(model, method=...)``. The 0.1 keywords ``rounds``,
     ``goldfish`` and ``review_model`` still work, mapped onto :func:`design_review`, and
@@ -61,6 +66,7 @@ class SoftwareFactory(Factory):
         self,
         model: Model | str,
         *,
+        workspace: AbstractCapability[Any] | None = None,
         design: Station[str, Design] | None = None,
         repairs: int = 2,
         accept: Accept | None = None,
@@ -95,9 +101,13 @@ class SoftwareFactory(Factory):
                 f"keyword {', '.join(given)}",
                 "pass design=design_station(model, method=...) instead",
             )
-            design = design_station(model, method=_old_review(rounds, goldfish, review_model))
+            design = design_station(
+                model,
+                method=_old_review(rounds, goldfish, review_model, workspace),
+                workspace=workspace,
+            )
         elif design is None:
-            design = design_station(model)
+            design = design_station(model, workspace=workspace)
         object.__setattr__(self, "_model", model)
         object.__setattr__(self, "_repairs", repairs)
         super().__init__(
@@ -146,9 +156,11 @@ class SoftwareFactory(Factory):
         return None if review is None else review.model
 
 
-def _old_review(rounds: Any, goldfish: Any, review_model: Any) -> ElephantGoldfish:
+def _old_review(
+    rounds: Any, goldfish: Any, review_model: Any, workspace: AbstractCapability[Any] | None
+) -> ElephantGoldfish:
     """:func:`design_review`, with the 0.1 keywords that were given in place of its own."""
-    review = design_review(None if review_model is _UNSET else review_model)
+    review = design_review(None if review_model is _UNSET else review_model, workspace=workspace)
     changes: dict[str, Any] = {}
     if goldfish is not _UNSET:
         changes["goldfish"] = goldfish
