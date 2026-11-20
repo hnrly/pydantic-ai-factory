@@ -8,9 +8,13 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal, cast
 
 from pydantic import BeforeValidator, Field, model_validator
+from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.output import OutputContext
 
 from pydantic_ai_factory import Artifact, Evidence, Verdict, failed, gate, passed
 from pydantic_ai_factory.contracts import Record
@@ -487,3 +491,53 @@ def design_is_buildable(output: Artifact[Design], evidence: Evidence) -> Verdict
     if problems:
         return failed(*problems)
     return passed("a builder can follow the design")
+
+
+async def check_paths(ctx: RunContext[Any], output: Any) -> Any:
+    """Send the designer back when a change names a path the workspace contradicts.
+
+    With a workspace on the run, every path in a design's ``changes`` is checked with
+    ``exists``: a ``modify`` or ``delete`` path must exist, and a ``create`` path must not.
+    Each wrong path is listed in one ``ModelRetry``. Without a workspace there is nothing to
+    check against, and the design passes, as does any output that is not a design. The
+    gate, :func:`design_is_buildable`, has no workspace, which is why this runs while the
+    designer still holds the run.
+    """
+    workspace = ctx.workspace
+    if ctx.partial_output or not isinstance(output, Design) or not workspace.attached:
+        return output
+    wrong: list[str] = []
+    for change in output.changes:
+        found = await workspace.exists(change.path)
+        if change.action == "create" and found:
+            wrong.append(f"`{change.path}` already exists, so it cannot be created")
+        elif change.action != "create" and not found:
+            done = "modified" if change.action == "modify" else "deleted"
+            wrong.append(f"`{change.path}` does not exist, so it cannot be {done}")
+    if wrong:
+        raise ModelRetry(
+            "Some paths in changes do not match the workspace: "
+            + "; ".join(wrong)
+            + ". Read the workspace again and correct each path or its action."
+        )
+    return output
+
+
+@dataclass
+class CheckPaths(AbstractCapability[Any]):
+    """The designer's path check, :func:`check_paths`, run on each validated design.
+
+    It is a capability, not ``Agent.output_validator``: a station can wait on a person's
+    answer only when its agent has no output validator. It runs as the output is
+    validated, before any method reviews the draft, so a wrong path costs no review.
+    It is loaded eagerly: it must see every design.
+    """
+
+    def __post_init__(self) -> None:
+        if self.id is None:
+            self.id = "check-paths"
+
+    async def after_output_validate(
+        self, ctx: RunContext[Any], *, output_context: OutputContext, output: Any
+    ) -> Any:
+        return await check_paths(ctx, output)

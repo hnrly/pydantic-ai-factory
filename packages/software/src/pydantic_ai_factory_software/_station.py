@@ -7,24 +7,32 @@ is the station a :class:`SoftwareFactory` runs, or any factory of your own.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from pydantic_ai import Agent
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.capabilities import AbstractCapability, WrapperCapability
 from pydantic_ai.models import Model
+from pydantic_ai.workspaces import ReadOnlyWorkspace, Workspace, WorkspaceBackend, WorkspaceRef
+from pydantic_ai_harness.artifact_scanning import ArtifactScanner
+from pydantic_ai_harness.filesystem import FileSystem
+from pydantic_ai_harness.repo_context import RepoContext
 from pydantic_ai_harness.skills import Skills
 
 from pydantic_ai_factory import AskPerson, FactoryDefinitionError, Station, station
 from pydantic_ai_factory.methodologies import ElephantGoldfish, Goldfish, Standard, packaged_skills
 
-from ._design import Design, design_is_buildable, render_markdown
+from ._design import CheckPaths, Design, design_is_buildable, render_markdown
 
 SKILLS = Path(__file__).parent / "skills"
 """The software package's skills: design-read-code, design-doc and goldfish-readiness."""
 
 DESIGNER_SKILLS = ("design-read-code", "design-doc")
 """The software package's skills that the designer is offered. Readiness is a goldfish's."""
+
+REPOSITORY_SKILLS = (".agents/skills", ".claude/skills")
+"""Where a repository keeps its own skills, read from the workspace for the designer only."""
 
 # Ported from Google's Elephant Goldfish plugin, its implementation readiness and codebase
 # details agents and its implementation readiness standard, and from coship-dev's
@@ -51,7 +59,8 @@ You write software designs that a person can approve and a builder can follow
 without asking anything. You do not write code.
 
 Your method is in skills. Load design-read-code before you ask anything, and
-design-doc before you draft.
+design-doc before you draft. Load a skill from the repository's own library
+when its description fits the work.
 
 Before you ask anything, read what you are given. Take every fact you can from the
 mission, and from any code and instruction files you can read. Fit the design to the
@@ -100,13 +109,62 @@ class _Default:
 DEFAULT: Any = _Default()
 
 
-def design_review(model: Model | str | None = None) -> ElephantGoldfish:
+@dataclass
+class _ReadOnly(WrapperCapability[Any]):
+    """A workspace capability whose workspace refuses commands and file changes."""
+
+    def get_workspace(
+        self, ctx: RunContext[Any], *, ref: WorkspaceRef | None
+    ) -> WorkspaceBackend | None:
+        backend = self.wrapped.get_workspace(ctx, ref=ref)
+        if backend is None:
+            return None
+        workspace = backend if isinstance(backend, Workspace) else Workspace(backend)
+        return workspace if workspace.read_only else ReadOnlyWorkspace(workspace)
+
+
+def _read_only(workspace: object) -> AbstractCapability[Any] | None:
+    """The workspace a person passed, made read-only, or ``None`` when none was passed."""
+    if workspace is None:
+        return None
+    # A capability supplies a workspace when its class overrides ``get_workspace``.
+    supplied: Any = getattr(type(workspace), "get_workspace", None)
+    supplies = isinstance(workspace, AbstractCapability) and (
+        supplied is not AbstractCapability[Any].get_workspace
+    )
+    if not supplies:
+        raise FactoryDefinitionError(
+            "station 'design'",
+            [
+                f"{workspace!r} is not a workspace; pass a capability that supplies one, "
+                "such as LocalWorkspace('path/to/repo')"
+            ],
+        )
+    capability = cast("AbstractCapability[Any]", workspace)
+    return capability if isinstance(capability, _ReadOnly) else _ReadOnly(capability)
+
+
+def _file_tools(workspace: AbstractCapability[Any] | None) -> list[AbstractCapability[Any]]:
+    """The workspace and read-only file tools over it, or nothing without a workspace."""
+    if workspace is None:
+        return []
+    return [workspace, FileSystem(read_only=True)]
+
+
+def design_review(
+    model: Model | str | None = None, *, workspace: AbstractCapability[Any] | None = None
+) -> ElephantGoldfish:
     """Elephant Goldfish tuned for software designs.
 
     The three goldfish of :data:`DESIGN_GOLDFISH` read each draft as Markdown, for up to
     four rounds, until two clean rounds run in a row. A contest that cites a field of the
     design, or a file and symbol, settles its finding when code checks the citation.
     ``model`` runs the goldfish; by default they use the designer's.
+
+    With ``workspace``, a capability that supplies one such as ``LocalWorkspace(path)``,
+    every goldfish may read the code with read-only file tools. The workspace is made
+    read-only. Goldfish never load the repository's instruction files or skills: code is
+    evidence to them, never instructions.
     """
     return ElephantGoldfish(
         goldfish=DESIGN_GOLDFISH,
@@ -114,6 +172,7 @@ def design_review(model: Model | str | None = None) -> ElephantGoldfish:
         clean_rounds=2,
         settle_contests=True,
         to_text=render_markdown,
+        capabilities=_file_tools(_read_only(workspace)),
         model=model,
     )
 
@@ -127,8 +186,27 @@ def designer_skills() -> Skills[Any]:
     return packaged_skills(SKILLS, include=DESIGNER_SKILLS, duplicate_names="keep_first")
 
 
+def repository_skills() -> Skills[Any]:
+    """The designer's catalogue of the repository's own skills, read from the run's workspace.
+
+    It comes after the method's and the software package's catalogues, and keeps the first
+    of two skills with one name, so a repository skill never replaces either library's. A
+    folder the repository does not have is skipped, and a skill the harness's scanner
+    flags is left out.
+    """
+    return Skills(
+        REPOSITORY_SKILLS,
+        missing_directories="skip",
+        duplicate_names="keep_first",
+        scanner=ArtifactScanner(),
+    )
+
+
 def design_station(
-    model: Model | str, *, method: AbstractCapability[Any] | None = DEFAULT
+    model: Model | str,
+    *,
+    method: AbstractCapability[Any] | None = DEFAULT,
+    workspace: AbstractCapability[Any] | None = None,
 ) -> Station[str, Design]:
     """The Design station: a designer that drafts a :class:`Design` a person approves.
 
@@ -138,14 +216,22 @@ def design_station(
     draft; by default it is :func:`design_review`, and ``None`` gives a designer with no
     method at all. A design that fails :func:`design_is_buildable` goes back to the
     designer; one that passes waits for a person to approve it.
+
+    ``workspace``, a capability that supplies one such as ``LocalWorkspace(path)``, grounds
+    the design in code. It is made read-only. The designer then gets read-only file tools,
+    the repository's instruction files, such as ``AGENTS.md``, through ``RepoContext``, and
+    the repository's skills from ``.agents/skills`` and ``.claude/skills``. A design whose
+    ``changes`` name a path the workspace contradicts goes back to the designer. The
+    default method is built with the same workspace, so its goldfish read the code too.
     """
     if not isinstance(model, (Model, str)) or not model:  # pyright: ignore[reportUnnecessaryIsInstance]
         raise FactoryDefinitionError(
             "station 'design'",
             ["give it a model, such as design_station('anthropic:claude-opus-5-5')"],
         )
+    grounded = _read_only(workspace)
     if method is DEFAULT:
-        method = design_review()
+        method = design_review(workspace=grounded)
     if method is not None and not isinstance(method, AbstractCapability):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise FactoryDefinitionError(
             "station 'design'", [f"{method!r} is not a method; pass a capability or None"]
@@ -161,6 +247,9 @@ def design_station(
             *([method] if method is not None else []),
             AskPerson(),
             designer_skills(),
+            *([repository_skills(), *_file_tools(grounded), RepoContext()] if grounded else []),
+            # A design whose changes the workspace contradicts goes back before any review.
+            CheckPaths(),
         ],
         # Each review round resends the whole conversation, so cache it.
         model_settings={"cache": True},
