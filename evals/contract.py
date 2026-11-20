@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
@@ -125,6 +125,24 @@ class Ports(Protocol):
 
     async def deliver(self, document: str, status: Status) -> None:
         """Deliver the design. The first call is the delivery; a later one changes nothing."""
+        ...
+
+
+Approved = Literal["design", "escalation"]
+"""What an in-process adapter approved on a person's behalf."""
+
+
+@runtime_checkable
+class ApprovalLog(Protocol):
+    """Where an in-process adapter notes an approval it gave in place of a person.
+
+    It is not a port: no system calls it as a tool, and grading ignores what it writes.
+    Only the factory adapter uses it, when it answers the factory's own approval wait or
+    an escalation, so a reader can see where the factory stopped for a person.
+    """
+
+    def adapter_approved(self, what: Approved, reasons: list[str]) -> None:
+        """Log that the adapter approved ``what``, with the reasons the factory gave."""
         ...
 
 

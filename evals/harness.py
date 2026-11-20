@@ -40,6 +40,7 @@ from pydantic_ai import Agent
 
 from evals.cases import CASES, PublicCase
 from evals.contract import (
+    Approved,
     DesignPackage,
     RecordEnd,
     Reply,
@@ -69,7 +70,11 @@ _STATUSES: frozenset[str] = frozenset({"delivered", "blocked"})
 
 
 class RunPorts:
-    """The stakeholder and delivery ports of one run. Every call is logged."""
+    """The stakeholder and delivery ports of one run. Every call is logged.
+
+    It is also the run's :class:`~evals.contract.ApprovalLog`, where the factory adapter
+    notes the approvals it gives in place of a person.
+    """
 
     def __init__(self, stakeholder: Stakeholder, log: EventLog) -> None:
         self._stakeholder = stakeholder
@@ -87,6 +92,10 @@ class RunPorts:
         package = DesignPackage.of(document, status)
         if self._log.deliver(package.document_sha256, status):
             self.package = package
+
+    def adapter_approved(self, what: Approved, reasons: list[str]) -> None:
+        """Log an approval the adapter gave in place of a person. It is not a port call."""
+        self._log.append("adapter_approved", what=what, reasons=list(reasons))
 
 
 async def run_case(
