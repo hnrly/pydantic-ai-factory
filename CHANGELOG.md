@@ -4,6 +4,7 @@ Every change a user can see is listed here, newest first.
 
 ## Unreleased
 
+- **Breaking:** `ask_person` asks in rounds. The tool now takes `questions`, a list of `Question` (`text`, `why_it_matters`, `options`, at most three or none, and `recommended`, which must be 0 when given), instead of one `question` string. A round is one model response that calls it, with up to four questions; several calls in one response are one round, where 0.1 wrongly counted each call. The run waits once for the round. Each call's metadata carries `questions`, the list as dictionaries, and `question`, the round as numbered text. `AskPerson(max_questions=3)` becomes `AskPerson(max_rounds=3, max_per_round=4)`: a round with too many questions is refused with a message and not counted, and after the last round the tool tells the agent to carry on. `Question` is exported from `pydantic_ai_factory`. **Breaking:** `ElephantGoldfish` no longer adds `ask_person` and loses `max_questions`; give the author `AskPerson()` beside it. The software factory's designer has both, so it still asks. `factory run` and `factory resume` print each question with why it matters and its options, the recommended first, and `--answer` replies to the whole round. The evaluation set's Elephant Goldfish designer is given `AskPerson()`, so it asks as before.
 - `pydantic-ai-factory` now depends on Pydantic AI Harness (`pydantic-ai-harness[skills]`), so the core can use its capabilities. A new `coder` extra adds the harness's Coder: `pip install "pydantic-ai-factory[coder]"`.
 
 ## 0.1.1

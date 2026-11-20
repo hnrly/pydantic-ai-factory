@@ -93,6 +93,14 @@ The words used below each have a page under Concepts, starting with [factories](
 
 **Rejected.** Putting the harness behind a `methodologies` extra that only Elephant Goldfish needed. It kept the harness's capabilities out of the core layers that need them, such as asking a person in `stations`, and it needed a guarded import and tests that hide the harness.
 
+## Asking a person is its own capability, in rounds
+
+**Decided.** `AskPerson` is the only source of the `ask_person` tool. Elephant Goldfish no longer adds it; an agent that should ask is given `AskPerson` beside its methodology, as the software factory's designer is. The tool asks in rounds. A round is one model response that calls it: up to four questions, each with why it matters and up to three options, the recommended one first. The run waits once for the round, and the person replies once. `AskPerson(max_rounds=3, max_per_round=4)` caps rounds, not questions.
+
+**Why.** A designer without review must still be able to ask, so asking cannot belong to a review method. And a round spends a person's attention once: four questions answered together cost them one interruption, not four. Recommending an option first lets a person agree in a word where they agree, and spend their thought where they do not.
+
+**Rejected.** Asking one open question at a time with the options unranked, as Google's Elephant Goldfish plugin does. It interrupts the person once per question and leaves them to weigh options the agent has already weighed. Also rejected: counting questions rather than rounds. Several calls in one response were each counted, so an agent that asked its questions together was refused for asking well. This replaces the 0.1 rule, in which Elephant Goldfish included `AskPerson(max_questions=3)`.
+
 ## The type is `Artifact`
 
 **Decided.** The type is spelled `Artifact`, and these pages use "artifact" as a defined term. All other prose is British.

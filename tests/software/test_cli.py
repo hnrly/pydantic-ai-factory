@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
-from pydantic_ai import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
+from pydantic_ai import (
+    DeferredToolRequests,
+    ModelMessage,
+    ModelResponse,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from pydantic_ai_factory_software import cli
@@ -203,8 +211,22 @@ def test_show_prints_a_run_and_exits_with_its_state(tmp_path: Path) -> None:
     assert "  approved by ada" in done.lines
 
 
+ROUND: dict[str, Any] = {
+    "questions": [
+        {
+            "text": "Should ticked tasks survive a reload?",
+            "why_it_matters": "If they do, the page must save them.",
+            "options": ["Yes, in the browser", "No"],
+            "recommended": 0,
+        },
+        {"text": "Can a ticked task be unticked?", "why_it_matters": "It sets what a tick does."},
+    ]
+}
+"""A round of two questions: one with options, the recommended first, and one open."""
+
+
 def asks_first(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-    """The offline designer, except that it asks the person one question before drafting."""
+    """The offline designer, except that it asks the person a round before drafting."""
     answered = any(
         isinstance(part, ToolReturnPart) and part.tool_name == "ask_person"
         for message in messages
@@ -212,8 +234,7 @@ def asks_first(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     )
     may_ask = "ask_person" in {tool.name for tool in info.function_tools}
     if may_ask and not answered:
-        question = {"question": "Should ticked tasks survive a reload?"}
-        return ModelResponse(parts=[ToolCallPart("ask_person", question, "q1")])
+        return ModelResponse(parts=[ToolCallPart("ask_person", ROUND, "q1")])
     return offline_model().function(messages, info)  # pyright: ignore[reportOptionalCall, reportReturnType]
 
 
@@ -232,8 +253,17 @@ def test_an_agent_question_is_asked_in_the_terminal_and_the_answer_goes_back(
 
     assert code == PASSED
     assert "The designer agent is asking you something." in terminal.lines
-    assert "Question: Should ticked tasks survive a reload?" in terminal.lines
+    start = terminal.lines.index("Question 1: Should ticked tasks survive a reload?")
+    assert terminal.lines[start : start + 6] == [
+        "Question 1: Should ticked tasks survive a reload?",
+        "  Why it matters: If they do, the page must save them.",
+        "  a) Yes, in the browser (recommended)",
+        "  b) No",
+        "Question 2: Can a ticked task be unticked?",
+        "  Why it matters: It sets what a tick does.",
+    ]
     assert terminal.asked[0] == "Your answer: "
+    assert terminal.asked.count("Your answer: ") == 1  # one reply to the whole round
 
 
 @pytest.mark.usefixtures("curious")
@@ -257,7 +287,7 @@ def test_with_no_input_a_question_leaves_the_run_waiting(tmp_path: Path) -> None
 
     assert code == WAITING
     assert terminal.asked == []
-    assert "Question: Should ticked tasks survive a reload?" in terminal.lines
+    assert "Question 1: Should ticked tasks survive a reload?" in terminal.lines
 
 
 @pytest.mark.usefixtures("curious")
@@ -286,3 +316,13 @@ def test_the_offline_designer_names_the_design_after_the_mission(
 ) -> None:
     assert title_of(mission) == title
     assert slug(title) == file
+
+
+def test_a_question_saved_before_rounds_is_still_printed() -> None:
+    requests = DeferredToolRequests(
+        calls=[ToolCallPart("ask_person", {"question": "Keep ticks?"}, "q1")],
+        metadata={"q1": {"question": "Keep ticks?"}},
+    )
+    run: Any = SimpleNamespace(waiting=SimpleNamespace(requests=requests))
+
+    assert cli._questions(run) == ["Question: Keep ticks?"]  # pyright: ignore[reportPrivateUsage]

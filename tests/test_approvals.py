@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
     TextPart,
     ToolCallPart,
+    ToolReturnPart,
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -21,11 +24,13 @@ from pydantic_ai_factory import (
     ApprovalRefused,
     Artifact,
     AskPerson,
+    DefinitionError,
     Escalate,
     Evidence,
     Factory,
     LocalStore,
     MemoryStore,
+    Question,
     Rework,
     RunConflict,
     StationContext,
@@ -36,8 +41,11 @@ from pydantic_ai_factory import (
     passed,
     station,
 )
+from pydantic_ai_factory.stations._ask import ENOUGH
 
 pytestmark = pytest.mark.anyio
+
+CALL_IDS = itertools.count(1)
 
 
 class Script:
@@ -71,8 +79,20 @@ def prompts(messages: list[ModelMessage]) -> list[str]:
     ]
 
 
-def ask(question: str) -> ModelResponse:
-    return ModelResponse(parts=[ToolCallPart("ask_person", {"question": question}, "q1")])
+def question(text: str, **more: Any) -> dict[str, Any]:
+    return {"text": text, "why_it_matters": "The design depends on it.", **more}
+
+
+def asks(*texts: str, call_id: str = "q1") -> ToolCallPart:
+    return ToolCallPart("ask_person", {"questions": [question(t) for t in texts]}, call_id)
+
+
+def ask(*texts: str) -> ModelResponse:
+    """One round: a response with one ``ask_person`` call carrying every question.
+
+    Each call gets its own id, as a real model gives it.
+    """
+    return ModelResponse(parts=[asks(*texts, call_id=f"ask-{next(CALL_IDS)}")])
 
 
 async def test_a_station_with_approval_waits_for_a_person_and_carries_on_when_approved() -> None:
@@ -239,7 +259,16 @@ async def test_an_agent_question_makes_the_run_wait_until_the_person_answers() -
     requests = run.waiting.requests
     assert isinstance(requests, DeferredToolRequests)
     assert requests.metadata[requests.calls[0].tool_call_id] == {
-        "question": "Should ticked tasks survive a reload?"
+        "questions": [
+            {
+                "text": "Should ticked tasks survive a reload?",
+                "why_it_matters": "The design depends on it.",
+                "options": None,
+                "recommended": None,
+            }
+        ],
+        "question": "1. Should ticked tasks survive a reload?\n"
+        "   Why it matters: The design depends on it.",
     }
 
     answer = requests.build_results(calls={requests.calls[0].tool_call_id: "Yes."})
@@ -463,20 +492,191 @@ async def test_a_resumed_station_that_runs_its_agents_in_another_order_did_not_r
     assert "keep the code between agent runs deterministic" in (done.steps[-1].reason or "")
 
 
-def test_ask_person_stops_asking_at_its_limit() -> None:
+def ask_until_done(agent: Agent[None, str]) -> tuple[Any, list[DeferredToolRequests]]:
+    """Run ``agent``, answering every round it asks, and keep each round it waited on."""
+    waited: list[DeferredToolRequests] = []
+    result = agent.run_sync("x", output_type=[str, DeferredToolRequests])
+    while isinstance(result.output, DeferredToolRequests):
+        waited.append(result.output)
+        answer = result.output.build_results(
+            calls={call.tool_call_id: "Yes." for call in result.output.calls}
+        )
+        result = agent.run_sync(
+            None,
+            conversation=result.conversation,
+            deferred_tool_results=answer,
+            output_type=[str, DeferredToolRequests],
+        )
+    return result, waited
+
+
+def tool_results(script: Script) -> list[str]:
+    """What each ``ask_person`` call returned, as the model last saw it."""
+    return [
+        str(part.content)
+        for message in script.seen[-1]
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == "ask_person"
+    ]
+
+
+def test_a_round_of_four_questions_waits_once() -> None:
+    round_of_four = ModelResponse(
+        parts=[
+            ToolCallPart(
+                "ask_person",
+                {
+                    "questions": [
+                        question(
+                            "Should ticked tasks survive a reload?",
+                            options=["Yes, in the browser", "No"],
+                            recommended=0,
+                        ),
+                        question("Can a ticked task be unticked?"),
+                        question("What does a blank task do?"),
+                        question("Do tasks keep their order?"),
+                    ]
+                },
+                "q1",
+            )
+        ]
+    )
+    designer, script = agent("designer", round_of_four, "Done.", capabilities=[AskPerson()])
+
+    result, waited = ask_until_done(designer)
+
+    assert (result.output, script.calls, len(waited)) == ("Done.", 2, 1)
+    [call] = waited[0].calls
+    metadata = waited[0].metadata[call.tool_call_id]
+    assert [q["text"] for q in metadata["questions"]][-1] == "Do tasks keep their order?"
+    assert metadata["question"].splitlines()[:4] == [
+        "1. Should ticked tasks survive a reload?",
+        "   Why it matters: The design depends on it.",
+        "   a) Yes, in the browser (recommended)",
+        "   b) No",
+    ]
+    assert "4. Do tasks keep their order?" in metadata["question"]
+
+
+def test_several_calls_in_one_response_are_one_round() -> None:
+    together = ModelResponse(
+        parts=[asks("One?", call_id="q1"), asks("Two?", call_id="q2"), asks("Three?", call_id="q3")]
+    )
     designer, script = agent(
-        "designer", ask("One?"), ask("Two?"), "Done.", capabilities=[AskPerson(max_questions=1)]
-    )
-    result = designer.run_sync("x", output_type=[str, DeferredToolRequests])
-    assert isinstance(result.output, DeferredToolRequests)
-    answer = result.output.build_results(calls={result.output.calls[0].tool_call_id: "Yes."})
-
-    again = designer.run_sync(
-        None,
-        conversation=result.conversation,
-        deferred_tool_results=answer,
-        output_type=[str, DeferredToolRequests],
+        "designer", together, ask("Four?"), "Done.", capabilities=[AskPerson(max_rounds=2)]
     )
 
-    assert again.output == "Done."
-    assert script.calls == 3
+    result, waited = ask_until_done(designer)
+
+    assert result.output == "Done."
+    assert [len(round.calls) for round in waited] == [3, 1]
+    assert ENOUGH not in tool_results(script)
+
+
+def test_a_fourth_round_is_told_to_carry_on() -> None:
+    designer, script = agent(
+        "designer",
+        ask("One?"),
+        ask("Two?"),
+        ask("Three?"),
+        ask("Four?"),
+        "Done.",
+        capabilities=[AskPerson()],
+    )
+
+    result, waited = ask_until_done(designer)
+
+    assert (result.output, len(waited), script.calls) == ("Done.", 3, 5)
+    assert tool_results(script)[-1] == ENOUGH
+
+
+def test_max_rounds_of_one_stops_after_the_first_round() -> None:
+    designer, script = agent(
+        "designer", ask("One?"), ask("Two?"), "Done.", capabilities=[AskPerson(max_rounds=1)]
+    )
+
+    result, waited = ask_until_done(designer)
+
+    assert (result.output, len(waited), script.calls) == ("Done.", 1, 3)
+    assert tool_results(script)[-1] == ENOUGH
+
+
+def test_max_rounds_of_zero_takes_the_tool_away() -> None:
+    offered: list[str] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        offered.extend(tool.name for tool in info.function_tools)
+        return ModelResponse(parts=[TextPart("Done.")])
+
+    designer = Agent(FunctionModel(model), name="designer", capabilities=[AskPerson(max_rounds=0)])
+
+    assert designer.run_sync("x").output == "Done."
+    assert offered == []
+
+
+def test_five_questions_in_a_round_are_refused() -> None:
+    designer, script = agent(
+        "designer",
+        ask("One?", "Two?", "Three?", "Four?", "Five?"),
+        ask("One?"),
+        ask("Two?"),
+        ask("Three?"),
+        ask("Four?"),
+        "Done.",
+        capabilities=[AskPerson()],
+    )
+
+    result, waited = ask_until_done(designer)
+
+    assert result.output == "Done."
+    assert [len(round.calls[0].args_as_dict()["questions"]) for round in waited] == [1, 1, 1]
+    refusal = tool_results(script)[0]
+    assert "1 to 4 questions, and this one asked 5" in refusal
+    assert tool_results(script)[-1] == ENOUGH  # the refused round was not counted
+
+
+def test_questions_over_the_limit_across_calls_in_one_response_are_refused() -> None:
+    too_many = ModelResponse(
+        parts=[asks("One?", "Two?", call_id="q1"), asks("Three?", "Four?", call_id="q2")]
+    )
+    designer, script = agent(
+        "designer", too_many, ask("One?"), "Done.", capabilities=[AskPerson(max_per_round=3)]
+    )
+
+    result, waited = ask_until_done(designer)
+
+    assert (result.output, len(waited)) == ("Done.", 1)
+    assert "1 to 3 questions, and this one asked 4" in tool_results(script)[0]
+
+
+@pytest.mark.parametrize(
+    ("given", "problem"),
+    [
+        ({"options": ["A", "B", "C", "D"]}, "at most 3 items"),
+        ({"options": ["A", "B"], "recommended": 1}, "put the recommended option first"),
+        ({"recommended": 0}, "recommended needs options"),
+        ({"why_it_matters": ""}, "at least 1 character"),
+    ],
+)
+def test_a_question_that_breaks_the_rules_is_refused(given: dict[str, Any], problem: str) -> None:
+    with pytest.raises(ValidationError, match=problem):
+        Question.model_validate(question("Keep ticks?", **given))
+
+
+def test_an_open_question_and_one_with_a_recommended_first_option_are_accepted() -> None:
+    assert Question.model_validate(question("Keep ticks?")).options is None
+    chosen = Question.model_validate(question("Keep ticks?", options=["Yes", "No"], recommended=0))
+    assert chosen.recommended == 0
+
+
+@pytest.mark.parametrize(
+    ("settings", "problem"),
+    [
+        ({"max_rounds": -1}, "max_rounds must be a whole number, 0 or more"),
+        ({"max_per_round": 0}, "max_per_round must be a whole number, 1 or more"),
+        ({"max_rounds": True}, "max_rounds must be a whole number"),
+    ],
+)
+def test_a_badly_set_up_ask_person_is_refused(settings: dict[str, Any], problem: str) -> None:
+    with pytest.raises(DefinitionError, match=problem):
+        AskPerson(**settings)

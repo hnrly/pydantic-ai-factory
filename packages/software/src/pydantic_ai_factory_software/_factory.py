@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
 
-from pydantic_ai_factory import Factory, FactoryDefinitionError, Rework, station
+from pydantic_ai_factory import AskPerson, Factory, FactoryDefinitionError, Rework, station
 from pydantic_ai_factory.factory import Accept
 from pydantic_ai_factory.methodologies import ElephantGoldfish, Goldfish
 
@@ -24,7 +24,8 @@ class SoftwareFactory(Factory):
     each draft, for up to ``rounds`` rounds, and the designer revises in the same
     conversation. A design that still has open questions is sent back to the designer
     up to ``repairs`` times; after that a person decides. A design that passes waits for
-    a person to approve it.
+    a person to approve it. Before drafting, or during review, the designer may ask you
+    rounds of questions with :class:`~pydantic_ai_factory.AskPerson`.
 
     ``model`` drafts the design. ``review_model`` runs the goldfish; by default they use
     ``model``. ``accept`` reads signals, as for any :class:`Factory`.
@@ -60,7 +61,8 @@ class SoftwareFactory(Factory):
             name="designer",
             output_type=Design,
             instructions=DESIGNER_INSTRUCTIONS,
-            capabilities=[review],
+            # Asking is its own capability, so the designer asks with or without review.
+            capabilities=[review, AskPerson()],
             # Each review round resends the whole conversation, so cache it.
             model_settings={"cache": True},
         )

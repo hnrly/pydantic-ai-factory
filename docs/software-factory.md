@@ -49,7 +49,7 @@ Before the run waited for you, a designer drafted the design and fresh reviewers
 | `review_model` | `model` | The model the reviewers use. |
 | `accept` | none | A function that reads [signals](missions.md#signals) and returns a mission, as for any factory. |
 
-To change more than these allow, build the factory yourself from the same parts: a designer agent with the `ElephantGoldfish` capability, in a station with `approval=True`.
+To change more than these allow, build the factory yourself from the same parts: a designer agent with the `ElephantGoldfish` and `AskPerson` capabilities, in a station with `approval=True`.
 
 `SoftwareFactory` is a `Factory`, so everything on the [factories](factories.md) page works on it, such as `software.agents()` and `software.intake_sync(...)`.
 
@@ -72,6 +72,8 @@ Waiting for approval of Design@37619731dd69.
 Approve, ask for changes, or reject? [a/c/r]
 ```
 
+When the designer asks a round of questions, the command prints each one with why it matters and its options, the recommended first, then asks for one reply to the whole round.
+
 It prints the design in full first, so you decide on what you have read. Answer `a`, and the same design is written to `designs/to-do-list.md`. `factory show <run id>` prints it again for a run that is waiting. Add `--offline` to try it with a scripted model and no key. Add `--no-input` to save the waiting run instead of asking, then decide later with `factory resume <run id> --approve`.
 
 | Option | Means |
@@ -79,7 +81,7 @@ It prints the design in full first, so you decide on what you have read. Answer 
 | `--brief FILE` | Read the mission from a file instead. |
 | `--model NAME` | The model to use. The default is `FACTORY_MODEL`, or `anthropic:claude-opus-5-5`. |
 | `--approve`, `--changes NOTE`, `--reject NOTE` | Decide without being asked. |
-| `--answer TEXT` | Answer the designer's question without being asked. |
+| `--answer TEXT` | Answer the designer's round of questions without being asked. One reply answers the whole round. |
 | `--store FOLDER` | Where runs are kept. The default is `.factory`. |
 | `--out FOLDER` | Where approved designs are written. The default is `designs`. |
 

@@ -18,6 +18,7 @@ import re
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any, cast
 
 from pydantic_ai import DeferredToolResults
 from pydantic_ai.exceptions import UserError
@@ -75,7 +76,9 @@ def _parser() -> argparse.ArgumentParser:
         answers.add_argument("--approve", action="store_true", help="approve without asking")
         answers.add_argument("--changes", metavar="NOTE", help="ask for changes, with a note")
         answers.add_argument("--reject", metavar="NOTE", help="reject, with a note")
-        answers.add_argument("--answer", metavar="TEXT", help="answer the agent's question")
+        answers.add_argument(
+            "--answer", metavar="TEXT", help="answer the agent's round of questions"
+        )
 
     run = commands.add_parser("run", help="start a run")
     run.add_argument("mission", nargs="?", help="the mission, as text")
@@ -175,20 +178,39 @@ def _show_waiting(run: Run, store: LocalStore, say: Say) -> None:
     say(f"Waiting for a decision on {waiting.artifact}.")
 
 
-def _questions(run: Run) -> list[tuple[str, str]]:
-    """Each question an agent asked, as (tool call id, question)."""
+def _questions(run: Run) -> list[str]:
+    """Each question in the round an agent asked, as lines to print.
+
+    Each question comes with why it matters and its options, the recommended one first.
+    A run saved before questions came in rounds has only ``question``, which is printed
+    as it is.
+    """
     requests = run.waiting.requests if run.waiting else None
     if requests is None:
         return []
-    return [
-        (call.tool_call_id, str(requests.metadata.get(call.tool_call_id, {}).get("question", "")))
-        for call in requests.calls
-    ]
+    lines: list[str] = []
+    number = 0
+    for call in requests.calls:
+        metadata = requests.metadata.get(call.tool_call_id, {})
+        questions = metadata.get("questions")
+        if not isinstance(questions, list):
+            lines.append(f"Question: {metadata.get('question', '')}")
+            continue
+        for question in cast("list[dict[str, Any]]", questions):
+            number += 1
+            lines.append(f"Question {number}: {question.get('text', '')}")
+            lines.append(f"  Why it matters: {question.get('why_it_matters', '')}")
+            recommended = question.get("recommended")
+            for index, option in enumerate(question.get("options") or ()):
+                mark = " (recommended)" if index == recommended else ""
+                lines.append(f"  {chr(ord('a') + index)}) {option}{mark}")
+    return lines
 
 
 def _answer_calls(
     args: argparse.Namespace, run: Run, ask: Ask, say: Say
 ) -> DeferredToolResults | None:
+    """Ask the round, and give the person's one reply to every call in it."""
     requests = run.waiting.requests if run.waiting else None
     if requests is None:
         return None
@@ -196,19 +218,14 @@ def _answer_calls(
         raise CommandError(
             f"run {run.run_id} waits for a tool call to be allowed; answer it from Python"
         )
-    answers: dict[str, str] = {}
-    for call_id, question in _questions(run):
-        say(f"Question: {question}")
-        if args.answer:
-            answers[call_id] = args.answer
-            continue
-        if args.no_input:
-            return None
-        answer = ""
-        while not answer:
-            answer = ask("Your answer: ").strip()
-        answers[call_id] = answer
-    return requests.build_results(calls=answers)
+    for line in _questions(run):
+        say(line)
+    answer: str = args.answer or ""
+    if not answer and args.no_input:
+        return None
+    while not answer:
+        answer = ask("Your answer: ").strip()
+    return requests.build_results(calls={call.tool_call_id: answer for call in requests.calls})
 
 
 def _decide(args: argparse.Namespace, run: Run, ask: Ask, say: Say) -> Decision | None:

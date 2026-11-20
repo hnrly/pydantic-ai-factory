@@ -1,6 +1,6 @@
 """Stations: one bounded job with a typed input, a typed output and a gate."""
 
-from ._ask import AskPerson
+from ._ask import AskPerson, Question
 from ._station import (
     AgentCall,
     Escalate,
@@ -22,6 +22,7 @@ __all__ = [
     "AskPerson",
     "Escalate",
     "Feedback",
+    "Question",
     "Station",
     "StationClosed",
     "StationContext",

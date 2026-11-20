@@ -120,6 +120,31 @@ def test_a_mission_is_drafted_reviewed_and_waits_for_a_person_to_approve_the_des
     assert "Ticked tasks stay ticked after a reload." in pond.read["readiness"][0]
 
 
+def test_the_software_designer_still_asks() -> None:
+    question = {
+        "text": "Should ticked tasks survive a reload?",
+        "why_it_matters": "If they do, the page must save them.",
+        "options": ["Yes, in the browser", "No"],
+        "recommended": 0,
+    }
+    asks = ModelResponse(parts=[ToolCallPart("ask_person", {"questions": [question]}, "q1")])
+    designer = Designer(asks, {**TODO, "behaviour": [*TODO["behaviour"], BLANK]})
+    software = factory(designer)
+    store = MemoryStore()
+
+    run = software.run_sync(MISSION, store=store)
+
+    assert run.waiting is not None and run.waiting.kind == "tool-calls"
+    requests = run.waiting.requests
+    assert requests is not None
+    [call] = requests.calls
+    assert requests.metadata[call.tool_call_id]["questions"] == [question]
+    answered = software.resume_sync(
+        run, requests.build_results(calls={call.tool_call_id: "Yes."}), store=store
+    )
+    assert answered.waiting is not None and answered.waiting.kind == "approval"
+
+
 def test_approving_the_design_passes_the_run_with_the_design_as_its_output() -> None:
     software = factory(Designer({**TODO, "behaviour": [*TODO["behaviour"], BLANK]}))
     store = MemoryStore()

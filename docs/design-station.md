@@ -22,6 +22,8 @@ Each field but `title` and `goal` is a list of short sentences. Acceptance crite
 
 The designer asks for prompt caching, `model_settings={"cache": True}`. Each review round resends the whole conversation, so the provider can serve all but the newest part from its cache.
 
+Before drafting, and during review, the designer may ask you what the mission leaves open. It has [`AskPerson`](approvals.md#asking-a-person) beside Elephant Goldfish, so it asks in rounds: up to four questions at a time, each with why it matters and up to three options, the recommended one first. It may ask three rounds; the run waits once for each.
+
 A design that still has open questions fails the station's gate, `no_open_questions`, and goes back to the designer, which asks you or settles them. After `repairs` tries, two by default, a person decides.
 
 ## The review
