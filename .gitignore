@@ -29,3 +29,6 @@ site/dist/
 .claude/
 .factory-internal/
 skills-lock.json
+
+# Benchmark runs
+evals-out/
