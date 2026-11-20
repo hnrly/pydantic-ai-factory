@@ -80,7 +80,7 @@ print(len(waiting), waiting[0].run_id == first.run_id, waiting[0].waiting.statio
 #> 1 True designer
 ```
 
-A waiting run's `updated_at` is when it started waiting. A run saved by version 0.1 has no `updated_at`, so it comes last in either order. Runs saved at the same moment come in `run_id` order.
+A waiting run's `updated_at` is when it started waiting. Runs saved at the same moment come in `run_id` order.
 
 `limit` caps how many runs come back. It is 50 unless you say otherwise, and it must be between 1 and 1000, or `list_runs` raises `ValueError`. There is no cursor: to see more, narrow the listing with `outcome` or `factory`.
 
@@ -130,11 +130,11 @@ A store written for version 0.1 must add `list_runs`. Every store keeps these ru
 - An artifact comes back from `get` exactly as it was put.
 - `put` refuses an artifact that does not match its digest, and `get` refuses one asked for under the wrong ref. Both raise `ArtifactCorrupt`.
 - A run comes back from `get_run` exactly as it was saved.
+- A stored run that this version cannot read, such as one saved by version 0.1, raises `StoreSchemaMismatch`. `decode_run` does this for you.
 - `put_run(run, replaces=previous)` saves only if the stored run is still `previous`. Otherwise it raises `RunConflict` and saves nothing.
 - `put_run(run, replaces=None)` saves only if no run has that id. Otherwise it raises `RunConflict`.
 - `list_runs` returns the latest save of each run, filtered by `outcome` and `factory` when given.
 - It sorts by `updated_at` alone, newest first or oldest first, with runs saved at the same moment in `run_id` order.
-- A run with no `updated_at` comes last in either order.
 - It returns at most `limit` runs, and raises `ValueError` when `limit` is not between 1 and 1000.
 
 The library's own tests check these rules against every store it ships, in `tests/test_store_contract.py`. Copy them to check your own.

@@ -99,11 +99,11 @@ class RunSummary(BaseModel):
     run_id: str
     mission: str
     state: DisplayState
+    last_change: datetime
     outcome: RunOutcome | None = None
     revision: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
-    last_change: datetime | None = None
     waiting: WaitingView | None = None
     actions: list[Action]
 
@@ -151,8 +151,8 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _older_than(moment: datetime | None, limit: timedelta) -> bool:
-    return moment is None or _now() - moment > limit
+def _older_than(moment: datetime, limit: timedelta) -> bool:
+    return _now() - moment > limit
 
 
 def _calls(parts: list[ToolCallPart], metadata: dict[str, dict[str, Any]]) -> list[ToolCallView]:
@@ -249,7 +249,8 @@ def create_app(
         if start.state == "queued":
             state: DisplayState = "queued"
         elif start.state == "claimed":
-            state = "stalled" if _older_than(start.claimed_at, stalled_after) else "running"
+            claimed_at = start.claimed_at or start.created_at
+            state = "stalled" if _older_than(claimed_at, stalled_after) else "running"
         else:
             # The job ended without the run ever being saved: the run could not start.
             state = "failed"
@@ -262,7 +263,8 @@ def create_app(
         )
 
     def job_view(job: Job) -> JobView:
-        stalled = job.state == "claimed" and _older_than(job.claimed_at, stalled_after)
+        claimed_at = job.claimed_at or job.created_at
+        stalled = job.state == "claimed" and _older_than(claimed_at, stalled_after)
         return JobView(**job.model_dump(), stalled=stalled)
 
     async def detail(run_id: str) -> RunDetail:
@@ -334,10 +336,7 @@ def create_app(
                     await store.get_run(start.run_id)
                 except RunNotFound:
                     summaries.append(unsaved(start))
-            # As in the store, a run with no time, saved by 0.1, comes last in either order.
-            dated = [run for run in summaries if run.last_change is not None]
-            dated.sort(key=lambda run: run.last_change or _now(), reverse=order == "newest")
-            summaries = dated + [run for run in summaries if run.last_change is None]
+            summaries.sort(key=lambda run: run.last_change, reverse=order == "newest")
         return RunList(runs=summaries[:limit], more=len(summaries) > limit)
 
     @app.get("/api/runs/{run_id}")
