@@ -99,6 +99,45 @@ print(done.output)
 #> Published index.html.
 ```
 
-The agent resumes in the same conversation and the tool runs. To let an agent ask questions, give it the `AskPerson` capability, which adds an `ask_person` tool. Each question waits like any tool call; `AskPerson(max_questions=3)` caps them.
+The agent resumes in the same conversation and the tool runs.
+
+## Asking a person
+
+To let an agent ask a person what its mission leaves open, give it the `AskPerson` capability. It adds an `ask_person` tool that asks in rounds. A round is up to four questions, asked together, and the run waits once for the whole round. Each question says why it matters and may offer up to three options, the recommended one first.
+
+```python
+from pydantic_ai import Agent
+
+from pydantic_ai_factory import AskPerson, Factory, MemoryStore, station
+
+planner = Agent("anthropic:claude-opus-5-5", name="planner", capabilities=[AskPerson()])
+software = Factory("software", [station(planner)])
+store = MemoryStore()
+
+run = software.run_sync("A to-do list web page.", store=store)
+call = run.waiting.requests.calls[0]
+print(run.waiting.requests.metadata[call.tool_call_id]["question"])
+"""
+1. Should ticked tasks survive a reload?
+   Why it matters: If they do, the page must save them.
+   a) Yes, in the browser's storage (recommended)
+   b) No, a reload clears the list
+2. Can a ticked task be unticked?
+   Why it matters: It decides whether a tick can be undone.
+"""
+answer = run.waiting.requests.build_results(calls={call.tool_call_id: "1: yes. 2: yes."})
+done = software.resume_sync(run, answer, store=store)
+print(done.output)
+#> One page. Ticked tasks are saved in the browser, and can be unticked.
+```
+
+Each call's metadata holds the round twice: `questions`, a list of dictionaries with `text`, `why_it_matters`, `options` and `recommended`, and `question`, the same round as numbered text. The person replies once, to the whole round, and the reply is the tool's result. If the agent splits a round across several calls in one response, they are still one round; reply to each call.
+
+| Setting | Default | Means |
+|---|---|---|
+| `max_rounds` | 3 | Rounds the agent may ask. After the last, the tool tells it to carry on with its best judgement and say what it assumed. 0 takes the tool away. |
+| `max_per_round` | 4 | Questions in one round. A round with more is refused with a message, and the agent asks again. A refused round does not count. |
+
+A question is a `Question`: `text`, `why_it_matters`, `options`, at most three or none for an open question, and `recommended`, which must be 0 when given, so the recommended option always comes first.
 
 `ctx.run_agent` lets the run wait by adding `DeferredToolRequests` to the agent's output type. Pydantic AI refuses that for an agent with output validators, so such an agent keeps its own output type and runs normally. To let it wait as well, put `DeferredToolRequests` in its `output_type` yourself.

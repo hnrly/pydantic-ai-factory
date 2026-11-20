@@ -327,7 +327,20 @@ async def test_a_request_for_changes_records_who_asked_but_not_their_note() -> N
 
 async def test_answered_tool_calls_are_an_answer_span_without_the_reply_text() -> None:
     question = ModelResponse(
-        parts=[ToolCallPart("ask_person", {"question": "Keep ticked tasks?"}, "q1")]
+        parts=[
+            ToolCallPart(
+                "ask_person",
+                {
+                    "questions": [
+                        {
+                            "text": "Keep ticked tasks?",
+                            "why_it_matters": "It decides whether the page saves them.",
+                        }
+                    ]
+                },
+                "q1",
+            )
+        ]
     )
     designer = Agent(replies(question, FIXED), name="designer", capabilities=[AskPerson()])
     software = Factory("software", [station(designer)])

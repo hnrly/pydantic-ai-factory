@@ -42,7 +42,7 @@ from pydantic_evals import Case, Dataset
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 from pydantic_evals.reporting import EvaluationReport
 
-from pydantic_ai_factory import Factory, MemoryStore, Rework, Run, station
+from pydantic_ai_factory import AskPerson, Factory, MemoryStore, Rework, Run, station
 from pydantic_ai_factory.methodologies import ElephantGoldfish, GoldfishReport
 from pydantic_ai_factory_software import DESIGN_GOLDFISH, Design
 from pydantic_ai_factory_software._design import DESIGNER_INSTRUCTIONS, no_open_questions
@@ -327,7 +327,8 @@ def designers(model: Model | str) -> tuple[Agent[None, Design], Agent[None, Desi
         name="designer",
         output_type=Design,
         instructions=DESIGNER_INSTRUCTIONS,
-        capabilities=[ElephantGoldfish(goldfish=DESIGN_GOLDFISH)],
+        # Elephant Goldfish no longer brings ask_person, so this arm keeps it as before.
+        capabilities=[ElephantGoldfish(goldfish=DESIGN_GOLDFISH), AskPerson()],
         model_settings={"cache": True},
     )
     plain_designer = Agent(
