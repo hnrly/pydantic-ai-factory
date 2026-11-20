@@ -51,10 +51,9 @@ class RunStore(Protocol):
     ) -> list[Run]:
         """Return up to ``limit`` stored runs, sorted by ``updated_at``.
 
-        Runs come newest first, or oldest first with ``order="oldest"``. A run with no
-        ``updated_at``, saved by 0.1, comes last in either order. Runs changed at the
-        same moment come in ``run_id`` order. Only runs with this ``outcome`` and from
-        this ``factory`` are listed, when either is given. ``limit`` must be between 1
+        Runs come newest first, or oldest first with ``order="oldest"``. Runs changed
+        at the same moment come in ``run_id`` order. Only runs with this ``outcome``
+        and from this ``factory`` are listed, when either is given. ``limit`` must be between 1
         and 1000, or the store raises ``ValueError``. Each run is the latest one saved.
         """
         ...

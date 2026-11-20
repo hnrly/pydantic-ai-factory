@@ -21,8 +21,7 @@ export const WAITING_LABEL: Record<Waiting['kind'], string> = {
 export const NEEDS_NAME = 'Type your name at the top first.';
 
 /** A time in the reader's own zone, written the British way. */
-export function when(iso: string | null): string {
-  if (!iso) return 'an unknown time';
+export function when(iso: string): string {
   return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
