@@ -10,7 +10,10 @@ An experiment continues where it stopped: before each arm it counts the records 
 in ``<out>/<arm>/<case>/`` and runs only what is missing to reach ``repeat``. It stops,
 and returns 2, after three runs in a row end as ``infrastructure``.
 
-This change registers only the scripted systems, which run offline.
+This change registers only the scripted systems, which run offline. They read no file, so
+they need neither Docker nor a repository snapshot. An arm that reads files, registered in
+:data:`SANDBOX_ARMS` by a later change, runs in a Docker container: the experiment refuses
+to start one when ``docker info`` fails.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from evals.checklist import JudgeAnswer, judge_agent, scripted_judge
 from evals.contract import RunRecord
 from evals.evaluators import Graded, GradedRun, JudgeFor, grade_run
 from evals.harness import read_record, run_case
+from evals.sandbox import docker_available
 from evals.simulator import Pick, haiku_picker, scripted_picker
 from evals.version import CAP_USD, TIME_LIMIT_SECONDS
 
@@ -41,6 +45,12 @@ Judge = Literal["real", "scripted"]
 
 SCRIPTED_ARMS: dict[str, Kind] = {ARM_PREFIX + kind: kind for kind in KINDS}
 """The arms of the scripted systems. They are test fixtures and run only offline."""
+
+SANDBOX_ARMS: frozenset[str] = frozenset()
+"""The arms that read files, each in its own Docker container. The factory and Claude Code
+arms join it when their adapters are added."""
+
+DOCKER_NEEDED = "Docker is needed to run the {arms} arm(s), and `docker info` failed."
 
 STOP_AFTER = 3
 """An experiment stops after this many runs in a row end as an infrastructure error."""
@@ -93,9 +103,27 @@ def run_experiment(
         if not offline:
             print(f"The {arm} arm is a scripted test fixture and runs only with --offline.")
             return 2
+    refusal = docker_refusal(chosen)
+    if refusal is not None:
+        print(refusal)
+        return 2
     usereal_judge_for = (judge or ("scripted" if offline else "real")) == "real"
     judge_for: JudgeFor = real_judge_for if usereal_judge_for else scripted_judge_for
     return anyio.run(_run, chosen, split, repeat, out, offline, judge_for)
+
+
+def docker_refusal(
+    arms: Sequence[str], *, sandbox_arms: frozenset[str] = SANDBOX_ARMS
+) -> str | None:
+    """Why ``arms`` cannot start here, or ``None`` when they can.
+
+    An arm in ``sandbox_arms`` needs Docker. ``docker info`` is asked only when one is
+    chosen, so the scripted systems run without Docker.
+    """
+    needing = [arm for arm in arms if arm in sandbox_arms]
+    if needing and not docker_available():
+        return DOCKER_NEEDED.format(arms=", ".join(needing))
+    return None
 
 
 def regrade(out: Path) -> int:
@@ -184,6 +212,7 @@ def _task(
             picker=picker,
             cap_usd=CAP_USD,
             time_limit_seconds=TIME_LIMIT_SECONDS,
+            reads_files=arm in SANDBOX_ARMS,
         )
         progress.streak = progress.streak + 1 if record.end == "infrastructure" else 0
         progress.done.append(f"{record.arm}/{record.case_name}/{record.repeat}")

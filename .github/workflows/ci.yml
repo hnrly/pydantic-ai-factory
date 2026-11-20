@@ -35,6 +35,9 @@ jobs:
       - run: uv run --locked ruff check .
       - run: uv run --locked pyright
       - run: uv run --locked lint-imports
+      # The sandbox tests start containers from this image; GitHub's Ubuntu runners have Docker.
+      - name: Build the evals sandbox image
+        run: uv run --locked python -m evals --build-image
       - run: uv run --locked pytest
       - name: Run the installed factory command offline, wait, then approve
         run: |

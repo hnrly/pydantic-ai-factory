@@ -65,3 +65,15 @@ Rules:
    it.
 """
 """The picker's instructions, as the author confirmed them on 18 November 2026."""
+
+CLAUDE_CODE_VERSION = "2.1.327"
+"""The Claude Code release installed in the sandbox image: the one the spikes ran."""
+
+SANDBOX_IMAGE = (
+    f"software-factory-evals-sandbox:{BENCHMARK_VERSION}-claude-code-{CLAUDE_CODE_VERSION}"
+)
+"""The tag of the one image every arm's container runs.
+
+``python -m evals --build-image`` builds it from ``evals/sandbox/Dockerfile``. The run card
+quotes its digest.
+"""

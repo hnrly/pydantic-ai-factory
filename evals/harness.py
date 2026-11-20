@@ -10,11 +10,18 @@ How a run ends:
 * the time limit stops it: ``timeout``;
 * the system reports that it reached its own cap, or finishes with a cost over the cap:
   ``budget``;
+* the case's snapshot holds a hidden value it may not hold: ``infrastructure``, before
+  the system is called, with each file and fact in ``detail``. It is a fault in the case;
 * the system reports an infrastructure failure, or the system or harness raises:
   ``infrastructure``, with the exception's name in ``detail``. The run is then moved into
   ``attempt-1/`` and run once more in the same folder. Whatever the second attempt gives
   is the run's record, with ``reruns`` set to 1. The rule is the same for every arm;
 * otherwise: ``finished``, and grading decides the outcome.
+
+A system that reads files gets the case's repository snapshot, built by
+:func:`~evals.sandbox.snapshot_for` in ``<run folder>/snapshot/`` and scanned by
+:func:`~evals.sandbox.scan` before it is called. The scripted systems read no file, so
+they skip both and are given an empty folder.
 
 The harness never reads a claim a system makes about itself, beyond its cost and how it
 says it stopped.
@@ -22,6 +29,7 @@ says it stopped.
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 import tempfile
 import time
@@ -30,7 +38,7 @@ from pathlib import Path
 import anyio
 from pydantic_ai import Agent
 
-from evals.cases import PublicCase
+from evals.cases import CASES, PublicCase
 from evals.contract import (
     DesignPackage,
     RecordEnd,
@@ -43,16 +51,21 @@ from evals.contract import (
 )
 from evals.events import EventLog
 from evals.facts import FactSheet
+from evals.sandbox import (
+    REFERENCE,
+    SnapshotLeak,
+    all_sheets,
+    allowed_for,
+    check_clean,
+    rung_base,
+    snapshot_for,
+)
 from evals.simulator import Pick, Stakeholder
 
 RERUN_FOLDER = "attempt-1"
 """Where the first attempt of a rerun run is kept."""
 
 _STATUSES: frozenset[str] = frozenset({"delivered", "blocked"})
-
-
-class SnapshotUnavailable(ValueError):
-    """The case's repository snapshot needs the sandbox runner, which comes later."""
 
 
 class RunPorts:
@@ -86,14 +99,21 @@ async def run_case(
     picker: Agent[None, Pick],
     cap_usd: float,
     time_limit_seconds: float,
+    reads_files: bool = False,
+    cases_root: Path = CASES,
+    reference_root: Path = REFERENCE,
 ) -> RunRecord:
-    """Run ``case`` through ``adapter`` once, write its files and return its record."""
+    """Run ``case`` through ``adapter`` once, write its files and return its record.
+
+    With ``reads_files``, the adapter is given the case's repository snapshot, built from
+    its rung's base under ``reference_root`` and its overlay under ``cases_root``. A rung
+    whose base is missing raises :class:`~evals.sandbox.RungBaseMissing` before any run
+    folder is made.
+    """
     if sheet.case_name != case.name:
         raise ValueError(f"the fact sheet of {sheet.case_name!r} is not for {case.name!r}")
-    if case.rung != "empty":
-        raise SnapshotUnavailable(
-            f"case {case.name!r} starts from {case.rung!r}; its snapshot needs the sandbox runner"
-        )
+    if reads_files:
+        rung_base(case.rung, reference=reference_root)
     folder, repeat = _new_run_folder(out / arm / case.name)
     run_id = folder.relative_to(out).as_posix()
 
@@ -109,6 +129,9 @@ async def run_case(
             picker=picker,
             cap_usd=cap_usd,
             time_limit_seconds=time_limit_seconds,
+            reads_files=reads_files,
+            cases_root=cases_root,
+            reference_root=reference_root,
         )
 
     record = await attempt()
@@ -148,6 +171,9 @@ async def _attempt(
     picker: Agent[None, Pick],
     cap_usd: float,
     time_limit_seconds: float,
+    reads_files: bool,
+    cases_root: Path,
+    reference_root: Path,
 ) -> RunRecord:
     log = EventLog(folder / "events.jsonl", run=run_id)
     ports: RunPorts | None = None
@@ -156,14 +182,25 @@ async def _attempt(
     detail = ""
     started = time.monotonic()
     try:
-        with tempfile.TemporaryDirectory(prefix="evals-snapshot-") as snapshot:
-            brief = brief_for(case.name, case.request, Path(snapshot))
+        with contextlib.ExitStack() as stack:
+            if reads_files:
+                snapshot = snapshot_for(case, folder, root=cases_root, reference=reference_root)
+                allowed = allowed_for(case, sheet, root=cases_root)
+                check_clean(snapshot, all_sheets(root=cases_root), allowed)
+            else:
+                snapshot = Path(
+                    stack.enter_context(tempfile.TemporaryDirectory(prefix="evals-snapshot-"))
+                )
+            brief = brief_for(case.name, case.request, snapshot)
             ports = RunPorts(Stakeholder(sheet, picker, log), log)
             log.append("brief_sent", case_name=case.name)
             with anyio.move_on_after(time_limit_seconds) as scope:
                 report = await adapter.run(brief, ports)
             if scope.cancelled_caught:
                 end = "timeout"
+    except SnapshotLeak as error:
+        end = "infrastructure"
+        detail = f"{type(error).__name__}: {error}"
     except Exception as error:
         end = "infrastructure"
         detail = type(error).__name__

@@ -2,6 +2,7 @@
 
 python -m evals --offline --split smoke
 python -m evals --regrade --out evals-out
+python -m evals --build-image
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from evals.experiment import regrade, run_experiment
+from evals.sandbox import SandboxError, build_image
+from evals.version import SANDBOX_IMAGE
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -43,7 +46,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--regrade", action="store_true", help="grade the runs in --out again and run nothing"
     )
+    parser.add_argument(
+        "--build-image",
+        action="store_true",
+        help=f"build the sandbox image, {SANDBOX_IMAGE}, and run nothing",
+    )
     args = parser.parse_args(argv)
+    if args.build_image:
+        try:
+            image_id = build_image()
+        except SandboxError as error:
+            print(error)
+            return 2
+        print(f"Built {SANDBOX_IMAGE}: {image_id}")
+        return 0
     if args.offline:
         # Offline runs use scripted models; Pydantic AI's first-run banner is only noise.
         os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
