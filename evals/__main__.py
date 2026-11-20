@@ -2,6 +2,7 @@
 
 python -m evals --offline --split smoke
 python -m evals --regrade --out evals-out
+python -m evals --offline --regrade --out evals-out
 python -m evals --build-image
 """
 
@@ -68,7 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Offline runs use scripted models; Pydantic AI's first-run banner is only noise.
         os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
     if args.regrade:
-        return regrade(args.out)
+        return regrade(args.out, judge=args.judge or ("scripted" if args.offline else "real"))
     return run_experiment(
         args.arm,
         args.split,

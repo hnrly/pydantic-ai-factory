@@ -328,8 +328,10 @@ def test_the_command_prints_one_line_for_each_run_offline(
         "scripted-silent",
     ]
     assert "policy_failure" in lines[2]
-    assert "say nothing about real models" in lines[4]
-    assert "factory, factory-simple arm(s) were left out" in lines[5]
+    assert "Scorecard: Software Factory Evals 0.1" in lines
+    assert "Run card" in lines
+    assert "say nothing about real models" in lines[-2]
+    assert "factory, factory-simple arm(s) were left out" in lines[-1]
     results = json.loads((tmp_path / "results.json").read_text())
     assert [r["outcome"] for r in results] == [
         "verified_design",

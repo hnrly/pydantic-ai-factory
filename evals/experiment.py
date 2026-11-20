@@ -8,7 +8,9 @@ at a time.
 
 An experiment continues where it stopped: before each arm it counts the records already
 in ``<out>/<arm>/<case>/`` and runs only what is missing to reach ``repeat``. It stops,
-and returns 2, after three runs in a row end as ``infrastructure``.
+and returns 2, after three runs in a row end as ``infrastructure``. When the runs end, and
+after ``--regrade``, it prints the scorecard and the run card of every run in ``<out>``,
+and writes them there as ``scorecard.json`` and ``run-card.json``.
 
 The scripted systems run offline only. They read no file, so they need neither Docker
 nor a repository snapshot. The two factory arms, ``factory`` and ``factory-simple``, read
@@ -40,11 +42,19 @@ from evals import facts
 from evals.adapters.claude_code import CLAUDE_CODE_ARM, ClaudeCodeAdapter
 from evals.adapters.factory import FACTORY_ARM, SIMPLE_ARM, FactoryAdapter
 from evals.adapters.scripted import ARM_PREFIX, KINDS, Kind, scripted_designer, scripted_system
-from evals.cases import PublicCase, cases
+from evals.cases import SPLITS, PublicCase, cases, split_of
 from evals.checklist import JudgeAnswer, judge_agent, scripted_judge
 from evals.contract import RunRecord, SystemAdapter
 from evals.evaluators import Graded, GradedRun, JudgeFor, grade_run
 from evals.harness import read_record, run_case
+from evals.report import (
+    judge_agreement,
+    run_card,
+    run_card_text,
+    scorecard,
+    scorecard_text,
+    write_reports,
+)
 from evals.sandbox import docker_available, overlay_of
 from evals.simulator import Pick, haiku_picker, scripted_picker
 from evals.version import CAP_USD, PINNED_MODEL, TIME_LIMIT_SECONDS
@@ -124,9 +134,11 @@ def run_experiment(
     if refusal is not None:
         print(refusal)
         return 2
-    usereal_judge_for = (judge or ("scripted" if offline else "real")) == "real"
-    judge_for: JudgeFor = real_judge_for if usereal_judge_for else scripted_judge_for
-    code = anyio.run(_run, chosen, split, repeat, out, offline, judge_for, model or PINNED_MODEL)
+    judge_kind: Judge = judge or ("scripted" if offline else "real")
+    judge_for: JudgeFor = real_judge_for if judge_kind == "real" else scripted_judge_for
+    code = anyio.run(
+        _run, chosen, split, repeat, out, offline, judge_for, model or PINNED_MODEL, judge_kind
+    )
     if left_out:
         print(LEFT_OUT.format(arms=", ".join(left_out)))
     return code
@@ -160,8 +172,11 @@ def docker_refusal(
     return None
 
 
-def regrade(out: Path) -> int:
-    """Grade every record in ``out`` again with its stored verdicts, and call no model."""
+def regrade(out: Path, *, judge: Judge = "real") -> int:
+    """Grade every record in ``out`` again with its stored verdicts, and call no model.
+
+    ``judge`` says which judge gave the stored verdicts, for the scorecard and the run card.
+    """
     folders = _run_folders(out)
     if not folders:
         print(f"There are no runs to regrade in {out}.")
@@ -170,7 +185,37 @@ def regrade(out: Path) -> int:
     _write_results(out, graded)
     for run in graded:
         print(run.line())
+    print_reports(out, graded, judge=judge)
     return 0
+
+
+def print_reports(out: Path, graded: Sequence[GradedRun], *, judge: Judge) -> None:
+    """Build the scorecard and the run card for every run in ``out``, print both and write both.
+
+    The run card's splits, arms and repeats are those of the runs in ``out``.
+    """
+    if not graded:
+        return
+    names = sorted({run.record.case_name for run in graded})
+    split_names = {name: split_of(name) for name in names}
+    sheets = {name: facts.load(split_names[name], name) for name in names}
+    score = scorecard(
+        graded,
+        sheets,
+        judge_agreement=judge_agreement(),
+        judge_scripted=judge == "scripted",
+    )
+    card = run_card(
+        [split for split in SPLITS if split in split_names.values()],
+        max(run.record.repeat for run in graded),
+        sorted({run.record.arm for run in graded}),
+        judge=judge,
+    )
+    write_reports(out, score, card)
+    print()
+    print(scorecard_text(score))
+    print()
+    print(run_card_text(card))
 
 
 async def _run(
@@ -181,6 +226,7 @@ async def _run(
     offline: bool,
     judge_for: JudgeFor,
     model: str | Model,
+    judge: Judge,
 ) -> int:
     split_cases = cases(split)
     by_name = {case.name: case for case in split_cases}
@@ -219,6 +265,7 @@ async def _run(
             print(run.line())
     if not progress.done:
         print(f"Every case already has {repeat} run(s) in {out}. Nothing was run.")
+    print_reports(out, graded, judge=judge)
     if offline:
         print(OFFLINE_NOTE)
     if progress.streak >= STOP_AFTER:

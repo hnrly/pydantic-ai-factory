@@ -42,13 +42,18 @@ class MissingVerdicts(LookupError):
 
 
 class GradedRun(BaseModel):
-    """Everything known about one graded run. ``coverage`` is ``None`` with no delivery."""
+    """Everything known about one graded run. ``coverage`` is ``None`` with no delivery.
+
+    ``verdicts`` holds the checklist judge's verdict on each item, for the scorecard's
+    coverage of each item.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     record: RunRecord
     grade: Grade
     coverage: float | None
+    verdicts: tuple[ItemVerdict, ...] = ()
 
     @property
     def run_id(self) -> str:
@@ -105,6 +110,7 @@ async def grade_run(
     stored = _read_verdicts(folder)
     package = record.package
     share: float | None = None
+    verdicts: tuple[ItemVerdict, ...] = ()
     if package is not None:
         if judge_for is None:
             have = {v.item_id for v in stored if v.document_sha256 == package.document_sha256}
@@ -117,8 +123,9 @@ async def grade_run(
         found = await coverage(package, sheet, judge, stored)
         if found is not None:
             share = found.share
+            verdicts = found.verdicts
             _write_verdicts(folder, found.verdicts)
-    return GradedRun(record=record, grade=graded, coverage=share)
+    return GradedRun(record=record, grade=graded, coverage=share, verdicts=verdicts)
 
 
 @dataclass
