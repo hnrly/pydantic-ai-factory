@@ -74,6 +74,7 @@ def a_run(
         revision=revision,
         outcome=outcome,
         finished=outcome == "passed",
+        station="design" if outcome in ("running", "waiting") else None,
         stopped_at=None if outcome in ("passed", "running") else "design",
         input_ref=INPUT,
         output_ref=OUTPUT if outcome == "passed" else None,
@@ -179,12 +180,13 @@ async def test_runs_are_listed_oldest_first_when_asked(store: AnyStore) -> None:
     assert ids(await store.list_runs(order="oldest")) == ["a", "b", "c"]
 
 
-async def test_runs_changed_at_the_same_moment_are_listed_by_id(
+async def test_runs_changed_at_the_same_moment_are_listed_by_id_in_the_listings_direction(
     store: AnyStore,
 ) -> None:
-    await put_all(store, a_run("b"), a_run("c"), a_run("a"))
+    await put_all(store, a_run("b"), a_run("c"), a_run("a"), a_run("z", minutes=1))
 
-    assert ids(await store.list_runs()) == ids(await store.list_runs(order="oldest"))
+    assert ids(await store.list_runs()) == ["z", "c", "b", "a"]
+    assert ids(await store.list_runs(order="oldest")) == ["a", "b", "c", "z"]
 
 
 async def test_runs_can_be_listed_by_outcome(store: AnyStore) -> None:
@@ -240,6 +242,97 @@ async def test_a_listing_shows_the_latest_save_of_each_run(
     await store.put_run(moved, replaces=first)
 
     assert await store.list_runs() == [moved, await store.get_run("run-2")]
+
+
+async def test_list_runs_updated_after_returns_only_runs_saved_since(store: AnyStore) -> None:
+    await put_all(store, *(a_run(f"run-{n}", minutes=n) for n in range(4)))
+
+    since = await store.list_runs(updated_after=WHEN + timedelta(minutes=1), order="oldest")
+
+    # Strictly after: a run saved at that very moment was seen by the last poll.
+    assert ids(since) == ["run-2", "run-3"]
+    assert await store.list_runs(updated_after=WHEN + timedelta(minutes=3)) == []
+
+
+async def test_list_runs_updated_before_pages_back_in_order(store: AnyStore) -> None:
+    await put_all(store, *(a_run(f"run-{n}", minutes=n) for n in range(5)))
+
+    pages: list[list[str]] = []
+    page = await store.list_runs(limit=2)
+    while page:
+        pages.append(ids(page))
+        page = await store.list_runs(limit=2, updated_before=page[-1].updated_at)
+
+    assert pages == [["run-4", "run-3"], ["run-2", "run-1"], ["run-0"]]
+    window = await store.list_runs(
+        updated_after=WHEN, updated_before=WHEN + timedelta(minutes=3), order="oldest"
+    )
+    assert ids(window) == ["run-1", "run-2"]
+
+
+async def test_paging_back_one_run_at_a_time_loses_no_run_saved_at_the_same_moment(
+    store: AnyStore,
+) -> None:
+    await put_all(
+        store, a_run("a", minutes=1), a_run("b", minutes=1), a_run("c", minutes=1), a_run("d")
+    )
+
+    seen: list[str] = []
+    page = await store.list_runs(limit=1)
+    while page:
+        seen.extend(ids(page))
+        last = page[-1]
+        page = await store.list_runs(
+            limit=1, updated_before=last.updated_at, before_run_id=last.run_id
+        )
+
+    assert seen == ["c", "b", "a", "d"]
+
+
+async def test_a_paging_cursor_keeps_its_other_filters(store: AnyStore) -> None:
+    await put_all(
+        store,
+        a_run("a", outcome="waiting", minutes=1),
+        a_run("b", outcome="passed", minutes=1),
+        a_run("c", outcome="waiting", minutes=1),
+        a_run("d", outcome="waiting"),
+    )
+
+    after_c = await store.list_runs(
+        outcome="waiting", updated_before=WHEN + timedelta(minutes=1), before_run_id="c"
+    )
+
+    assert ids(after_c) == ["a", "d"]
+
+
+async def test_before_run_id_without_updated_before_is_refused(store: AnyStore) -> None:
+    with pytest.raises(ValueError, match="before_run_id needs updated_before"):
+        await store.list_runs(before_run_id="a")
+
+
+async def test_list_runs_takes_several_outcomes(store: AnyStore) -> None:
+    await put_all(
+        store,
+        a_run("running", outcome="running", minutes=1),
+        a_run("waiting", outcome="waiting", minutes=2),
+        a_run("passed", outcome="passed", minutes=3),
+        a_run("failed", outcome="failed", minutes=4),
+    )
+
+    on_the_floor = await store.list_runs(outcome=["running", "waiting"], order="oldest")
+
+    assert ids(on_the_floor) == ["running", "waiting"]
+    assert ids(await store.list_runs(outcome=("failed",))) == ["failed"]
+    assert ids(await store.list_runs(outcome="passed")) == ["passed"]
+
+
+async def test_a_listing_refuses_no_outcomes_and_a_moment_without_a_time_zone(
+    store: AnyStore,
+) -> None:
+    with pytest.raises(ValueError, match="at least one outcome"):
+        await store.list_runs(outcome=[])
+    with pytest.raises(ValueError, match="time zone"):
+        await store.list_runs(updated_after=datetime(2026, 11, 18, 9, 0))
 
 
 @pytest.mark.parametrize("limit", [0, -1, 1001])
