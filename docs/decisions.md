@@ -65,6 +65,14 @@ The words used below each have a page under Concepts, starting with [factories](
 
 **Rejected.** A hand-written gate returning "needs approval", which every station had to repeat. Also rejected: keeping Pydantic AI's deferred tools out of the factory. They are how an agent waits for a person. Also rejected: more kinds of wait, or more verbs.
 
+## A person's answer is one type that names its run
+
+**Decided.** `run.approve`, `run.request_changes`, `run.reject` and `run.reply` each return an `Answer`: one of `Approve`, `Changes`, `Reject` or `Reply`, told apart by `kind`. An answer names its run, the revision the person saw, the wait it answers and the work on offer, who answered and when. `factory.check(run, answer)` says why an answer does not fit, and `factory.resume(answer, store=)` applies the same rules before it carries the run on. Tool-call waits are still answered with Pydantic AI's `DeferredToolResults`, wrapped in a `Reply` that names the run and who answered. `run.answers` records every answer, tool replies included. This replaces `Decision` and `run.approvals`.
+
+**Why.** An answer came in two shapes, and neither named its run, so `resume` needed the whole `Run` to know which run and revision it was for. A web app had to invent its own answer type, and copy the core's checks, to queue an answer for a worker. Tool replies were left out of the run's history.
+
+**Rejected.** Keeping `Decision` and `DeferredToolResults`, and adding a request model for web apps only: every deployment would carry a translation layer and its own copy of the checks. Also rejected: putting `check` on the run. A run cannot see the factory, so it cannot tell whether the factory's shape has changed.
+
 ## A methodology is a capability
 
 **Decided.** `Methodology` subclasses Pydantic AI's `AbstractCapability`, and adds a name, a version, the evidence it records and a gate that judges it. It is attached to an agent with `capabilities=[...]`. On a bare agent it shapes behaviour only. In a station, `ctx.run_agent` stores its evidence, joins its gate to the station's and stamps its name and version on every record. Elephant Goldfish is one capability whose review loop runs inside the author's own run.

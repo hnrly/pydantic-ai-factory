@@ -6,6 +6,7 @@ outside this library should keep these rules too; the Stores page lists them.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import subprocess
 import sys
@@ -348,10 +349,45 @@ async def test_a_file_with_another_schema_version_is_refused(tmp_path: Path) -> 
     path = tmp_path / "factory.db"
     await SQLiteStore(path).put_run(a_run("run-1"), replaces=None)
     with closing(sqlite3.connect(path)) as other_version:
-        other_version.execute("PRAGMA user_version = 2")
+        other_version.execute("PRAGMA user_version = 1")
 
-    with pytest.raises(StoreSchemaMismatch, match=r"version 2.*version 1"):
+    with pytest.raises(StoreSchemaMismatch, match=r"version 1.*version 2"):
         await SQLiteStore(path).get_run("run-1")
+
+
+RUN_WITH_APPROVALS = Path(__file__).parent / "fixtures" / "run-with-approvals.json"
+
+
+def save_raw(store: LocalStore | SQLiteStore, data: bytes) -> None:
+    """Keep ``data`` as the run ``run-with-approvals``, as an older library would have."""
+    if isinstance(store, LocalStore):
+        path = store.run_path_for("run-with-approvals")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return
+    with closing(sqlite3.connect(store.path)) as connection, connection:
+        connection.execute(
+            "INSERT OR REPLACE INTO runs VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("run-with-approvals", "software", "passed", 2, "", "", data),
+        )
+
+
+@pytest.mark.parametrize("kind", ["local", "sqlite"])
+async def test_a_run_saved_with_approvals_is_refused_with_store_schema_mismatch(
+    kind: str, tmp_path: Path
+) -> None:
+    store = LocalStore(tmp_path) if kind == "local" else SQLiteStore(tmp_path / "factory.db")
+    await store.list_runs()  # makes a new SQLite file's tables
+    saved = json.loads(RUN_WITH_APPROVALS.read_bytes())
+    save_raw(store, json.dumps(saved).encode())
+
+    with pytest.raises(StoreSchemaMismatch, match="approvals"):
+        await store.get_run("run-with-approvals")
+
+    # The same run with answers in place of approvals reads, so approvals alone is refused.
+    del saved["approvals"]
+    save_raw(store, json.dumps({**saved, "answers": []}).encode())
+    assert (await store.get_run("run-with-approvals")).answers == ()
 
 
 async def test_a_file_with_the_stores_tables_but_no_schema_version_is_refused(

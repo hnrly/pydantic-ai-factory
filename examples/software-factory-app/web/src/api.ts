@@ -49,13 +49,13 @@ export interface Step {
   reason: string | null;
 }
 
-export interface Decision {
-  decision: string;
-  station: string;
+/** An answer a person gave to the run, as the run's history records it. */
+export interface AnswerGiven {
+  kind: 'approve' | 'changes' | 'reject' | 'reply';
   by: string;
+  station: string;
   note: string | null;
   at: string;
-  overrode: boolean;
 }
 
 export interface Job {
@@ -73,7 +73,7 @@ export interface Job {
 
 export interface RunDetail extends RunSummary {
   steps: Step[];
-  approvals: Decision[];
+  answers: AnswerGiven[];
   output: string | null;
   jobs: Record<string, Job>;
 }

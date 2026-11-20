@@ -362,13 +362,16 @@ async def run_design(designer: Agent[None, Design], mission: str) -> DesignResul
         answer: Any
         requests = run.waiting.requests
         if run.waiting.kind == "tool-calls" and requests is not None:
-            answer = DeferredToolResults(
-                calls={call.tool_call_id: ANSWER for call in requests.calls},
-                approvals={call.tool_call_id: True for call in requests.approvals},
+            answer = run.reply(
+                by=DECIDER,
+                results=DeferredToolResults(
+                    calls={call.tool_call_id: ANSWER for call in requests.calls},
+                    approvals={call.tool_call_id: True for call in requests.approvals},
+                ),
             )
         else:
             answer = run.approve(by=DECIDER)
-        run = await factory.resume(run, answer, store=store)
+        run = await factory.resume(answer, store=store)
     design = None
     if run.outcome == "passed" and run.output_ref is not None:
         design = (await store.get(run.output_ref, Design)).payload

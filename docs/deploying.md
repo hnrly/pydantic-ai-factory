@@ -107,8 +107,8 @@ run_id = software.run_sync("A to-do list web page.", store=store).run_id
 
 signed_in_as = "ada"  # From your sign-in, such as the session's user, never from the form.
 run = store.get_run_sync(run_id)
-done = software.resume_sync(run, run.approve(by=signed_in_as), store=store)
-print(done.approvals[0].by)
+done = software.resume_sync(run.approve(by=signed_in_as), store=store)
+print(done.answers[0].by)
 #> ada
 ```
 

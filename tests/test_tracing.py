@@ -268,7 +268,7 @@ async def test_an_exception_that_escapes_a_run_marks_it_as_an_error() -> None:
     EXPORTER.clear()
 
     with pytest.raises(ApprovalRefused):
-        await software.resume(run, DeferredToolResults(), store=store)
+        await software.resume(run.reply(by="ada", results=DeferredToolResults()), store=store)
 
     factory = one("factory software")
     assert factory.status.status_code is StatusCode.ERROR
@@ -283,7 +283,7 @@ async def test_running_and_resuming_are_two_traces_that_share_the_run_id() -> No
     run = await software.run(Mission(MISSION), store=store)
     waiting = attributes(one("factory software"))
     EXPORTER.clear()
-    done = await software.resume(run, run.approve(by="ada", note="Ship it."), store=store)
+    done = await software.resume(run.approve(by="ada", note="Ship it."), store=store)
 
     assert done.outcome == "passed"
     assert run.waiting is not None and run.waiting.artifact is not None
@@ -318,7 +318,7 @@ async def test_a_request_for_changes_records_who_asked_but_not_their_note() -> N
     run = await software.run(MISSION, store=store)
 
     note = "Say what happens to a blank task."
-    await software.resume(run, run.request_changes(by="ada", note=note), store=store)
+    await software.resume(run.request_changes(by="ada", note=note), store=store)
 
     answer = one("answer approval changes_requested")
     assert attributes(answer)["factory.answer.by"] == "ada"
@@ -340,7 +340,7 @@ async def test_answered_tool_calls_are_an_answer_span_without_the_reply_text() -
     reply = "Yes, after a reload too."
     call = run.waiting.requests.calls[0]
     answer = run.waiting.requests.build_results(calls={call.tool_call_id: reply})
-    done = await software.resume(run, answer, store=store)
+    done = await software.resume(run.reply(by="ada", results=answer), store=store)
 
     assert done.outcome == "passed"
     assert waiting_agent.status.status_code is StatusCode.UNSET
@@ -349,6 +349,7 @@ async def test_answered_tool_calls_are_an_answer_span_without_the_reply_text() -
     assert attributes(answered) == {
         "factory.answer.kind": "tool-calls",
         "factory.answer.decision": "answered",
+        "factory.answer.by": "ada",
         "factory.answer.artifact": run.waiting.conversation.digest,
         "factory.station.name": "designer",
         "factory.run.id": run.run_id,

@@ -25,12 +25,12 @@ from types import FrameType
 from typing import Any
 
 from pydantic import ValidationError
-from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied
+from pydantic_ai import ToolApproved, ToolDenied
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import Model
 from pydantic_ai_factory import (
+    Answer,
     ApprovalRefused,
-    Decision,
     Factory,
     Run,
     RunConflict,
@@ -44,7 +44,8 @@ from . import factory as app_factory
 from . import jobs, settings
 from .asking import asking_model
 from .jobs import Job
-from .models import Answer, problem_with
+from .models import Answer as Request
+from .models import problem_with
 
 MINIMUM_SQLITE = (3, 35, 0)
 """The first SQLite with ``UPDATE ... RETURNING``, which claiming a job needs."""
@@ -92,7 +93,7 @@ async def do_next_job(db: Path, factory: Factory, store: SQLiteStore) -> Job | N
 
 async def _answer(job: Job, factory: Factory, store: SQLiteStore) -> Run:
     try:
-        answer = Answer.model_validate(job.body)
+        answer = Request.model_validate(job.body)
     except ValidationError as problem:
         raise JobProblem(f"The answer could not be read: {problem}") from problem
     try:
@@ -104,17 +105,18 @@ async def _answer(job: Job, factory: Factory, store: SQLiteStore) -> Run:
             f"Run {run.run_id!r} has moved on since revision {answer.revision}; "
             f"it is now {run.outcome!r} at revision {run.revision}."
         )
-    return await factory.resume(run, _build(run, answer), store=store)
+    return await factory.resume(_build(run, answer), store=store)
 
 
-def _build(run: Run, answer: Answer) -> Decision | DeferredToolResults:
+def _build(run: Run, answer: Request) -> Answer:
     """Turn the person's answer into the library's answer, with the run's own methods."""
+    seen = answer.revision
     if answer.choice == "approve":
-        return run.approve(by=answer.by, note=answer.note)
+        return run.approve(by=answer.by, note=answer.note, revision=seen)
     if answer.choice == "changes":
-        return run.request_changes(by=answer.by, note=answer.note or "")
+        return run.request_changes(by=answer.by, note=answer.note or "", revision=seen)
     if answer.choice == "reject":
-        return run.reject(by=answer.by, note=answer.note or "")
+        return run.reject(by=answer.by, note=answer.note or "", revision=seen)
     if problem := problem_with(answer, run):
         raise JobProblem(problem)
     requests = run.waiting.requests if run.waiting else None
@@ -122,14 +124,14 @@ def _build(run: Run, answer: Answer) -> Decision | DeferredToolResults:
         raise JobProblem("The run is not waiting on tool calls.")
     replies = answer.replies or {}
     approvals = answer.approvals or {}
-    return requests.build_results(
+    results = requests.build_results(
         calls=dict(replies),
         approvals={
             call_id: ToolApproved() if allowed else ToolDenied()
             for call_id, allowed in approvals.items()
         },
-        answered_by={call_id: answer.by for call_id in [*replies, *approvals]},
     )
+    return run.reply(by=answer.by, results=results, revision=seen)
 
 
 def _model(offline: str | None) -> Model | str | None:

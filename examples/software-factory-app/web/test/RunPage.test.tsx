@@ -185,3 +185,18 @@ test('when someone answered first the page says so and shows the run as it is no
   expect(await screen.findByText(/someone answered first/i)).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
 });
+
+test('the run lists every answer, tool replies included, with who gave it', async () => {
+  showRun(
+    detail({
+      answers: [
+        { kind: 'reply', by: 'Ada', station: 'design', note: null, at: '2026-11-20T09:00:00Z' },
+        { kind: 'changes', by: 'Ben', station: 'design', note: 'Shorter.', at: '2026-11-20T09:05:00Z' },
+      ],
+    }),
+  );
+
+  const list = within((await screen.findByRole('heading', { name: 'Answers' })).parentElement!);
+  expect(list.getByText(/Ada: replied at design/)).toBeTruthy();
+  expect(list.getByText(/Ben: asked for changes at design.*“Shorter\.”/)).toBeTruthy();
+});

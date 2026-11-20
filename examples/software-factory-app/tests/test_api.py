@@ -38,7 +38,7 @@ def test_a_person_approves_a_design_and_the_run_passes_in_their_name(
 
     run = client.get(f"/api/runs/{run_id}").json()
     assert (run["state"], run["outcome"]) == ("passed", "passed")
-    assert [(d["decision"], d["by"]) for d in run["approvals"]] == [("approved", "Ada")]
+    assert [(a["kind"], a["by"]) for a in run["answers"]] == [("approve", "Ada")]
     assert run["jobs"]["answer"]["state"] == "done"
 
 
@@ -80,7 +80,7 @@ def test_asking_for_changes_sends_the_design_back_and_it_waits_again_with_the_no
     assert (after["state"], after["waiting"]["kind"]) == ("waiting", "approval")
     assert after["revision"] > before["revision"]
     assert note in after["output"]
-    assert [d["decision"] for d in after["approvals"]] == ["changes_requested"]
+    assert [a["kind"] for a in after["answers"]] == ["changes"]
 
 
 def test_an_answer_to_a_page_that_has_moved_on_gets_409_with_the_run_as_it_is_now(

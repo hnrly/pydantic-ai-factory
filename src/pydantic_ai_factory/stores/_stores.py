@@ -320,7 +320,7 @@ class LocalStore(_SyncReads):
 
 
 # Kept in the file's own user_version slot. A new file reads 0 there.
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 # The data column holds the record. The other columns of runs copy fields from it,
 # so list_runs can filter and sort without reading every run.

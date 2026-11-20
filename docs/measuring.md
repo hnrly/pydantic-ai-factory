@@ -140,7 +140,7 @@ async def run_design(agent: Agent[None, Design], mission: str) -> Design:
     software = Factory("software", [station(agent, approval=True)])
     store = MemoryStore()
     run = await software.run(mission, store=store)
-    done = await software.resume(run, run.approve(by="eval"), store=store)
+    done = await software.resume(run.approve(by="eval"), store=store)
     return done.output
 
 

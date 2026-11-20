@@ -3,7 +3,7 @@ import Markdown from 'react-markdown';
 import { Conflict, type Answer, type Job, type RunDetail, type ToolCall } from '../api';
 import { useServices } from '../context';
 import { useRepeat } from '../poll';
-import { NEEDS_NAME, reason, WAITING_LABEL, when } from '../words';
+import { ANSWER_LABEL, NEEDS_NAME, reason, WAITING_LABEL, when } from '../words';
 import { StateBadge } from './StateBadge';
 
 type Choice = Omit<Answer, 'by' | 'revision'>;
@@ -179,14 +179,14 @@ export function RunPage({ runId, jobId, name }: { runId: string; jobId?: string;
         </section>
       )}
 
-      {run.approvals.length > 0 && (
+      {run.answers.length > 0 && (
         <section>
-          <h2 className="section-label">Decisions</h2>
+          <h2 className="section-label">Answers</h2>
           <ul className="steps">
-            {run.approvals.map((decision, index) => (
+            {run.answers.map((answer, index) => (
               <li key={index}>
-                {decision.by}: {decision.decision} at {decision.station}, {when(decision.at)}
-                {decision.note ? ` (“${decision.note}”)` : ''}
+                {answer.by}: {ANSWER_LABEL[answer.kind]} at {answer.station}, {when(answer.at)}
+                {answer.note ? ` (“${answer.note}”)` : ''}
               </li>
             ))}
           </ul>
