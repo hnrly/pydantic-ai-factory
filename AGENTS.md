@@ -51,6 +51,8 @@ answers the benchmark hides from a system under test.
 4. Run every command under "Develop" in the README and report what each returned.
 5. Run `uv run python scripts/keep_out_scan.py --require-terms` before pushing.
 
+The reference apps under `evals/reference/` are fixtures of the benchmark. The author owns them, and they change only with a new `BENCHMARK_VERSION`.
+
 Never merge a pull request or push to `main`. The maintainer merges.
 
 ## Writing
