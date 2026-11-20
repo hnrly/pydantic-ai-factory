@@ -49,7 +49,7 @@ A way to send missions, questions and approvals through a chat tool arrives alon
 Some things are left out on purpose.
 
 - **Autonomy by default.** A person approves. The library records who, what and when. Stations that act without approval will always be a choice you make explicitly.
-- **A workflow engine.** A factory runs in-process. Durable execution will come from adapters to engines that already exist.
+- **A workflow engine.** A factory runs in-process. Durable execution will come from adapters to engines that already exist. The optional `serve` module ships one simple queue, `SQLiteDispatcher`, and a worker for it, so that a factory can be served without writing a queue. It never retries, and it holds no workflow state beyond one row per job.
 - **An agent framework.** Pydantic AI is the agent framework. This library is the layer above it.
 - **Self-modifying factories.** A factory may propose a change to a methodology from what it has learned. It does not apply one without a person.
 

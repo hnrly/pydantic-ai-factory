@@ -1,6 +1,7 @@
 """Factories: the ordered stations that work moves through, and the missions they take on."""
 
 from ._answer import Answer, AnswerProblem, Approve, Changes, Reject, Reply
+from ._dispatch import AlreadyRestarted, Dispatcher, Job, JobNotFound, JobState
 from ._factory import Factory, FactoryDefinitionError, OnLimit, Rework
 from ._mission import Accept, Declined, IntakeError, Mission, Outcome, Signal
 from ._runner import Abandoned, ApprovalRefused, CannotAbandon, OnStep, Run, RunOutcome
@@ -10,6 +11,7 @@ from ._store import RunConflict, RunNotFound, RunStore, Store
 __all__ = [
     "Abandoned",
     "Accept",
+    "AlreadyRestarted",
     "Answer",
     "AnswerProblem",
     "ApprovalRefused",
@@ -17,11 +19,15 @@ __all__ = [
     "CannotAbandon",
     "Changes",
     "Declined",
+    "Dispatcher",
     "Factory",
     "FactoryDefinitionError",
     "FactoryShape",
     "GateShape",
     "IntakeError",
+    "Job",
+    "JobNotFound",
+    "JobState",
     "Mission",
     "OnLimit",
     "OnStep",

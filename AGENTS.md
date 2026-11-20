@@ -6,7 +6,7 @@ This file tells a coding agent, or a new contributor, how to work here. The libr
 
 - `src/pydantic_ai_factory/` is the generic core. It holds no software words and never imports a domain package.
 - `packages/software/` is the software domain: stations such as Design. It may import the core.
-- Core layers import downwards only: `methodologies`, `stores`, `factory`, `stations`, `_methodology`, `gates`, `artifacts`, `contracts`. `uv run lint-imports` checks both rules. A `cli` layer is reserved at the top but does not exist yet: the `factory` command lives in `packages/software/`.
+- Core layers import downwards only: `serve`, `methodologies`, `stores`, `factory`, `stations`, `_methodology`, `gates`, `artifacts`, `contracts`. `uv run lint-imports` checks both rules. `serve` sits at the top, and nothing in the core imports it; it uses only the standard library and the core. A `cli` layer is reserved below `serve` but does not exist yet: the `factory` command lives in `packages/software/`.
 - `_tracing` is a side module any layer may use. It depends only on the OpenTelemetry API.
 - Definitions are frozen data. Running is a method that returns a serialisable record. Do not keep live state in objects or module globals.
 

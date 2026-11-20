@@ -17,6 +17,7 @@ from .artifacts import (
 from .contracts import DefinitionError, FactoryError, MethodologyRef
 from .factory import (
     Abandoned,
+    AlreadyRestarted,
     Answer,
     AnswerProblem,
     ApprovalRefused,
@@ -24,9 +25,13 @@ from .factory import (
     CannotAbandon,
     Changes,
     Declined,
+    Dispatcher,
     Factory,
     FactoryDefinitionError,
     IntakeError,
+    Job,
+    JobNotFound,
+    JobState,
     Mission,
     Outcome,
     Reject,
@@ -69,6 +74,7 @@ __version__ = "0.1.1"
 
 __all__ = [
     "Abandoned",
+    "AlreadyRestarted",
     "Answer",
     "AnswerProblem",
     "ApprovalRefused",
@@ -84,6 +90,7 @@ __all__ = [
     "Changes",
     "Declined",
     "DefinitionError",
+    "Dispatcher",
     "Escalate",
     "Evidence",
     "EvidenceRecorded",
@@ -95,6 +102,9 @@ __all__ = [
     "GateDecision",
     "GateDefinitionError",
     "IntakeError",
+    "Job",
+    "JobNotFound",
+    "JobState",
     "LocalStore",
     "MemoryStore",
     "Methodology",
