@@ -1,8 +1,8 @@
 /*
  * hnrly design tokens: the raw colours and type behind the docs site.
- * hnrly.css maps Starlight's variables to these. The software factory app keeps an
- * exact copy at examples/software-factory-app/web/src/tokens.css, and CI fails when
- * the two differ, so change both together.
+ * hnrly.css maps Starlight's variables to these. The board's interface keeps an
+ * exact copy at web/board/src/tokens.css, and CI fails when the two differ, so change
+ * both together.
  *
  * Dark is the default. "White" is the strongest text colour and "black" the ground,
  * as in Starlight, so the light theme swaps them. The grays run from near the text

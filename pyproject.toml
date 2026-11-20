@@ -28,6 +28,10 @@ dependencies = [
   "typing-extensions>=4.12",
 ]
 
+[project.optional-dependencies]
+# The board's web process: `board_app` in `pydantic_ai_factory.serve`.
+web = ["fastapi>=0.115,<1", "uvicorn>=0.32,<1"]
+
 [project.urls]
 Homepage = "https://github.com/hnrly/pydantic-ai-factory"
 Repository = "https://github.com/hnrly/pydantic-ai-factory"
@@ -41,8 +45,11 @@ pydantic-ai-factory-software = { workspace = true }
 
 [dependency-groups]
 dev = [
+  "pydantic-ai-factory[web]",
   "pydantic-ai-factory-software",
   "anyio>=4,<5",
+  # FastAPI's TestClient, for the board's tests.
+  "httpx>=0.28,<1",
   "import-linter>=2.16,<3",
   "opentelemetry-sdk>=1.30,<2",
   # The getting-started sample builds with Pydantic AI Harness. Its docs test needs
@@ -55,6 +62,11 @@ dev = [
   "pytest-examples>=0.0.18,<0.1",
   "ruff>=0.17,<0.18",
 ]
+
+# The board's built interface is git-ignored, and Hatchling leaves out ignored files,
+# so this puts it back into both the wheel and the sdist.
+[tool.hatch.build]
+artifacts = ["src/pydantic_ai_factory/serve/_static/**"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pydantic_ai_factory"]

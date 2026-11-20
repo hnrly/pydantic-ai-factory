@@ -8,7 +8,7 @@ test('a new mission is started under the name in the header, and opens its run',
   const api = fakeApi({ startRun: async () => ({ run_id: 'run-9', job_id: 'job-9' }) });
   renderWith(<NewMission name="Ada" />, api);
 
-  await userEvent.type(screen.getByLabelText(/mission/i), 'A to-do list web page.');
+  await userEvent.type(screen.getByLabelText('New mission'), 'A to-do list web page.');
   await userEvent.click(screen.getByRole('button', { name: 'Start' }));
 
   expect(api.startRun).toHaveBeenCalledWith('A to-do list web page.', 'Ada');
@@ -19,7 +19,7 @@ test('a new mission cannot start without a name', async () => {
   const api = fakeApi();
   renderWith(<NewMission name="" />, api);
 
-  await userEvent.type(screen.getByLabelText(/mission/i), 'Anything.');
+  await userEvent.type(screen.getByLabelText('New mission'), 'Anything.');
   expect((screen.getByRole('button', { name: 'Start' }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText(/type your name at the top first/i)).toBeTruthy();
 });

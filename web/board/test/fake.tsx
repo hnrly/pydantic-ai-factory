@@ -1,20 +1,22 @@
-// A faked API and run fixtures for the component tests.
+// A faked API and card fixtures for the component tests.
 import { render, type RenderResult } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { vi } from 'vitest';
-import type { Api, Job, RunDetail, RunSummary, ToolCall, Waiting } from '../src/api';
+import type { Api, Board, Card, FactoryShape, Job, RunDetail, ToolCall, Waiting } from '../src/api';
 import { Services } from '../src/context';
 
-export const FAST = { moving: 10, lists: 10 };
+export const FAST = { moving: 10, board: 10 };
 
 /** A fake API: every method is a mock that fails unless the test says what it returns. */
 export function fakeApi(overrides: Partial<Api> = {}) {
   const refuse = (name: string) => () => Promise.reject(new Error(`The test did not expect ${name}.`));
   const api = {
-    listRuns: vi.fn<Api['listRuns']>(refuse('listRuns')),
+    board: vi.fn<Api['board']>(refuse('board')),
+    listCards: vi.fn<Api['listCards']>(refuse('listCards')),
     getRun: vi.fn<Api['getRun']>(refuse('getRun')),
     startRun: vi.fn<Api['startRun']>(refuse('startRun')),
     answer: vi.fn<Api['answer']>(refuse('answer')),
+    restart: vi.fn<Api['restart']>(refuse('restart')),
     getJob: vi.fn<Api['getJob']>(refuse('getJob')),
   };
   for (const [name, impl] of Object.entries(overrides)) {
@@ -33,24 +35,41 @@ export function renderWith(ui: ReactElement, api: Api): RenderResult {
 
 const AT = '2026-11-18T10:00:00Z';
 
-export function summary(fields: Partial<RunSummary> = {}): RunSummary {
+export function shape(stations: string[] = ['design']): FactoryShape {
+  return {
+    name: 'software',
+    version: '1',
+    digest: 'abc',
+    stations: stations.map((name) => ({ name, version: '1', approval: false })),
+  };
+}
+
+export function card(fields: Partial<Card> = {}): Card {
   return {
     run_id: 'run-1',
     mission: 'A to-do list web page.',
+    column: 'done',
+    station: null,
     state: 'passed',
-    outcome: 'passed',
-    revision: 3,
-    created_at: AT,
-    updated_at: AT,
-    last_change: AT,
+    queued: false,
+    needs_you: false,
     waiting: null,
+    rework: null,
+    revision: 3,
+    updated_at: AT,
+    restarted_as: null,
+    reason: null,
     actions: [],
     ...fields,
   };
 }
 
+export function board(fields: Partial<Board> = {}): Board {
+  return { shape: shape(), cards: [], since: AT, more: { done: false, stopped: false }, ...fields };
+}
+
 export function detail(fields: Partial<RunDetail> = {}): RunDetail {
-  return { ...summary(), steps: [], answers: [], output: null, jobs: {}, ...fields };
+  return { ...card(), wait: null, output: null, output_format: null, steps: [], answers: [], job: null, ...fields };
 }
 
 export function waiting(fields: Partial<Waiting> = {}): Waiting {
@@ -72,15 +91,17 @@ export function call(fields: Partial<ToolCall> = {}): ToolCall {
 
 export function job(fields: Partial<Job> = {}): Job {
   return {
-    id: 'job-1',
-    kind: 'answer',
+    job_id: 'job-1',
     run_id: 'run-1',
-    body: {},
+    kind: 'answer',
     state: 'queued',
-    created_at: AT,
-    claimed_at: null,
-    finished_at: null,
+    by: 'Ada',
+    restart_of: null,
+    refused: false,
     error: null,
+    created_at: AT,
+    updated_at: AT,
+    claimed_until: null,
     stalled: false,
     ...fields,
   };
@@ -94,5 +115,15 @@ export function waitingRun(wait: Waiting): RunDetail {
       : wait.kind === 'escalation' && !wait.offers_work
         ? ['changes', 'reject']
         : ['approve', 'changes', 'reject'];
-  return detail({ state: 'waiting', outcome: 'waiting', waiting: wait, actions, output: '# To-do list' });
+  return detail({
+    column: 'station',
+    station: wait.station,
+    state: 'waiting',
+    needs_you: true,
+    waiting: { kind: wait.kind, station: wait.station, since: AT },
+    wait,
+    actions,
+    output: '# To-do list',
+    output_format: 'markdown',
+  });
 }

@@ -335,6 +335,30 @@ async def test_latest_per_run_skips_refused_jobs_to_find_the_job_driving_the_run
     assert failed.job_id == first.job_id
 
 
+async def test_list_jobs_reads_the_jobs_of_the_runs_named_however_many_are_named(
+    jobs: SQLiteDispatcher, clock: Clock
+) -> None:
+    starts: list[Job] = []
+    for count in range(600):
+        starts.append(await jobs.start(Mission(f"Mission {count}."), by="Ada"))
+        clock.advance(SECOND)
+    answer = await jobs.answer(approve(starts[0].run_id))
+
+    [one] = await jobs.list_jobs(run_id=starts[1].run_id)
+    assert one.job_id == starts[1].job_id
+    both = await jobs.list_jobs(run_id=starts[0].run_id)
+    assert [job.job_id for job in both] == [answer.job_id, starts[0].job_id]
+
+    # 600 ids are more than one query binds; the reads are merged, newest change first.
+    named = [job.run_id for job in starts]
+    latest = await jobs.list_jobs(latest_per_run=True, run_id=named, limit=1000)
+    expected = [answer.job_id, *(job.job_id for job in reversed(starts[1:]))]
+    assert [job.job_id for job in latest] == expected
+    assert len(await jobs.list_jobs(run_id=named, limit=10)) == 10
+    with pytest.raises(ValueError, match="run_id"):
+        await jobs.list_jobs(run_id=[])
+
+
 async def test_the_jobs_share_a_file_with_the_store_and_leave_its_version_alone(
     tmp_path: Path,
 ) -> None:
