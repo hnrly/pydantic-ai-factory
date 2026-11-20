@@ -20,7 +20,7 @@ EXPECTED = evals.Expectation(must_cover=("add", "tick"))
 def result(*criteria: str, behaviour: str = "Type a task and add it.") -> evals.DesignResult:
     design = Design(
         title="To-do list",
-        goal="Keep track of tasks.",
+        summary="Keep track of tasks.",
         behaviour=[behaviour],
         acceptance_criteria=list(criteria),
     )

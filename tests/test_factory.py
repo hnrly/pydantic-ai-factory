@@ -944,7 +944,7 @@ def test_the_software_factorys_digest_is_unchanged() -> None:
     # Every saved run records this digest. If it changes, runs saved before the change
     # can no longer be resumed, so a change must be deliberate: update the value here.
     assert SoftwareFactory(TestModel()).digest == (
-        "sha256:7158e312f0ba28ebfc60388b85ac41910af107e3a998b48afa427d03b9c0f87e"
+        "sha256:574218e57e60c6ce6fc78f996b6a499c92005d255a9232cee01733e8ebb53a58"
     )
 
 

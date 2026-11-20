@@ -12,12 +12,7 @@ from pydantic_ai_factory import Factory, FactoryDefinitionError, Rework, station
 from pydantic_ai_factory.factory import Accept
 from pydantic_ai_factory.methodologies import ElephantGoldfish, Goldfish
 
-from ._design import (
-    DESIGN_GOLDFISH,
-    DESIGNER_INSTRUCTIONS,
-    Design,
-    no_open_questions,
-)
+from ._design import DESIGN_GOLDFISH, DESIGNER_INSTRUCTIONS, Design, design_is_buildable
 
 
 @dataclass(frozen=True, init=False, eq=False, kw_only=True)
@@ -27,9 +22,12 @@ class SoftwareFactory(Factory):
     Run it with a mission, or a string that becomes one. In the Design station a designer
     agent drafts a :class:`Design` under the Elephant Goldfish method: ``goldfish`` read
     each draft, for up to ``rounds`` rounds, and the designer revises in the same
-    conversation. A design that still has open questions is sent back to the designer
-    up to ``repairs`` times; after that a person decides. A design that passes waits for
-    a person to approve it.
+    conversation. A design a builder could not follow, such as one with open questions or
+    an acceptance criterion no check proves, fails :func:`design_is_buildable` and is
+    sent back to the designer up to ``repairs`` times; after that a person decides. A
+    design that passes waits for a person to approve it. Before drafting, or during
+    review, the designer may ask you questions through the
+    :class:`~pydantic_ai_factory.AskPerson` that Elephant Goldfish brings.
 
     ``model`` drafts the design. ``review_model`` runs the goldfish; by default they use
     ``model``. ``accept`` reads signals, as for any :class:`Factory`.
@@ -70,11 +68,7 @@ class SoftwareFactory(Factory):
             model_settings={"cache": True},
         )
         design = station(
-            designer,
-            name="design",
-            version="1",
-            gate=no_open_questions,
-            approval=True,
+            designer, name="design", version="2", gate=design_is_buildable, approval=True
         )
         for label, value in (
             ("model", model),
@@ -89,5 +83,5 @@ class SoftwareFactory(Factory):
             [design],
             rework=[Rework(design, limit=repairs, on_limit="escalate")],
             accept=accept,
-            version="1",
+            version="2",
         )
