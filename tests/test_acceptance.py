@@ -12,7 +12,9 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
+from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import BaseModel
 from pydantic_ai import Agent, Conversation, ModelRetry, RunContext
+from pydantic_ai.capabilities import AbstractCapability, LocalWorkspace
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.output import OutputContext
@@ -39,7 +42,9 @@ from scripted import (
     software_designer,
 )
 
-from evals import design as evals
+from evals import experiment
+from evals.__main__ import main
+from evals.adapters.factory import FactoryAdapter
 from pydantic_ai_factory import (
     Artifact,
     Declined,
@@ -433,18 +438,32 @@ def test_you_can_see_a_run_as_a_trace() -> None:
     exporter.shutdown()
 
 
+@asynccontextmanager
+async def _local_workspace(snapshot: Path) -> AsyncGenerator[AbstractCapability[Any]]:
+    """The snapshot as a local workspace, in place of a Docker container."""
+    yield LocalWorkspace(snapshot)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Pydantic AI Harness's LocalWorkspace runs only on POSIX"
+)
 def test_you_can_score_a_methodology_against_doing_without_it(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    out = tmp_path / "results.json"
-
-    code = evals.main(["--offline", "--out", str(out)])
-
-    results = json.loads(out.read_text(encoding="utf-8"))
-    assert code == 0 and results["failures"] == 0
-    assert results["with_review"]["rounds"] > results["without_review"]["rounds"] == 0
-    assert (
-        results["with_review"]["CriteriaTiedToTheMission"]
-        > results["without_review"]["CriteriaTiedToTheMission"]
+    # The factory arms run each case in a Docker container. This test proves the command,
+    # not the container, so it runs them over a local, read-only workspace instead;
+    # tests/test_evals_factory_adapter.py runs them in a container when Docker is here.
+    monkeypatch.setattr(experiment, "docker_available", lambda: True)
+    monkeypatch.setattr(
+        experiment, "FactoryAdapter", partial(FactoryAdapter, sandbox=_local_workspace)
     )
-    assert "with review" in capsys.readouterr().out
+
+    code = main(
+        ["--offline", "--arm", "factory", "--arm", "factory-simple", "--out", str(tmp_path)]
+    )
+
+    results = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+    assert code == 0
+    # Offline numbers say nothing about real models, so no score is compared.
+    assert sorted(run["arm"] for run in results) == ["factory", "factory-simple"]
+    assert all(run["outcome"] for run in results)

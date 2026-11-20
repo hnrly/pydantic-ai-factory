@@ -1,8 +1,7 @@
 """The factory adapter: the Design station at full strength, run through the ports.
 
-This is the only module in ``evals/`` that imports the factory, beside ``evals/design.py``
-until it is retired. It builds both factory arms from the software package's public
-names and assembles nothing itself:
+This is the only module in ``evals/`` that imports the factory. It builds both factory
+arms from the software package's public names and assembles nothing itself:
 
 * ``factory`` is the shipped ``SoftwareFactory(model, workspace=sandbox)``, unchanged, so
   the benchmark measures what users install;

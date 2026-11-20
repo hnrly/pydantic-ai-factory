@@ -11,13 +11,7 @@ from pathlib import Path
 
 EVALS = Path(__file__).parent.parent / "evals"
 FACTORY_PACKAGES = frozenset({"pydantic_ai_factory", "pydantic_ai_factory_software"})
-MAY_IMPORT_THE_FACTORY = frozenset(
-    {
-        "adapters/factory.py",
-        # The old evaluation, until it is retired.
-        "design.py",
-    }
-)
+MAY_IMPORT_THE_FACTORY = frozenset({"adapters/factory.py"})
 
 
 def factory_imports(source: str) -> list[str]:
