@@ -149,7 +149,7 @@ A run stalls when something stops it mid-run without a save:
 - the process running it died, or was stopped, part-way through a station;
 - an `on_step` raised, which ends the call and leaves the run saved as `"running"`.
 
-To list them, ask for running runs, oldest first, and keep those older than the threshold:
+To list them, ask the store for running runs last saved before the threshold, oldest first:
 
 ```python
 from datetime import UTC, datetime, timedelta
@@ -163,8 +163,7 @@ STALLED_AFTER = timedelta(minutes=10)
 
 def stalled_runs(store: SQLiteStore, now: datetime | None = None) -> list[Run]:
     cutoff = (now or datetime.now(UTC)) - STALLED_AFTER
-    running = store.list_runs_sync(outcome="running", order="oldest")
-    return [run for run in running if run.updated_at < cutoff]
+    return store.list_runs_sync(outcome="running", updated_before=cutoff, order="oldest")
 
 
 designer = Agent("anthropic:claude-opus-5-5", name="designer", instructions="Write a short design.")
@@ -190,6 +189,8 @@ print(len(stalled_runs(store, now=datetime.now(UTC) + timedelta(minutes=11))))
 ```
 
 The run is not stalled straight away: it looks like a live station for the first ten minutes.
+
+To end a stalled run whose worker has died, call [`factory.abandon`](factories.md#ending-a-run-that-is-stuck). It saves the run as `"did_not_run"` with your reason, and a worker that was only slow gets `RunConflict` on its next save.
 
 A stalled run cannot be resumed yet. `factory.resume` carries on only a run that is waiting for a person. Carrying on a run that stopped part-way needs [durable runs](roadmap.md#next), which are on the roadmap. Until then, start the mission again as a new run.
 

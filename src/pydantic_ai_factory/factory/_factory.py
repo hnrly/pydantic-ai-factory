@@ -17,7 +17,16 @@ from ..stations import Station
 from ..stations._station import type_name
 from ._answer import Answer, AnswerProblem, Approve, Reply
 from ._mission import Accept, Declined, IntakeError, Mission, Signal, signal_artifact
-from ._runner import OnStep, Run, ahead_reason, resume_factory, run_factory, stale_reason
+from ._runner import (
+    OnStep,
+    Run,
+    abandon_run,
+    ahead_reason,
+    resume_factory,
+    run_factory,
+    stale_reason,
+)
+from ._shape import FactoryShape, described, shape_of
 from ._store import Store
 
 OnLimit = Literal["halt", "continue", "escalate"]
@@ -118,29 +127,14 @@ class Factory:
         agents and methodologies, and the rework rules. A run records it, so a run
         that stopped can only be resumed on a factory of the same shape.
         """
-        return digest_of(
-            {
-                "name": self.name,
-                "version": self.version,
-                "stations": [
-                    {
-                        "name": s.name,
-                        "version": s.version,
-                        "input": type_name(s.input_type),
-                        "output": type_name(s.output_type),
-                        "gate": [s.gate.name, s.gate.version] if s.gate else None,
-                        "agents": [agent.name for agent in s.agents],
-                        "methodologies": [str(m.ref) for m in s.methodologies],
-                        "approval": s.approval,
-                    }
-                    for s in self.stations
-                ],
-                "rework": [
-                    [rule.station.name, rule.target.name, rule.limit, rule.on_limit]
-                    for rule in self.rework
-                ],
-            }
-        )
+        return digest_of(described(self))
+
+    def shape(self) -> FactoryShape:
+        """What this factory looks like, as plain data: the stations and rework rules.
+
+        It is built from the same data :attr:`digest` hashes, and carries the digest.
+        """
+        return shape_of(self)
 
     async def run(
         self,
@@ -262,6 +256,30 @@ class Factory:
                 on_step=on_step,
             )
         )
+
+    async def abandon(self, run: Run, *, reason: str, by: str, store: Store) -> Run:
+        """End a run that is stuck, and say why. Returns the run as saved.
+
+        Use it when the worker driving a run has died, so the run would stay
+        ``"running"`` for ever. The run is saved as ``"did_not_run"``, with ``stopped_at``
+        set to the station it was at, no ``station``, and ``abandoned`` saying ``reason``,
+        who ended it (``by``) and when.
+
+        The save is a compare-and-swap on ``run.revision``, as every save is. So it
+        raises :class:`RunConflict`, changing nothing, if the stored run has moved on
+        since ``run`` was read, and a worker that is still driving the run gets
+        :class:`RunConflict` on its next save.
+
+        Raises :class:`CannotAbandon` if the run is not ``"running"``, or ``reason`` is
+        blank. A waiting run made by a factory of the same name but another shape may
+        be abandoned too, since nobody can answer it here. A run of another factory
+        cannot.
+        """
+        return await abandon_run(self, run, reason=reason, by=by, store=store)
+
+    def abandon_sync(self, run: Run, *, reason: str, by: str, store: Store) -> Run:
+        """End a run that is stuck, from code that is not async. See :meth:`abandon`."""
+        return run_sync(self.abandon(run, reason=reason, by=by, store=store))
 
     async def intake(
         self, signals: Sequence[Signal[Any]], *, store: ArtifactStore
