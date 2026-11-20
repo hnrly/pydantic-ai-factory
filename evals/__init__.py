@@ -4,6 +4,4 @@ It runs a system on cases whose requests leave facts unsaid, through one port co
 with a simulated stakeholder who holds the facts. Plain code grades each run. The one
 command is ``python -m evals``; ``python -m evals --offline --split smoke`` checks the
 harness without spending money.
-
-The older evaluation, ``python -m evals.design``, stays until the new one replaces it.
 """

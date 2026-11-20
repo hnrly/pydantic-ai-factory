@@ -56,7 +56,7 @@ dev = [
   # The getting-started sample builds with Pydantic AI Harness. Its docs test needs
   # `coder`; the `live` tests need `anthropic`, the provider the samples name.
   "pydantic-ai-harness[coder,anthropic]>=0.68,<0.69",
-  # The evaluation set in evals/ is built on it.
+  # The benchmark in evals/ is built on it.
   "pydantic-evals>=2.68,<3",
   "pyright>=1.1.410,<2",
   "pytest>=9,<10",
@@ -96,7 +96,7 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# The evaluation set is imported by its tests as `evals`, from the repository root.
+# The benchmark is imported by its tests as `evals`, from the repository root.
 pythonpath = ["."]
 addopts = "-ra --strict-config --strict-markers"
 markers = [

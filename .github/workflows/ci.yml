@@ -51,8 +51,8 @@ jobs:
           run_id=$(sed -n 's/^Run \([0-9a-f]*\) is waiting.*/\1/p' "$RUNNER_TEMP/run.txt")
           uv run --locked factory resume "$run_id" --approve --offline --store "$state" --out "$designs"
           grep -q "^# To-do list" "$designs/to-do-list.md"
-      - name: Score the Design station with and without Elephant Goldfish, offline
-        run: uv run --locked python -m evals.design --offline
+      - name: Run the benchmark's smoke case, offline
+        run: uv run --locked python -m evals --offline --split smoke
 
   platforms:
     # The file store claims to be portable, so the tests also run on Windows and macOS.
