@@ -142,9 +142,48 @@ def _output(info: AgentInfo, args: dict[str, Any]) -> ModelResponse:
 PAGE = '<h1>To-do list</h1>\n<input placeholder="Add a task">\n<ul></ul>\n'
 """The page the getting-started builder writes. Short, so the printed diff stays short."""
 
+PLAN: dict[str, Any] = {
+    "decisions": [
+        {
+            "topic": "Storage",
+            "choice": "The browser's local storage.",
+            "reason": "Ticked tasks must survive a reload, and there is no server.",
+            "source": "request",
+        }
+    ],
+    "alternatives": [
+        {
+            "title": "A server with a database",
+            "pros": "Tasks could follow a person between devices.",
+            "cons": "Something to host and run.",
+            "rejected_because": "Sharing between devices is out of scope.",
+            "rejected_by": "drafting",
+        }
+    ],
+    "changes": [
+        {
+            "path": "index.html",
+            "action": "create",
+            "what": "The page and its script.",
+            "why": "The whole app is one page.",
+        }
+    ],
+    "steps": [
+        {
+            "title": "Write the page",
+            "changes": ["index.html"],
+            "done_when": "Both acceptance criteria hold in a browser.",
+        }
+    ],
+    "verification": [
+        {"kind": "e2e", "check": "Add a task, tick it and reload the page.", "proves": [1, 2]}
+    ],
+}
+"""The plan part of a design: enough for the gate to pass a two-criterion to-do list."""
+
 TODO = {
     "title": "To-do list",
-    "goal": "Keep track of tasks in a browser.",
+    "summary": "Keep track of tasks in a browser.",
     "behaviour": [
         "Type a task and press Enter to add it.",
         "Tick a task's box to mark it done.",
@@ -153,7 +192,8 @@ TODO = {
         "A task typed and entered appears in the list.",
         "Ticked tasks stay ticked after a reload.",
     ],
-    "exclusions": ["Accounts", "Sharing between devices"],
+    "non_goals": ["Accounts", "Sharing between devices"],
+    **PLAN,
 }
 BLANK_RULE = "Pressing Enter on a blank task adds nothing."
 DELETE_RULE = "Each task has a delete button that removes it."
