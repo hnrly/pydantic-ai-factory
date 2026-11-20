@@ -60,11 +60,11 @@ def a_run(
     *,
     outcome: RunOutcome = "passed",
     factory: str = "software",
-    minutes: int | None = 0,
+    minutes: int = 0,
     revision: int = 0,
 ) -> Run:
-    """A stored run last changed ``minutes`` after ``WHEN``, or never timed if ``None``."""
-    updated_at = None if minutes is None else WHEN + timedelta(minutes=minutes)
+    """A stored run last changed ``minutes`` after ``WHEN``."""
+    updated_at = WHEN + timedelta(minutes=minutes)
     return Run(
         run_id=run_id,
         factory=factory,
@@ -184,15 +184,6 @@ async def test_runs_changed_at_the_same_moment_are_listed_by_id(
     await put_all(store, a_run("b"), a_run("c"), a_run("a"))
 
     assert ids(await store.list_runs()) == ids(await store.list_runs(order="oldest"))
-
-
-async def test_a_run_with_no_updated_at_is_listed_last_in_either_order(
-    store: AnyStore,
-) -> None:
-    await put_all(store, a_run("old", minutes=None), a_run("a", minutes=1), a_run("b", minutes=2))
-
-    assert ids(await store.list_runs()) == ["b", "a", "old"]
-    assert ids(await store.list_runs(order="oldest")) == ["a", "b", "old"]
 
 
 async def test_runs_can_be_listed_by_outcome(store: AnyStore) -> None:

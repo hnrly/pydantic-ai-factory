@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
+from pydantic import ValidationError
+
 from ..artifacts import Artifact, ArtifactNotFound, ArtifactRef, decode_artifact, encode_artifact
 from ..contracts import FactoryError, run_sync
 from ..factory import Run, RunConflict, RunNotFound, RunOutcome
@@ -31,7 +33,11 @@ class StoreBusy(RunConflict):
 
 
 class StoreSchemaMismatch(FactoryError):
-    """The store's file was written with a schema version this store does not read."""
+    """The store holds data in a shape this version of the library does not read.
+
+    Another version of the library wrote it. Before 1.0 the library does not convert
+    old data: start a new store, or read this one with the version that wrote it.
+    """
 
 
 def encode_run(run: Run) -> bytes:
@@ -40,8 +46,17 @@ def encode_run(run: Run) -> bytes:
 
 
 def decode_run(data: bytes) -> Run:
-    """Read a run back from the bytes :func:`encode_run` made. Payloads stay plain JSON."""
-    return Run.model_validate_json(data)
+    """Read a run back from the bytes :func:`encode_run` made. Payloads stay plain JSON.
+
+    Bytes that do not read as a run of this version raise :class:`StoreSchemaMismatch`.
+    """
+    try:
+        return Run.model_validate_json(data)
+    except ValidationError as error:
+        raise StoreSchemaMismatch(
+            "a stored run does not read as a run of this version of the library; "
+            f"another version may have saved it: {error}"
+        ) from error
 
 
 def _check_swap(run: Run, replaces: Run | None, current: Run | None) -> None:
@@ -81,22 +96,16 @@ def _select_runs(
 ) -> list[Run]:
     """Filter, sort and cut ``runs`` as ``RunStore.list_runs`` describes."""
     _check_limit(limit, order)
-    timed: list[tuple[datetime, Run]] = []
-    untimed: list[Run] = []
-    for run in runs:
-        if outcome is not None and run.outcome != outcome:
-            continue
-        if factory is not None and run.factory != factory:
-            continue
-        if run.updated_at is None:
-            untimed.append(run)
-        else:
-            timed.append((run.updated_at, run))
+    chosen = [
+        run
+        for run in runs
+        if (outcome is None or run.outcome == outcome)
+        and (factory is None or run.factory == factory)
+    ]
     # Runs changed at the same moment keep run_id order, so a listing never shuffles.
-    timed.sort(key=lambda pair: pair[1].run_id)
-    timed.sort(key=lambda pair: pair[0], reverse=order == "newest")
-    untimed.sort(key=lambda run: run.run_id)
-    return ([run for _, run in timed] + untimed)[:limit]
+    chosen.sort(key=lambda run: run.run_id)
+    chosen.sort(key=lambda run: run.updated_at, reverse=order == "newest")
+    return chosen[:limit]
 
 
 class _SyncReads:
@@ -333,10 +342,8 @@ CREATE TABLE IF NOT EXISTS schema (
 """
 
 
-def _moment(when: datetime | None) -> str | None:
+def _moment(when: datetime) -> str:
     """Write ``when`` in UTC, in a form that sorts as text in time order."""
-    if when is None:
-        return None
     return when.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
@@ -485,13 +492,12 @@ class SQLiteStore(_SyncReads):
         limit: int,
     ) -> list[bytes]:
         direction = "DESC" if order == "newest" else "ASC"
-        # Untimed runs come last in either order, and runs changed at the same moment
-        # keep run_id order, as in the other stores.
+        # Runs changed at the same moment keep run_id order, as in the other stores.
         query = (
             "SELECT data FROM runs"
             " WHERE (:outcome IS NULL OR outcome = :outcome)"
             " AND (:factory IS NULL OR factory = :factory)"
-            f" ORDER BY updated_at IS NULL, updated_at {direction}, run_id"
+            f" ORDER BY updated_at {direction}, run_id"
             " LIMIT :limit"
         )
         parameters = {"outcome": outcome, "factory": factory, "limit": limit}
