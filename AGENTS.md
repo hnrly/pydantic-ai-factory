@@ -29,6 +29,20 @@ Before writing infrastructure, check what Pydantic AI already provides, against 
 - Library code does not use `assert` for control flow; raise a named error.
 - A check that could not run is reported as not run. It is never counted as a pass.
 
+## Fact sheets
+
+Fact sheets are the files under `evals/cases/*/facts/`. They hold the
+answers the benchmark hides from a system under test.
+- When your task changes the factory (anything under `src/` or
+  `packages/`), do not open a fact sheet.
+- When your task builds or changes the benchmark (under `evals/` or its
+  tests), you may read and draft the smoke and dev fact sheets.
+- Never open or write `evals/cases/test/facts/` or `evals/cases/test/repo/`.
+  The author writes those.
+- The reference apps under `evals/reference/` hold no hidden value. Do not
+  add one; a case places a value in its repository only through its
+  overlay.
+
 ## Every change
 
 1. Keep it to one idea. Do only what the pull request says.

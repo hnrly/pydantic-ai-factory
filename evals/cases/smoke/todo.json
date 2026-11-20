@@ -1,0 +1,5 @@
+{
+  "name": "todo",
+  "request": "Build a to-do page. Ticked tasks should not be kept for ever.",
+  "rung": "empty"
+}
