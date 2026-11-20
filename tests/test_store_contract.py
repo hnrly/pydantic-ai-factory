@@ -347,11 +347,37 @@ def test_store_busy_is_a_run_conflict() -> None:
 async def test_a_file_with_another_schema_version_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "factory.db"
     await SQLiteStore(path).put_run(a_run("run-1"), replaces=None)
-    with closing(sqlite3.connect(path)) as other_version, other_version:
-        other_version.execute("UPDATE schema SET version = 2")
+    with closing(sqlite3.connect(path)) as other_version:
+        other_version.execute("PRAGMA user_version = 2")
 
     with pytest.raises(StoreSchemaMismatch, match=r"version 2.*version 1"):
         await SQLiteStore(path).get_run("run-1")
+
+
+async def test_a_file_with_the_stores_tables_but_no_schema_version_is_refused(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "factory.db"
+    with closing(sqlite3.connect(path)) as older:
+        older.execute("CREATE TABLE runs (run_id TEXT PRIMARY KEY, data BLOB)")
+
+    with pytest.raises(StoreSchemaMismatch, match="runs but no schema version"):
+        await SQLiteStore(path).list_runs()
+
+
+async def test_a_sqlite_store_shares_its_file_with_another_programs_tables(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "factory.db"
+    with closing(sqlite3.connect(path)) as app, app:
+        app.execute("CREATE TABLE jobs (id TEXT PRIMARY KEY)")
+        app.execute("INSERT INTO jobs (id) VALUES ('job-1')")
+
+    await SQLiteStore(path).put_run(a_run("run-1"), replaces=None)
+
+    assert ids(await SQLiteStore(path).list_runs()) == ["run-1"]
+    with closing(sqlite3.connect(path)) as app:
+        assert app.execute("SELECT id FROM jobs").fetchall() == [("job-1",)]
 
 
 async def test_a_sqlite_store_keeps_its_work_in_the_file_across_instances(
