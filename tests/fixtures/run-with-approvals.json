@@ -6,6 +6,7 @@
   "revision": 2,
   "outcome": "passed",
   "finished": true,
+  "station": null,
   "stopped_at": null,
   "input_ref": {
     "type": "Brief",

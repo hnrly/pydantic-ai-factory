@@ -9,7 +9,8 @@ import os
 import sqlite3
 import tempfile
 import time
-from collections.abc import Generator, Iterable
+from collections.abc import Generator, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, TypeVar
@@ -78,34 +79,70 @@ def _check_swap(run: Run, replaces: Run | None, current: Run | None) -> None:
 _LIMIT_MAX = 1000
 
 
-def _check_limit(limit: int, order: str) -> None:
-    """Raise ``ValueError`` unless ``limit`` and ``order`` are ones ``list_runs`` takes."""
+@dataclass(frozen=True)
+class _Listing:
+    """What ``RunStore.list_runs`` was asked for, checked once for every store."""
+
+    outcomes: frozenset[str] | None
+    factory: str | None
+    order: Literal["newest", "oldest"]
+    limit: int
+    updated_after: datetime | None
+    updated_before: datetime | None
+    before_run_id: str | None
+
+    def matches(self, run: Run) -> bool:
+        return (
+            (self.outcomes is None or run.outcome in self.outcomes)
+            and (self.factory is None or run.factory == self.factory)
+            and (self.updated_after is None or run.updated_at > self.updated_after)
+            and self._before(run)
+        )
+
+    def _before(self, run: Run) -> bool:
+        if self.updated_before is None:
+            return True
+        if self.before_run_id is None:
+            return run.updated_at < self.updated_before
+        # A cursor: runs saved at the cursor's moment come after it by run_id.
+        return (run.updated_at, run.run_id) < (self.updated_before, self.before_run_id)
+
+
+def _listing(
+    *,
+    outcome: RunOutcome | Sequence[RunOutcome] | None,
+    factory: str | None,
+    order: Literal["newest", "oldest"],
+    limit: int,
+    updated_after: datetime | None,
+    updated_before: datetime | None,
+    before_run_id: str | None,
+) -> _Listing:
+    """Check what ``list_runs`` was asked for, or raise ``ValueError``."""
     if not 1 <= limit <= _LIMIT_MAX:
         raise ValueError(f"limit must be between 1 and {_LIMIT_MAX}, not {limit}")
     if order not in ("newest", "oldest"):
         raise ValueError(f"order must be 'newest' or 'oldest', not {order!r}")
+    for label, moment in (("updated_after", updated_after), ("updated_before", updated_before)):
+        if moment is not None and moment.utcoffset() is None:
+            raise ValueError(f"{label} must carry a time zone, such as UTC")
+    if before_run_id is not None and updated_before is None:
+        raise ValueError("before_run_id needs updated_before: together they name the last run seen")
+    outcomes: frozenset[str] | None = None
+    if outcome is not None:
+        outcomes = frozenset((outcome,) if isinstance(outcome, str) else outcome)
+        if not outcomes:
+            raise ValueError("outcome must name at least one outcome, or be left out")
+    return _Listing(outcomes, factory, order, limit, updated_after, updated_before, before_run_id)
 
 
-def _select_runs(
-    runs: Iterable[Run],
-    *,
-    outcome: RunOutcome | None,
-    factory: str | None,
-    order: Literal["newest", "oldest"],
-    limit: int,
-) -> list[Run]:
+def _select_runs(runs: Iterable[Run], listing: _Listing) -> list[Run]:
     """Filter, sort and cut ``runs`` as ``RunStore.list_runs`` describes."""
-    _check_limit(limit, order)
-    chosen = [
-        run
-        for run in runs
-        if (outcome is None or run.outcome == outcome)
-        and (factory is None or run.factory == factory)
-    ]
-    # Runs changed at the same moment keep run_id order, so a listing never shuffles.
-    chosen.sort(key=lambda run: run.run_id)
-    chosen.sort(key=lambda run: run.updated_at, reverse=order == "newest")
-    return chosen[:limit]
+    chosen = [run for run in runs if listing.matches(run)]
+    # Runs changed at the same moment sort by run_id, the same way as updated_at, so a
+    # listing never shuffles and (updated_at, run_id) pages back exactly.
+    chosen.sort(key=lambda run: (run.updated_at, run.run_id), reverse=listing.order == "newest")
+    return chosen[: listing.limit]
 
 
 class _SyncReads:
@@ -118,10 +155,13 @@ class _SyncReads:
     async def list_runs(
         self,
         *,
-        outcome: RunOutcome | None = None,
+        outcome: RunOutcome | Sequence[RunOutcome] | None = None,
         factory: str | None = None,
         order: Literal["newest", "oldest"] = "newest",
         limit: int = 50,
+        updated_after: datetime | None = None,
+        updated_before: datetime | None = None,
+        before_run_id: str | None = None,
     ) -> list[Run]: ...
 
     def get_sync(self, ref: ArtifactRef, payload_type: type[PayloadT]) -> Artifact[PayloadT]:
@@ -135,13 +175,26 @@ class _SyncReads:
     def list_runs_sync(
         self,
         *,
-        outcome: RunOutcome | None = None,
+        outcome: RunOutcome | Sequence[RunOutcome] | None = None,
         factory: str | None = None,
         order: Literal["newest", "oldest"] = "newest",
         limit: int = 50,
+        updated_after: datetime | None = None,
+        updated_before: datetime | None = None,
+        before_run_id: str | None = None,
     ) -> list[Run]:
         """List stored runs, from code that is not async. See ``RunStore.list_runs``."""
-        return run_sync(self.list_runs(outcome=outcome, factory=factory, order=order, limit=limit))
+        return run_sync(
+            self.list_runs(
+                outcome=outcome,
+                factory=factory,
+                order=order,
+                limit=limit,
+                updated_after=updated_after,
+                updated_before=updated_before,
+                before_run_id=before_run_id,
+            )
+        )
 
 
 class MemoryStore(_SyncReads):
@@ -179,15 +232,25 @@ class MemoryStore(_SyncReads):
     async def list_runs(
         self,
         *,
-        outcome: RunOutcome | None = None,
+        outcome: RunOutcome | Sequence[RunOutcome] | None = None,
         factory: str | None = None,
         order: Literal["newest", "oldest"] = "newest",
         limit: int = 50,
+        updated_after: datetime | None = None,
+        updated_before: datetime | None = None,
+        before_run_id: str | None = None,
     ) -> list[Run]:
         """List stored runs by when they last changed. See ``RunStore.list_runs``."""
-        _check_limit(limit, order)
-        runs = (decode_run(data) for data in self._runs.values())
-        return _select_runs(runs, outcome=outcome, factory=factory, order=order, limit=limit)
+        listing = _listing(
+            outcome=outcome,
+            factory=factory,
+            order=order,
+            limit=limit,
+            updated_after=updated_after,
+            updated_before=updated_before,
+            before_run_id=before_run_id,
+        )
+        return _select_runs((decode_run(data) for data in self._runs.values()), listing)
 
     def __len__(self) -> int:
         return len(self._data)
@@ -244,19 +307,29 @@ class LocalStore(_SyncReads):
     async def list_runs(
         self,
         *,
-        outcome: RunOutcome | None = None,
+        outcome: RunOutcome | Sequence[RunOutcome] | None = None,
         factory: str | None = None,
         order: Literal["newest", "oldest"] = "newest",
         limit: int = 50,
+        updated_after: datetime | None = None,
+        updated_before: datetime | None = None,
+        before_run_id: str | None = None,
     ) -> list[Run]:
         """List stored runs by when they last changed. See ``RunStore.list_runs``.
 
         It reads every run file, which is quick for the hundreds of runs one machine
         makes. A store for many more should answer from an index.
         """
-        _check_limit(limit, order)
-        runs = await asyncio.to_thread(self._read_runs)
-        return _select_runs(runs, outcome=outcome, factory=factory, order=order, limit=limit)
+        listing = _listing(
+            outcome=outcome,
+            factory=factory,
+            order=order,
+            limit=limit,
+            updated_after=updated_after,
+            updated_before=updated_before,
+            before_run_id=before_run_id,
+        )
+        return _select_runs(await asyncio.to_thread(self._read_runs), listing)
 
     def _read_runs(self) -> list[Run]:
         # Lock files end in .lock and half-written files have no suffix, so neither is read.
@@ -407,18 +480,29 @@ class SQLiteStore(_SyncReads):
     async def list_runs(
         self,
         *,
-        outcome: RunOutcome | None = None,
+        outcome: RunOutcome | Sequence[RunOutcome] | None = None,
         factory: str | None = None,
         order: Literal["newest", "oldest"] = "newest",
         limit: int = 50,
+        updated_after: datetime | None = None,
+        updated_before: datetime | None = None,
+        before_run_id: str | None = None,
     ) -> list[Run]:
         """List stored runs by when they last changed. See ``RunStore.list_runs``.
 
         It answers from an index on ``updated_at``, alone or after ``outcome`` or
-        ``factory``.
+        ``factory``. Only the filters given go into the query.
         """
-        _check_limit(limit, order)
-        rows = await asyncio.to_thread(self._select_runs, outcome, factory, order, limit)
+        listing = _listing(
+            outcome=outcome,
+            factory=factory,
+            order=order,
+            limit=limit,
+            updated_after=updated_after,
+            updated_before=updated_before,
+            before_run_id=before_run_id,
+        )
+        rows = await asyncio.to_thread(self._select_runs, listing)
         return [decode_run(data) for data in rows]
 
     @contextlib.contextmanager
@@ -501,26 +585,39 @@ class SQLiteStore(_SyncReads):
                 "INSERT OR IGNORE INTO artifacts (digest, data) VALUES (?, ?)", (digest, data)
             )
 
-    def _select_runs(
-        self,
-        outcome: RunOutcome | None,
-        factory: str | None,
-        order: Literal["newest", "oldest"],
-        limit: int,
-    ) -> list[bytes]:
-        direction = "DESC" if order == "newest" else "ASC"
+    def _select_runs(self, listing: _Listing) -> list[bytes]:
+        direction = "DESC" if listing.order == "newest" else "ASC"
         # Only the filters given go in the query, so SQLite can answer from an index.
         conditions: list[str] = []
-        parameters: dict[str, Any] = {"limit": limit}
-        if outcome is not None:
-            conditions.append("outcome = :outcome")
-            parameters["outcome"] = outcome
-        if factory is not None:
+        parameters: dict[str, Any] = {"limit": listing.limit}
+        if listing.outcomes is not None:
+            names = sorted(listing.outcomes)
+            marks = ", ".join(f":outcome{n}" for n in range(len(names)))
+            conditions.append(f"outcome IN ({marks})")
+            parameters.update({f"outcome{n}": name for n, name in enumerate(names)})
+        if listing.factory is not None:
             conditions.append("factory = :factory")
-            parameters["factory"] = factory
+            parameters["factory"] = listing.factory
+        # updated_at is kept in a form that sorts as text in time order.
+        if listing.updated_after is not None:
+            conditions.append("updated_at > :after")
+            parameters["after"] = _moment(listing.updated_after)
+        if listing.updated_before is not None and listing.before_run_id is None:
+            conditions.append("updated_at < :before")
+            parameters["before"] = _moment(listing.updated_before)
+        elif listing.updated_before is not None:
+            # The cursor (updated_at, run_id). The first half lets the index find the range.
+            conditions.append(
+                "updated_at <= :before AND (updated_at < :before OR run_id < :before_run_id)"
+            )
+            parameters["before"] = _moment(listing.updated_before)
+            parameters["before_run_id"] = listing.before_run_id
         where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-        # Runs changed at the same moment keep run_id order, as in the other stores.
-        query = f"SELECT data FROM runs{where} ORDER BY updated_at {direction}, run_id LIMIT :limit"
+        # Runs changed at the same moment sort by run_id the same way, as in the other stores.
+        query = (
+            f"SELECT data FROM runs{where}"
+            f" ORDER BY updated_at {direction}, run_id {direction} LIMIT :limit"
+        )
         with self._connect() as connection:
             return [row[0] for row in connection.execute(query, parameters).fetchall()]
 

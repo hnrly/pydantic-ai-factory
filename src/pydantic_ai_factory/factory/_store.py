@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal, Protocol
 
 from ..artifacts import ArtifactStore
@@ -44,17 +46,27 @@ class RunStore(Protocol):
     async def list_runs(
         self,
         *,
-        outcome: RunOutcome | None = None,
+        outcome: RunOutcome | Sequence[RunOutcome] | None = None,
         factory: str | None = None,
         order: Literal["newest", "oldest"] = "newest",
         limit: int = 50,
+        updated_after: datetime | None = None,
+        updated_before: datetime | None = None,
+        before_run_id: str | None = None,
     ) -> list[Run]:
         """Return up to ``limit`` stored runs, sorted by ``updated_at``.
 
         Runs come newest first, or oldest first with ``order="oldest"``. Runs changed
-        at the same moment come in ``run_id`` order. Only runs with this ``outcome``
-        and from this ``factory`` are listed, when either is given. ``limit`` must be between 1
-        and 1000, or the store raises ``ValueError``. Each run is the latest one saved.
+        at the same moment are sorted by ``run_id`` the same way: last first when newest
+        first. Each filter that is given must match: ``outcome`` is one outcome or
+        several, ``factory`` a factory's name, and ``updated_after`` and
+        ``updated_before`` keep only runs last saved strictly after or before that
+        moment. Both moments must carry a time zone. ``before_run_id`` makes
+        ``updated_before`` a cursor: it keeps runs whose ``(updated_at, run_id)`` comes
+        before ``(updated_before, before_run_id)``, so paging back from the last run of
+        one page loses no run saved at the same moment. Given without
+        ``updated_before``, it raises ``ValueError``. ``limit`` must be between 1 and
+        1000, or the store raises ``ValueError``. Each run is the latest one saved.
         """
         ...
 
