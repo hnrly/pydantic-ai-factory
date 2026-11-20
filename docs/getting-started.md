@@ -16,6 +16,12 @@ export ANTHROPIC_API_KEY=...
 
 The builder uses [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/) to write files. Run the sample in an empty folder: the app is written there.
 
+This factory uses no methodology from the library. To add [Elephant Goldfish](elephant-goldfish.md), install the core with the `methodologies` extra instead:
+
+```bash
+pip install "pydantic-ai-factory[methodologies]" "pydantic-ai-harness[coder,anthropic]"
+```
+
 ## Your first factory
 
 ```python

@@ -28,6 +28,11 @@ dependencies = [
   "typing-extensions>=4.12",
 ]
 
+[project.optional-dependencies]
+# Elephant Goldfish, in `pydantic_ai_factory.methodologies`, loads its skills through
+# Pydantic AI Harness. The rest of the core does not need it.
+methodologies = ["pydantic-ai-harness[skills]>=0.68,<0.69"]
+
 [project.urls]
 Homepage = "https://github.com/hnrly/pydantic-ai-factory"
 Repository = "https://github.com/hnrly/pydantic-ai-factory"
@@ -98,6 +103,8 @@ filterwarnings = ["error"]
 # The package boundaries are part of the design, so they are checked on every change.
 [tool.importlinter]
 root_packages = ["pydantic_ai_factory", "pydantic_ai_factory_software"]
+# Lets a contract name an installed package, such as Pydantic AI Harness, outside the two.
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "The generic core never imports a domain package"
@@ -121,3 +128,20 @@ layers = [
   "(artifacts)",
   "(contracts)",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Only methodologies import Pydantic AI Harness"
+type = "forbidden"
+# Every core layer below `methodologies`, and the side module `_tracing`, so the core
+# imports without the `methodologies` extra.
+source_modules = [
+  "pydantic_ai_factory.stores",
+  "pydantic_ai_factory.factory",
+  "pydantic_ai_factory.stations",
+  "pydantic_ai_factory._methodology",
+  "pydantic_ai_factory.gates",
+  "pydantic_ai_factory.artifacts",
+  "pydantic_ai_factory.contracts",
+  "pydantic_ai_factory._tracing",
+]
+forbidden_modules = ["pydantic_ai_harness"]

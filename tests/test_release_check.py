@@ -48,7 +48,7 @@ def _repo(tmp_path: Path, *, changelog: str = CHANGELOG, software_version: str =
     )
     (tmp_path / "packages/software/pyproject.toml").write_text(
         f'[project]\nversion = "{software_version}"\n'
-        f'dependencies = ["pydantic-ai-factory=={software_version}"]\n',
+        f'dependencies = ["pydantic-ai-factory[methodologies]=={software_version}"]\n',
         encoding="utf-8",
     )
     (tmp_path / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
@@ -80,7 +80,7 @@ def test_a_tag_is_refused_with_every_reason_it_cannot_be_released(tmp_path: Path
     assert release.problems("v0.3.0", root) == [
         "the tag is v0.3.0, but pyproject.toml says version 0.2.0",
         "the software package is version 0.1.0, the core is 0.2.0",
-        "the software package does not pin pydantic-ai-factory==0.2.0",
+        "the software package does not pin pydantic-ai-factory[methodologies]==0.2.0",
         "CHANGELOG.md has no '## 0.2.0' heading with lines under it",
     ]
     assert release.main(["v0.3.0", "--root", str(root)]) == 1

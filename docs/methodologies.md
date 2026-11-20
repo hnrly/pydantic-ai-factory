@@ -45,6 +45,8 @@ print(result.outcome, result.decision.reasons)
 
 [Elephant Goldfish](elephant-goldfish.md), Google's method for design-driven development, ships with the library, and `DESIGN_GOLDFISH`, the reviewers for a software design, ship with the [software factory](software-factory.md). Run `designer` in a station and its designs cannot pass until fresh reviewers have read them and found nothing blocking.
 
+Elephant Goldfish needs the core's `methodologies` extra. Install it with `pip install "pydantic-ai-factory[methodologies]"`; the software package brings it for you. The rest of the core, including the `Methodology` you subclass below, needs no extra.
+
 `factory.methodologies()` lists each station's methodologies before anything runs.
 
 ## Write your own

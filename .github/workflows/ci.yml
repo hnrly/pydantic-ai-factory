@@ -92,3 +92,9 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/wheels/bin/python" dist/*.whl
           "$RUNNER_TEMP/wheels/bin/python" -I -c \
             "import pydantic_ai_factory, pydantic_ai_factory_software; print(pydantic_ai_factory.__version__)"
+      - name: Install the core wheel alone, with no extras, and import it
+        run: |
+          uv venv "$RUNNER_TEMP/core" --python 3.13
+          uv pip install --python "$RUNNER_TEMP/core/bin/python" dist/pydantic_ai_factory-*.whl
+          "$RUNNER_TEMP/core/bin/python" -I -c \
+            "import importlib.util, pydantic_ai_factory; assert importlib.util.find_spec('pydantic_ai_harness') is None; print(pydantic_ai_factory.__version__)"

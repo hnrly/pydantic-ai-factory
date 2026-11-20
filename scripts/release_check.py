@@ -5,7 +5,7 @@
 A tag can be released only when:
 
 * it is ``v`` followed by the version in both ``pyproject.toml`` files;
-* the software package pins the core at that same version;
+* the software package pins the core, with its ``methodologies`` extra, at that same version;
 * ``CHANGELOG.md`` has a ``## <version>`` heading with at least one line under it.
 
 With ``--notes FILE`` the lines under that heading are written to FILE, for the GitHub
@@ -52,8 +52,9 @@ def problems(tag: str, root: Path = ROOT) -> list[str]:
         found.append(
             f"the software package is version {software['version']}, the core is {version}"
         )
-    if software["dependencies"] != [f"pydantic-ai-factory=={version}"]:
-        found.append(f"the software package does not pin pydantic-ai-factory=={version}")
+    pin = f"pydantic-ai-factory[methodologies]=={version}"
+    if software["dependencies"] != [pin]:
+        found.append(f"the software package does not pin {pin}")
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     if release_notes(changelog, version) is None:
         found.append(f"CHANGELOG.md has no '## {version}' heading with lines under it")
