@@ -319,27 +319,32 @@ class LocalStore(_SyncReads):
             raise
 
 
+# Kept in the file's own user_version slot. A new file reads 0 there.
 _SCHEMA_VERSION = 1
 
+# The data column holds the record. The other columns of runs copy fields from it,
+# so list_runs can filter and sort without reading every run.
 _CREATE_TABLES = """
-CREATE TABLE IF NOT EXISTS artifacts (
+CREATE TABLE artifacts (
     digest TEXT PRIMARY KEY,
     data BLOB NOT NULL
 );
-CREATE TABLE IF NOT EXISTS runs (
+CREATE TABLE runs (
     run_id TEXT PRIMARY KEY,
     factory TEXT NOT NULL,
     outcome TEXT NOT NULL,
     revision INTEGER NOT NULL,
-    created_at TEXT,
-    updated_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
     data BLOB NOT NULL
 );
-CREATE INDEX IF NOT EXISTS runs_by_outcome ON runs (outcome, updated_at);
-CREATE TABLE IF NOT EXISTS schema (
-    version INTEGER NOT NULL
-);
+CREATE INDEX runs_by_time ON runs (updated_at);
+CREATE INDEX runs_by_outcome ON runs (outcome, updated_at);
+CREATE INDEX runs_by_factory ON runs (factory, updated_at);
 """
+
+# Tables that only this store makes. Another program's tables may share the file.
+_OWN_TABLES = ("artifacts", "runs")
 
 
 def _moment(when: datetime) -> str:
@@ -409,7 +414,8 @@ class SQLiteStore(_SyncReads):
     ) -> list[Run]:
         """List stored runs by when they last changed. See ``RunStore.list_runs``.
 
-        It answers from an index on ``outcome`` and ``updated_at``.
+        It answers from an index on ``updated_at``, alone or after ``outcome`` or
+        ``factory``.
         """
         _check_limit(limit, order)
         rows = await asyncio.to_thread(self._select_runs, outcome, factory, order, limit)
@@ -436,22 +442,25 @@ class SQLiteStore(_SyncReads):
             connection.close()
 
     def _check_schema(self, connection: sqlite3.Connection) -> None:
-        """Create the tables in a new file, and refuse a file of another schema version."""
+        """Create the tables in a new file, and refuse a file of another schema version.
+
+        Reading ``user_version`` costs one look at the file's header, so every
+        connection checks it rather than the store remembering a past check.
+        """
         version = self._read_version(connection)
-        if version is None:
+        if version == 0:
             # WAL mode is kept in the file, so it is set once, outside any transaction.
             connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("BEGIN IMMEDIATE")
             try:
-                for statement in _CREATE_TABLES.split(";"):
-                    if statement.strip():
-                        connection.execute(statement)
                 # Another process may have made the tables while this one waited.
                 version = self._read_version(connection)
-                if version is None:
-                    connection.execute(
-                        "INSERT INTO schema (version) VALUES (?)", (_SCHEMA_VERSION,)
-                    )
+                if version == 0:
+                    self._refuse_unversioned_tables(connection)
+                    for statement in _CREATE_TABLES.split(";"):
+                        if statement.strip():
+                            connection.execute(statement)
+                    connection.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
                     version = _SCHEMA_VERSION
                 connection.execute("COMMIT")
             except BaseException:
@@ -464,14 +473,22 @@ class SQLiteStore(_SyncReads):
             )
 
     @staticmethod
-    def _read_version(connection: sqlite3.Connection) -> int | None:
-        table = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema'"
-        ).fetchone()
-        if table is None:
-            return None
-        row = connection.execute("SELECT version FROM schema").fetchone()
-        return None if row is None else int(row[0])
+    def _read_version(connection: sqlite3.Connection) -> int:
+        return int(connection.execute("PRAGMA user_version").fetchone()[0])
+
+    def _refuse_unversioned_tables(self, connection: sqlite3.Connection) -> None:
+        """Refuse a file that has this store's tables but no schema version."""
+        marks = ", ".join("?" for _ in _OWN_TABLES)
+        found = connection.execute(
+            f"SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ({marks})",
+            _OWN_TABLES,
+        ).fetchall()
+        if found:
+            names = ", ".join(sorted(str(row[0]) for row in found))
+            raise StoreSchemaMismatch(
+                f"the store at {str(self.path)!r} has tables named {names} but no schema "
+                "version, so another version of the library, or another program, made them"
+            )
 
     def _fetch_one(self, query: str, parameters: tuple[Any, ...]) -> tuple[Any, ...] | None:
         with self._connect() as connection:
@@ -492,15 +509,18 @@ class SQLiteStore(_SyncReads):
         limit: int,
     ) -> list[bytes]:
         direction = "DESC" if order == "newest" else "ASC"
+        # Only the filters given go in the query, so SQLite can answer from an index.
+        conditions: list[str] = []
+        parameters: dict[str, Any] = {"limit": limit}
+        if outcome is not None:
+            conditions.append("outcome = :outcome")
+            parameters["outcome"] = outcome
+        if factory is not None:
+            conditions.append("factory = :factory")
+            parameters["factory"] = factory
+        where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
         # Runs changed at the same moment keep run_id order, as in the other stores.
-        query = (
-            "SELECT data FROM runs"
-            " WHERE (:outcome IS NULL OR outcome = :outcome)"
-            " AND (:factory IS NULL OR factory = :factory)"
-            f" ORDER BY updated_at {direction}, run_id"
-            " LIMIT :limit"
-        )
-        parameters = {"outcome": outcome, "factory": factory, "limit": limit}
+        query = f"SELECT data FROM runs{where} ORDER BY updated_at {direction}, run_id LIMIT :limit"
         with self._connect() as connection:
             return [row[0] for row in connection.execute(query, parameters).fetchall()]
 
