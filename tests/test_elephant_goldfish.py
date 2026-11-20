@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
 from pydantic_ai import Agent, DeferredToolRequests
-from pydantic_ai.capabilities import Toolset
+from pydantic_ai.capabilities import LocalWorkspace, Toolset
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
     ModelMessage,
@@ -16,6 +17,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     TextPart,
     ToolCallPart,
+    ToolReturnPart,
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -62,7 +64,7 @@ POND = (
 class Author:
     """The author's model: replies in turn, and keeps what it was sent and offered."""
 
-    def __init__(self, *replies: str | ModelResponse) -> None:
+    def __init__(self, *replies: str | dict[str, Any] | ModelResponse) -> None:
         self.replies = list(replies)
         self.seen: list[list[ModelMessage]] = []
         self.tools: list[list[str]] = []
@@ -75,6 +77,8 @@ class Author:
         self.seen.append(list(messages))
         self.tools.append([tool.name for tool in info.function_tools])
         reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+        if isinstance(reply, dict):  # a structured draft, sent through the output tool
+            return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply)])
         return reply if isinstance(reply, ModelResponse) else ModelResponse(parts=[TextPart(reply)])
 
 
@@ -150,13 +154,13 @@ async def test_a_clean_first_round_passes_and_stamps_the_methodology() -> None:
     assert result.decision is not None
     assert result.decision.gate == "clean_final_round"
     assert result.decision.reasons == ("round 1 was clean: 2 goldfish found nothing blocking",)
-    assert [str(m) for m in result.decision.methodologies] == ["elephant-goldfish@1"]
+    assert [str(m) for m in result.decision.methodologies] == ["elephant-goldfish@2"]
     assert author.calls == 1
     [report] = await reports_of(result, store)
     assert (report.round, report.goldfish, report.findings) == (1, ("newcomer", "critique"), ())
     assert report.results[0].paraphrase == CLEAR["paraphrase"]
     stored = await store.get(result.evidence[0], GoldfishReport)
-    assert [str(m) for m in stored.methodologies] == ["elephant-goldfish@1"]
+    assert [str(m) for m in stored.methodologies] == ["elephant-goldfish@2"]
 
 
 async def test_a_goldfish_sees_only_the_draft_its_job_and_its_standard() -> None:
@@ -522,6 +526,9 @@ def test_a_factory_lists_elephant_goldfish_among_its_methodologies() -> None:
         ({"goldfish": "newcomer"}, "must be a list of Goldfish"),
         ({"goldfish": (POND[0], POND[0])}, "two goldfish are named 'newcomer'"),
         ({"goldfish": POND, "rounds": 0}, "rounds must be a whole number, 1 or more"),
+        ({"goldfish": POND, "clean_rounds": 0}, "clean_rounds must be a whole number, 1 or more"),
+        ({"goldfish": POND, "clean_rounds": 3}, r"clean_rounds \(3\) cannot be more than rounds"),
+        ({"goldfish": POND, "settle_contests": "yes"}, "settle_contests must be True or False"),
     ],
 )
 def test_a_badly_set_up_elephant_goldfish_is_refused(
@@ -750,3 +757,299 @@ def test_elephant_goldfish_refuses_what_it_cannot_give_the_goldfish(
 ) -> None:
     with pytest.raises(MethodologyDefinitionError, match=problem):
         ElephantGoldfish(goldfish=POND, **settings)
+
+
+# Findings that can be checked and settled.
+
+SUMMARY = {"summary": DRAFT}
+UNSAID: dict[str, Any] = {
+    "severity": "Major",
+    "kind": "gap",
+    "where": "summary",
+    "issue": "The summary does not say who the page is for.",
+}
+CITED = "It is for one person, and the summary says so in its first word."
+
+
+def critic(**settings: Any) -> Goldfish:
+    return Goldfish("critique", stage="critique", job="Review as critique.", **settings)
+
+
+def reviewed_design(
+    author: Author, pond: Pond, *extra: Any, **settings: Any
+) -> tuple[Agent[None, Design], ElephantGoldfish]:
+    """An author that drafts a structured design under Elephant Goldfish."""
+    method = ElephantGoldfish(goldfish=POND, model=FunctionModel(pond), **settings)
+    agent = Agent(
+        FunctionModel(author),
+        name="designer",
+        output_type=Design,
+        capabilities=[method, AskPerson(), *extra],
+    )
+    return agent, method
+
+
+def replies_to(messages: list[ModelMessage], tool: str) -> list[str]:
+    """What a tool told the author."""
+    return [
+        str(part.content)
+        for message in messages
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == tool
+    ]
+
+
+async def test_a_quote_not_in_the_draft_is_retried() -> None:
+    misquoted = {**BLANK, "quote": "Press Return to save"}
+    quoted = {**BLANK, "quote": "press  Enter\nto add it"}  # whitespace is collapsed
+    author = Author(DRAFT, FIXED)
+    pond = Pond(
+        newcomer=[CLEAR],
+        critique=[{"findings": [misquoted]}, {"findings": [quoted]}, {"findings": []}],
+    )
+    agent, _ = designer(author, pond)
+    store = MemoryStore()
+
+    result = await station(agent).run(MISSION, store=store)
+
+    assert result.outcome == "passed"
+    assert len(pond.prompts["critique"]) == 3  # round 1 asked twice, round 2 once
+    first = (await reports_of(result, store))[0].findings[0]
+    assert (first.quote, first.issue) == ("press  Enter\nto add it", BLANK["issue"])
+    [feedback] = retries(author.seen[1])
+    assert 'Quote: "press  Enter\nto add it"' in feedback
+
+
+async def test_a_quote_still_wrong_is_dropped_with_a_note() -> None:
+    author = Author(DRAFT)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": [{**NIT, "quote": "a tick box"}]}])
+    agent, _ = designer(author, pond)
+    store = MemoryStore()
+
+    result = await station(agent).run(MISSION, store=store)
+
+    assert result.outcome == "passed"
+    assert len(pond.prompts["critique"]) == 3  # the first try and two retries
+    [report] = await reports_of(result, store)
+    [finding] = report.findings
+    assert finding.quote is None
+    assert finding.issue == "Say 'tick box', not 'box'. (quote not found in the design)"
+
+
+async def test_a_kind_the_goldfish_does_not_have_is_retried() -> None:
+    pond = Pond(
+        newcomer=[CLEAR],
+        critique=[{"findings": [{**NIT, "kind": "typo"}]}, {"findings": [{**NIT, "kind": "gap"}]}],
+    )
+    method = ElephantGoldfish(
+        goldfish=(POND[0], critic(kinds=("gap", "missing_path"))), model=FunctionModel(pond)
+    )
+    agent = Agent(FunctionModel(Author(DRAFT)), name="designer", capabilities=[method])
+    store = MemoryStore()
+
+    result = await station(agent).run(MISSION, store=store)
+
+    assert result.outcome == "passed"
+    assert len(pond.prompts["critique"]) == 2
+    [report] = await reports_of(result, store)
+    assert [f.kind for f in report.findings] == ["gap"]
+
+
+async def test_more_findings_than_max_findings_are_retried() -> None:
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": [NIT, NIT]}, {"findings": [NIT]}])
+    method = ElephantGoldfish(goldfish=(POND[0], critic(max_findings=1)), model=FunctionModel(pond))
+    agent = Agent(FunctionModel(Author(DRAFT)), name="designer", capabilities=[method])
+    store = MemoryStore()
+
+    result = await station(agent).run(MISSION, store=store)
+
+    assert len(pond.prompts["critique"]) == 2
+    [report] = await reports_of(result, store)
+    assert len(report.findings) == 1
+
+
+async def test_a_contest_citing_a_field_settles_when_asked() -> None:
+    contest = call("contest", finding_id="r1-critique-1", evidence=CITED, cites="field:summary")
+    author = Author(SUMMARY, contest, SUMMARY)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": [UNSAID]}, {"findings": []}])
+    agent, _ = reviewed_design(author, pond, settle_contests=True)
+    store = MemoryStore()
+
+    result = await station(agent).run(MISSION, store=store)
+
+    assert result.outcome == "passed"
+    assert replies_to(author.seen[2], "contest") == [
+        "r1-critique-1 is settled: code checked field:summary. No person needs to decide it."
+    ]
+    first = (await reports_of(result, store))[0].findings[0]
+    assert (first.answer, first.settled, first.note) == (
+        "contested",
+        True,
+        f"{CITED} (cites field:summary)",
+    )
+
+
+async def test_a_contest_without_settle_contests_goes_to_a_person() -> None:
+    contest = call("contest", finding_id="r1-critique-1", evidence=CITED, cites="field:summary")
+    author = Author(SUMMARY, contest, SUMMARY)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": [UNSAID]}, {"findings": []}])
+    agent, _ = reviewed_design(author, pond)
+
+    result = await station(agent).run(MISSION, store=MemoryStore())
+
+    assert result.waiting is not None and result.waiting.kind == "escalation"
+    assert result.waiting.reasons == (
+        f"r1-critique-1 contested: {UNSAID['issue']} ({CITED} (cites field:summary))",
+    )
+    assert replies_to(author.seen[2], "contest") == [
+        "r1-critique-1 is contested. A person will decide it."
+    ]
+
+
+async def test_a_contest_citing_a_missing_field_does_not_settle() -> None:
+    contest = call("contest", finding_id="r1-critique-1", evidence=CITED, cites="field:audience")
+    author = Author(SUMMARY, contest, SUMMARY)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": [UNSAID]}, {"findings": []}])
+    agent, _ = reviewed_design(author, pond, settle_contests=True)
+
+    result = await station(agent).run(MISSION, store=MemoryStore())
+
+    assert result.waiting is not None and result.waiting.kind == "escalation"
+    assert replies_to(author.seen[2], "contest") == [
+        "r1-critique-1 is contested. A person will decide it, because the output has no "
+        "field 'audience'."
+    ]
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "tasks.py").write_text("def add_task(text): ...\n")
+    return tmp_path
+
+
+async def test_a_contest_citing_a_missing_path_does_not_settle(repo: Path) -> None:
+    contest = call("contest", finding_id="r1-critique-1", evidence=CITED, cites="app/gone.py:add")
+    author = Author(SUMMARY, contest, SUMMARY)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": [UNSAID]}, {"findings": []}])
+    agent, _ = reviewed_design(author, pond, LocalWorkspace(repo), settle_contests=True)
+
+    result = await station(agent).run(MISSION, store=MemoryStore())
+
+    assert result.waiting is not None and result.waiting.kind == "escalation"
+    assert replies_to(author.seen[2], "contest") == [
+        "r1-critique-1 is contested. A person will decide it, because the path "
+        "'app/gone.py' does not exist in the workspace."
+    ]
+
+
+async def test_a_contest_citing_a_path_that_exists_settles_when_asked(repo: Path) -> None:
+    cites = "app/tasks.py:add_task"
+    contest = call("contest", finding_id="r1-critique-1", evidence=CITED, cites=cites)
+    author = Author(SUMMARY, contest, SUMMARY)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": [UNSAID]}, {"findings": []}])
+    agent, _ = reviewed_design(author, pond, LocalWorkspace(repo), settle_contests=True)
+
+    result = await station(agent).run(MISSION, store=MemoryStore())
+
+    assert result.outcome == "passed"
+
+
+async def test_a_path_cannot_be_checked_without_a_workspace() -> None:
+    cites = "app/tasks.py:add_task"
+    contest = call("contest", finding_id="r1-critique-1", evidence=CITED, cites=cites)
+    author = Author(SUMMARY, contest, SUMMARY)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": [UNSAID]}, {"findings": []}])
+    agent, _ = reviewed_design(author, pond, settle_contests=True)
+
+    result = await station(agent).run(MISSION, store=MemoryStore())
+
+    assert result.waiting is not None and result.waiting.kind == "escalation"
+    assert "no workspace is attached" in replies_to(author.seen[2], "contest")[0]
+
+
+async def test_a_repeat_of_a_settled_finding_settles() -> None:
+    contest = call("contest", finding_id="r1-critique-1", evidence=CITED, cites="field:summary")
+    author = Author(SUMMARY, contest, SUMMARY, SUMMARY)
+    pond = Pond(
+        newcomer=[CLEAR],
+        critique=[{"findings": [UNSAID]}, {"findings": [UNSAID, BLANK]}, {"findings": []}],
+    )
+    agent, _ = reviewed_design(author, pond, settle_contests=True, rounds=3)
+    store = MemoryStore()
+
+    result = await station(agent).run(MISSION, store=store)
+
+    assert result.outcome == "passed"
+    second = (await reports_of(result, store))[1]
+    repeat, other = second.findings
+    assert (repeat.settled, repeat.same_as, repeat.answer) == (True, "r1-critique-1", "open")
+    assert second.open == (other,)
+    sent = [str(part) for m in author.seen[3] for part in m.parts]
+    [feedback] = [text for text in sent if "Goldfish review, round 2" in text]
+    assert "r2-critique-2" in feedback and "r2-critique-1" not in feedback
+
+
+@pytest.mark.parametrize("together", [False, True], ids=["after", "together"])
+async def test_a_settled_contest_stays_settled_after_a_question(together: bool) -> None:
+    contest = call("contest", finding_id="r1-critique-1", evidence=CITED, cites="field:summary")
+    question = ask("Should ticked tasks survive a reload?")
+    replies = [both(contest, question)] if together else [contest, question]
+    author = Author(SUMMARY, *replies, SUMMARY)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": [UNSAID]}, {"findings": []}])
+    agent, _ = reviewed_design(author, pond, settle_contests=True)
+    software = Factory("software", [station(agent)])
+    store = MemoryStore()
+
+    done = await answer_questions(software, await software.run(MISSION, store=store), store)
+
+    assert done.outcome == "passed"
+
+
+async def test_two_clean_rounds_are_needed_when_asked() -> None:
+    author = Author(DRAFT, FIXED)
+    pond = Pond(
+        newcomer=[CLEAR],
+        critique=[{"findings": []}, {"findings": [BLANK]}, {"findings": []}, {"findings": []}],
+    )
+    agent, _ = designer(author, pond, rounds=4, clean_rounds=2)
+    store = MemoryStore()
+
+    result = await station(agent).run(MISSION, store=store)
+
+    assert result.outcome == "passed"
+    assert result.decision is not None
+    assert result.decision.reasons == ("round 4 was clean: 2 goldfish found nothing blocking",)
+    assert author.calls == 2  # a clean round alone did not end the review
+    reports = await reports_of(result, store)
+    assert [(r.round, r.clean) for r in reports] == [(1, True), (2, False), (3, True), (4, True)]
+
+
+async def test_the_second_clean_round_reads_the_same_draft() -> None:
+    author = Author(DRAFT)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": []}])
+    agent, _ = designer(author, pond, clean_rounds=2)
+    store = MemoryStore()
+
+    result = await station(agent).run(MISSION, store=store)
+
+    assert result.outcome == "passed"
+    assert author.calls == 1  # the author did not take a turn between the clean rounds
+    first, second = await reports_of(result, store)
+    assert (first.round, second.round) == (1, 2)
+    assert first.draft_digest == second.draft_digest
+    assert [DRAFT in prompt for prompt in pond.prompts["critique"]] == [True, True]
+
+
+async def test_defaults_keep_one_clean_round() -> None:
+    author = Author(DRAFT)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": []}])
+    agent, method = designer(author, pond)
+    store = MemoryStore()
+
+    result = await station(agent).run(MISSION, store=store)
+
+    assert (method.clean_rounds, method.settle_contests) == (1, False)
+    assert result.outcome == "passed"
+    assert len(await reports_of(result, store)) == 1
+    assert len(pond.prompts["critique"]) == 1
