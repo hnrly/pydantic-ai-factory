@@ -51,8 +51,8 @@ from pydantic_ai_factory import (
     station,
 )
 from pydantic_ai_factory.methodologies import ElephantGoldfish, GoldfishReport
-from pydantic_ai_factory_software import DESIGN_GOLDFISH, Design
-from pydantic_ai_factory_software._design import DESIGNER_INSTRUCTIONS, no_open_questions
+from pydantic_ai_factory_software import DESIGN_GOLDFISH, DESIGNER_INSTRUCTIONS, Design
+from pydantic_ai_factory_software._design import no_open_questions
 
 DECIDER = "eval"
 """Who the evaluation says approved each design. Nobody read it."""
@@ -477,10 +477,15 @@ def _scripted(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     if "findings" in fields:
         work = (said or [""])[0]
         critique = "Stage: critique" in (info.instructions or "")
-        findings = [{"severity": "Major", "issue": THIN_ISSUE}] if critique and THIN in work else []
+        thin = {"severity": "Major", "kind": "gap", "issue": THIN_ISSUE}
+        findings = [thin] if critique and THIN in work else []
         reply: dict[str, Any] = {"findings": findings}
-        if "paraphrase" in fields:
-            reply["paraphrase"] = "A to-do list page, explained back in brief."
+        if "explain_back" in fields:
+            reply["explain_back"] = {
+                "problem": "Keeping track of tasks.",
+                "who": "One person.",
+                "approach": "A to-do list page, explained back in brief.",
+            }
         return ModelResponse(parts=[ToolCallPart(tool.name, reply)])
     revised = any("Goldfish review" in text for text in said[1:])
     design = _scripted_design(said[0] if said else "", revised=revised)

@@ -83,6 +83,7 @@ def test_a_run_with_no_design_scores_nothing_but_still_reports_its_effort() -> N
     }
 
 
+@pytest.mark.posix_only
 async def test_one_mission_runs_both_ways_and_review_changes_what_reaches_a_person() -> None:
     designer, plain_designer = evals.designers(evals.offline_model())
     mission = evals.CASES[0].inputs
@@ -107,6 +108,7 @@ async def test_one_mission_runs_both_ways_and_review_changes_what_reaches_a_pers
     assert len(reviewed.design.acceptance_criteria) == 3
 
 
+@pytest.mark.posix_only
 def test_both_arms_share_a_name_and_differ_only_in_the_methodology() -> None:
     designer, plain_designer = evals.designers(evals.offline_model())
 
@@ -118,6 +120,7 @@ def test_both_arms_share_a_name_and_differ_only_in_the_methodology() -> None:
     assert without == ()
 
 
+@pytest.mark.posix_only
 def test_the_offline_comparison_runs_from_the_command_line_and_writes_its_results(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

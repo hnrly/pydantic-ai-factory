@@ -390,7 +390,8 @@ def test_you_can_have_work_reviewed_by_fresh_goldfish_revised_in_the_authors_own
             return critique(messages, info)
         if "Stage: readiness" in stage:
             return readiness(messages, info)
-        explained: dict[str, Any] = {"paraphrase": "A to-do list page.", "findings": []}
+        explain_back = {"problem": "Tasks.", "who": "One person.", "approach": "A to-do list page."}
+        explained: dict[str, Any] = {"explain_back": explain_back, "findings": []}
         return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, explained)])
 
     designer = Agent(
@@ -436,6 +437,7 @@ def test_you_can_see_a_run_as_a_trace() -> None:
     exporter.shutdown()
 
 
+@pytest.mark.posix_only
 def test_you_can_score_a_methodology_against_doing_without_it(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

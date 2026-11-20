@@ -136,6 +136,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
       - run: uv build --all-packages --no-sources
+      - name: Check that the wheels ship every skill
+        run: |
+          # Four method skills in the core wheel, three software skills in the other.
+          test "$(unzip -Z1 dist/pydantic_ai_factory-*.whl | grep -c '/SKILL.md$')" -eq 4
+          test "$(unzip -Z1 dist/pydantic_ai_factory_software-*.whl | grep -c '/SKILL.md$')" -eq 3
       - name: Install exactly the built wheels and import them
         run: |
           uv venv "$RUNNER_TEMP/wheels" --python 3.13

@@ -7,25 +7,31 @@ whole conversation, and fresh reviewers, the goldfish, see only the finished wor
 from ._elephant_goldfish import (
     Answer,
     ElephantGoldfish,
+    ExplainBack,
     Finding,
     Goldfish,
     GoldfishFailed,
     GoldfishReport,
     GoldfishResult,
+    PackageFolder,
     Severity,
     Stage,
     Standard,
+    packaged_skills,
 )
 
 __all__ = [
     "Answer",
     "ElephantGoldfish",
+    "ExplainBack",
     "Finding",
     "Goldfish",
     "GoldfishFailed",
     "GoldfishReport",
     "GoldfishResult",
+    "PackageFolder",
     "Severity",
     "Stage",
     "Standard",
+    "packaged_skills",
 ]
