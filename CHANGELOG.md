@@ -2,6 +2,10 @@
 
 Every change a user can see is listed here, newest first.
 
+## Unreleased
+
+- `pydantic-ai-factory` now depends on Pydantic AI Harness (`pydantic-ai-harness[skills]`), so the core can use its capabilities. A new `coder` extra adds the harness's Coder: `pip install "pydantic-ai-factory[coder]"`.
+
 ## 0.1.1
 
 - Document `on_step` on the Factories page: it is awaited with the run after every save, and an error raised in it leaves the run saved as `"running"`. List `"running"` among a run's outcomes, as a run saved between stations has it.

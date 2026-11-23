@@ -585,8 +585,14 @@ source = { editable = "." }
 dependencies = [
     { name = "opentelemetry-api" },
     { name = "pydantic" },
+    { name = "pydantic-ai-harness", extra = ["skills"] },
     { name = "pydantic-ai-slim" },
     { name = "typing-extensions" },
+]
+
+[package.optional-dependencies]
+coder = [
+    { name = "pydantic-ai-harness", extra = ["coder"] },
 ]
 
 [package.dev-dependencies]
@@ -607,9 +613,12 @@ dev = [
 requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.30,<2" },
     { name = "pydantic", specifier = ">=2.14,<3" },
+    { name = "pydantic-ai-harness", extras = ["coder"], marker = "extra == 'coder'", specifier = ">=0.68,<0.69" },
+    { name = "pydantic-ai-harness", extras = ["skills"], specifier = ">=0.68,<0.69" },
     { name = "pydantic-ai-slim", specifier = ">=2.68,<3" },
     { name = "typing-extensions", specifier = ">=4.12" },
 ]
+provides-extras = ["coder"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -666,6 +675,9 @@ anthropic = [
 coder = [
     { name = "json-repair" },
     { name = "ripgrep", marker = "sys_platform != 'android'" },
+]
+skills = [
+    { name = "pyyaml" },
 ]
 
 [[package]]
