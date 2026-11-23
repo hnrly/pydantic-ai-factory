@@ -33,6 +33,7 @@ from ..artifacts._show import OutputFormat, format_for, show
 from ..contracts import DefinitionError, FactoryError, MethodologyRef, Name, Record, check_name
 from ..contracts import run_sync as _run_sync
 from ..gates import Evidence, Gate, GateDecision, NotEvaluated
+from ._ask import ask_request
 
 logger = logging.getLogger("pydantic_ai_factory")
 
@@ -110,22 +111,36 @@ class AgentCall(Record):
     evidence: tuple[ArtifactRef, ...] = ()
 
 
-class Question(Record):
-    """A question an agent is waiting for a person to answer.
+class QuestionOption(Record):
+    """One choice a question offers. The agent puts the one it recommends first."""
 
-    It prints as its text. When an agent asks more than one, answer each by using it
-    as a key: ``run.reply({first: "Yes.", second: "Grey."}, by="ada")``.
+    label: str
+    description: str | None = None
+
+
+class Question(Record):
+    """One question an agent is waiting for a person to answer.
+
+    It prints as its text. A question asked with ``AskPerson`` has a ``header``, its
+    ``options`` with the recommended one first, and ``multi_select``. Answer it with one
+    option's label, a list of labels when ``multi_select`` is true, or your own words.
+    Any other tool call a person answers is a question with no header and no options,
+    answered in words. When a run waits on more than one, answer each by using it as a
+    key: ``run.reply({first: "Keep", second: "Grey, please."}, by="ada")``.
     """
 
     call_id: str
     tool: str
     text: str
+    header: str | None = None
+    options: tuple[QuestionOption, ...] = ()
+    multi_select: bool = False
 
     def __str__(self) -> str:
         return self.text
 
     def __hash__(self) -> int:
-        return hash(self.call_id)
+        return hash((self.call_id, self.header))
 
 
 class Action(Record):
@@ -169,22 +184,37 @@ class Waiting(Record):
 
     @property
     def questions(self) -> tuple[Question, ...]:
-        """Every tool call that waits for a person's answer, such as an ``AskPerson`` question."""
+        """Every question the wait's tool calls ask, in order, such as ``AskPerson``'s."""
         if self.requests is None:
             return ()
-        return tuple(
-            Question(
-                call_id=call.tool_call_id,
-                tool=call.tool_name,
-                text=_question_text(
+        questions: list[Question] = []
+        for call in self.requests.calls:
+            request = ask_request(call, self.requests.metadata.get(call.tool_call_id))
+            if request is None:
+                text = _question_text(
                     self.requests.metadata.get(call.tool_call_id, {}), call.args_as_dict()
-                )
-                or str(
+                ) or str(
                     Action(call_id=call.tool_call_id, tool=call.tool_name, args=call.args_as_dict())
-                ),
+                )
+                questions.append(
+                    Question(call_id=call.tool_call_id, tool=call.tool_name, text=text)
+                )
+                continue
+            questions.extend(
+                Question(
+                    call_id=call.tool_call_id,
+                    tool=call.tool_name,
+                    text=asked.question,
+                    header=asked.header,
+                    options=tuple(
+                        QuestionOption(label=option.label, description=option.description)
+                        for option in asked.options
+                    ),
+                    multi_select=asked.multi_select,
+                )
+                for asked in request.questions
             )
-            for call in self.requests.calls
-        )
+        return tuple(questions)
 
     @property
     def actions(self) -> tuple[Action, ...]:
@@ -198,7 +228,7 @@ class Waiting(Record):
 
 
 def _question_text(metadata: Mapping[str, Any], args: Mapping[str, Any]) -> str | None:
-    """The question a call asks: from its metadata, as ``AskPerson`` sends it, or its arguments."""
+    """The question a call of a tool of your own asks: ``question`` in its metadata or arguments."""
     for source in (metadata, args):
         text = source.get("question")
         if isinstance(text, str) and text.strip():

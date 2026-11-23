@@ -8,8 +8,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from asking import ask, ask_call, asked
 from pydantic import TypeAdapter
 from pydantic_ai import Agent, DeferredToolResults, ToolApproved, ToolDenied
+from pydantic_ai.exceptions import CallDeferred
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from queued import queued_reply
@@ -45,10 +47,6 @@ def agent(name: str, *replies: ModelResponse | str, **options: Any) -> Agent[Non
         return given if isinstance(given, ModelResponse) else ModelResponse(parts=[TextPart(given)])
 
     return Agent(FunctionModel(reply), name=name, **options)
-
-
-def ask(question: str, call_id: str = "q1") -> ModelResponse:
-    return ModelResponse(parts=[ToolCallPart("ask_person", {"question": question}, call_id)])
 
 
 def approval_factory() -> Factory:
@@ -383,8 +381,8 @@ async def test_an_answer_naming_a_revision_the_run_has_not_reached_is_refused_bu
 def two_questions_factory() -> Factory:
     both = ModelResponse(
         parts=[
-            ToolCallPart("ask_person", {"question": "Keep ticked tasks?"}, "q1"),
-            ToolCallPart("ask_person", {"question": "What colour are done tasks?"}, "q2"),
+            ask_call("Keep ticked tasks?", call_id="q1"),
+            ask_call("What colour are done tasks?", call_id="q2"),
         ]
     )
     asker = agent("asker", both, "Kept, in grey.", capabilities=[AskPerson()])
@@ -395,7 +393,7 @@ def publishing_factory(*, then_ask: bool = False) -> tuple[Factory, list[str]]:
     published: list[str] = []
     parts = [ToolCallPart("publish_page", {"path": "index.html"}, "p1")]
     if then_ask:
-        parts.append(ToolCallPart("ask_person", {"question": "Which page next?"}, "q1"))
+        parts.append(ask_call("Which page next?", call_id="q1"))
 
     def reply(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         returned = [
@@ -439,7 +437,7 @@ async def test_a_reply_to_several_questions_maps_each_question_to_its_answer() -
 
     assert (str(first), str(second)) == ("Keep ticked tasks?", "What colour are done tasks?")
     assert done.outcome == "passed"
-    assert answer.results.calls == {"q1": "Yes, keep them.", "q2": "Grey."}
+    assert answer.results.calls == {"q1": {"Q1": ["Yes, keep them."]}, "q2": {"Q1": ["Grey."]}}
     assert answer.results.answered_by == {"q1": "ada", "q2": "ada"}
 
 
@@ -465,7 +463,9 @@ async def test_run_reply_and_check_refuse_a_bad_reply_with_the_same_reason() -> 
 
     with pytest.raises(ApprovalRefused) as refused:
         run.reply({first: "Yes."}, by="ada")
-    problem = software.check(run, queued_reply(run, DeferredToolResults(calls={"q1": "Yes."})))
+    problem = software.check(
+        run, queued_reply(run, DeferredToolResults(calls={"q1": {"Q1": ["Yes."]}}))
+    )
 
     assert problem is not None
     assert str(refused.value) == problem.reason
@@ -537,3 +537,96 @@ async def test_a_stale_reply_is_reported_as_stale_before_its_answers_are_checked
 
     with pytest.raises(RunConflict, match="has moved on"):
         run.reply({"q9": "Red."}, by="ada", revision=run.revision - 1)
+
+
+async def test_a_question_from_a_tool_of_your_own_is_answered_in_words() -> None:
+    asker = agent(
+        "asker",
+        ModelResponse(parts=[ToolCallPart("ask_me", {"question": "Colour?"}, "q1")]),
+        "Blue.",
+    )
+
+    @asker.tool_plain
+    def ask_me(question: str) -> str:
+        raise CallDeferred({"question": question}, kind="question")
+
+    software = Factory("software", [station(asker)])
+    store = MemoryStore()
+    run = await software.run("Pick a colour.", store=store)
+    question = run.question
+    assert question is not None
+    assert (str(question), question.header, question.options) == ("Colour?", None, ())
+
+    answer = run.reply("Blue, please.", by="ada")
+    done = await software.resume(answer, store=store)
+
+    assert answer.results.calls == {"q1": "Blue, please."}
+    assert done.outcome == "passed"
+
+
+async def test_a_run_waiting_on_the_old_ask_person_tool_is_answered_in_words() -> None:
+    # Before AskUser, AskPerson deferred an `ask_person` call with its question in the metadata.
+    before = agent(
+        "asker",
+        ModelResponse(parts=[ToolCallPart("ask_person", {"question": "Colour?"}, "q1")]),
+        "Blue.",
+    )
+
+    @before.tool_plain
+    def ask_person(question: str) -> str:
+        raise CallDeferred({"question": question})
+
+    store = MemoryStore()
+    run = await Factory("software", [station(before)]).run("Pick a colour.", store=store)
+    question = run.question
+    assert question is not None
+    assert (str(question), question.tool, question.header, question.options) == (
+        "Colour?",
+        "ask_person",
+        None,
+        (),
+    )
+
+    now = Factory("software", [station(agent("asker", "Blue.", capabilities=[AskPerson()]))])
+    answer = run.reply("Blue, please.", by="ada")
+    done = await now.resume(answer, store=store)
+
+    assert answer.results.calls == {"q1": "Blue, please."}
+    assert done.outcome == "passed"
+
+
+async def test_an_ask_person_question_is_answered_with_a_label_or_your_own_words() -> None:
+    both = ask(asked("Keep ticks?", "Ticks"), asked("Colour?", "Colour", ("Grey", "Green")))
+    asker = agent("asker", both, "Kept, in blue.", capabilities=[AskPerson()])
+    software = Factory("software", [station(asker)])
+    store = MemoryStore()
+    run = await software.run("A to-do list page.", store=store)
+    ticks, colour = run.questions
+    assert (ticks.header, [option.label for option in colour.options]) == (
+        "Ticks",
+        ["Grey", "Green"],
+    )
+
+    with pytest.raises(ApprovalRefused, match="unanswered questions: \\['Colour'\\]"):
+        run.reply({ticks: "Yes (Recommended)"}, by="ada")
+    answer = run.reply({ticks: "Yes (Recommended)", colour: "Blue, please."}, by="ada")
+    done = await software.resume(answer, store=store)
+
+    assert answer.results.calls == {
+        "q1": {"Ticks": ["Yes (Recommended)"], "Colour": ["Blue, please."]}
+    }
+    assert done.outcome == "passed"
+
+
+async def test_a_multi_select_question_takes_a_list_of_labels() -> None:
+    picks = ask(asked("Which pages?", "Pages", ("Home", "About", "Blog"), multi_select=True))
+    asker = agent("asker", picks, "Built.", capabilities=[AskPerson()])
+    run = await Factory("software", [station(asker)]).run("A site.", store=MemoryStore())
+    question = run.question
+    assert question is not None and question.multi_select
+
+    answer = run.reply({question: ["Home", "Blog"]}, by="ada")
+
+    assert answer.results.calls == {"q1": {"Pages": ["Home", "Blog"]}}
+    with pytest.raises(ApprovalRefused, match="picked options it does not offer"):
+        run.reply({question: ["Home", "Shop"]}, by="ada")

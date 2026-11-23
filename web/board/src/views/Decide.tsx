@@ -1,7 +1,7 @@
 // The one thing an opened run asks of a person: a decision, a reply, or what to do
 // about a stalled run.
 import { useState, type ReactNode } from 'react';
-import type { Answer, RunDetail, ToolCall } from '../api';
+import type { Answer, Ask, AskReply, RunDetail, ToolCall } from '../api';
 import { useServices } from '../context';
 import { clock, reason } from '../words';
 
@@ -108,7 +108,101 @@ function args(call: ToolCall): string {
   return text === '{}' ? `${call.tool}()` : `${call.tool}(${text})`;
 }
 
-/** An agent's questions, each with a reply box, and the tool calls it needs signed off, sent together. */
+/** What a person has said to one question so far: the options they picked, and their own words. */
+interface Said {
+  picked: string[];
+  own: string;
+}
+
+function answered(said: Said | undefined): boolean {
+  return said !== undefined && (said.own.trim() !== '' || said.picked.length > 0);
+}
+
+function askReply(ask: Ask, said: Said): string | string[] {
+  if (said.own.trim() !== '') return said.own.trim();
+  return ask.multi_select ? said.picked : said.picked[0];
+}
+
+/** The suffix an agent puts on the option it recommends. The label keeps it; the board shows a tag instead. */
+const RECOMMENDED = ' (Recommended)';
+
+function shown(label: string): { text: string; recommended: boolean } {
+  return label.endsWith(RECOMMENDED)
+    ? { text: label.slice(0, -RECOMMENDED.length), recommended: true }
+    : { text: label, recommended: false };
+}
+
+/**
+ * One question: its header, its text, its options (the recommended first, tagged), and
+ * a box for the person's own answer. Picking an option clears the box, and typing in
+ * the box clears the picks, since an answer is one or the other.
+ */
+function AskField({
+  id,
+  ask,
+  said,
+  onChange,
+}: {
+  /** Unique on the page; built from indexes, since a header may hold any characters. */
+  id: string;
+  ask: Ask;
+  said: Said;
+  onChange: (said: Said) => void;
+}) {
+  function pick(label: string, on: boolean) {
+    const picked = ask.multi_select
+      ? on
+        ? [...said.picked, label]
+        : said.picked.filter((each) => each !== label)
+      : [label];
+    onChange({ picked, own: '' });
+  }
+  return (
+    <fieldset className="ask" aria-describedby={`${id}-hint`}>
+      <legend>
+        <span className="ask-header">{ask.header}</span>
+        <span className="ask-question">{ask.question}</span>
+      </legend>
+      <p className="ask-hint" id={`${id}-hint`}>
+        {ask.multi_select ? 'Choose any that apply, or write your own answer.' : 'Choose one, or write your own answer.'}
+      </p>
+      <div className="ask-options">
+        {ask.options.map((option, index) => {
+          const { text, recommended } = shown(option.label);
+          return (
+            <label key={option.label} className="ask-option" htmlFor={`${id}-option-${index}`}>
+              <input
+                id={`${id}-option-${index}`}
+                type={ask.multi_select ? 'checkbox' : 'radio'}
+                name={id}
+                checked={said.own.trim() === '' && said.picked.includes(option.label)}
+                onChange={(event) => pick(option.label, event.target.checked)}
+              />
+              <span className="ask-option-text">
+                <span className="ask-option-label">
+                  {text}
+                  {recommended && <span className="ask-recommended">Recommended</span>}
+                </span>
+                {option.description && <span className="ask-option-description">{option.description}</span>}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      <label className="ask-own-label" htmlFor={`${id}-own`}>
+        Your own answer <span className="visually-hidden">to “{ask.header}”</span>
+      </label>
+      <textarea
+        id={`${id}-own`}
+        rows={1}
+        value={said.own}
+        onChange={(event) => onChange({ picked: [], own: event.target.value })}
+      />
+    </fieldset>
+  );
+}
+
+/** An agent's questions, each with its options or a reply box, and the tool calls it needs signed off, sent together. */
 export function QuestionBox({
   run,
   blocked,
@@ -119,18 +213,31 @@ export function QuestionBox({
   onSend: (choice: Choice) => void;
 }) {
   const [replies, setReplies] = useState<Record<string, string>>({});
+  const [said, setSaid] = useState<Record<string, Record<string, Said>>>({});
   const [approvals, setApprovals] = useState<Record<string, boolean>>({});
   const wait = run.wait;
   if (!wait) return null;
   const { questions, sign_offs: signOffs } = wait;
   const agent = wait.agent ?? 'agent';
+  const asked = questions.reduce((count, call) => count + Math.max(call.asks.length, 1), 0);
   const complete =
-    questions.every((call) => (replies[call.id] ?? '').trim() !== '') && signOffs.every((call) => call.id in approvals);
+    questions.every((call) =>
+      call.asks.length > 0
+        ? call.asks.every((ask) => answered(said[call.id]?.[ask.header]))
+        : (replies[call.id] ?? '').trim() !== '',
+    ) && signOffs.every((call) => call.id in approvals);
 
   function send() {
     const choice: Choice = { kind: 'reply' };
     if (questions.length > 0) {
-      choice.replies = Object.fromEntries(questions.map((call) => [call.id, (replies[call.id] ?? '').trim()]));
+      choice.replies = Object.fromEntries(
+        questions.map((call): [string, string | AskReply] => [
+          call.id,
+          call.asks.length > 0
+            ? Object.fromEntries(call.asks.map((ask) => [ask.header, askReply(ask, said[call.id][ask.header])]))
+            : (replies[call.id] ?? '').trim(),
+        ]),
+      );
     }
     if (signOffs.length > 0) {
       choice.approvals = Object.fromEntries(signOffs.map((call) => [call.id, approvals[call.id] === true]));
@@ -142,7 +249,7 @@ export function QuestionBox({
     <section className="question" aria-label={`The ${agent} asks you`}>
       <p className="lead">
         {questions.length > 0
-          ? `The ${agent} has ${questions.length === 1 ? 'a question' : 'questions'} before it carries on. Nothing else happens until you reply.`
+          ? `The ${agent} has ${asked === 1 ? 'a question' : 'questions'} before it carries on. Nothing else happens until you reply.`
           : `The ${agent} wants to use a tool that needs your sign-off. Nothing else happens until you answer.`}
       </p>
       {questions.map((call, index) => (
@@ -155,20 +262,36 @@ export function QuestionBox({
               <span className="quiet small">
                 <strong>{agent}</strong> asked
               </span>
-              <div className="bubble">{call.question ?? `It called ${call.tool} and waits for your answer.`}</div>
+              {call.asks.length === 0 && (
+                <div className="bubble">{call.question ?? `It called ${call.tool} and waits for your answer.`}</div>
+              )}
             </div>
           </div>
-          <div className="reply">
-            <label htmlFor={`reply-${call.id}`}>
-              {questions.length === 1 ? 'Your reply' : `Your reply to question ${index + 1}`}
-            </label>
-            <textarea
-              id={`reply-${call.id}`}
-              rows={4}
-              value={replies[call.id] ?? ''}
-              onChange={(event) => setReplies({ ...replies, [call.id]: event.target.value })}
-            />
-          </div>
+          {call.asks.length > 0 ? (
+            <div className="reply">
+              {call.asks.map((ask, askIndex) => (
+                <AskField
+                  key={ask.header}
+                  id={`ask-${index}-${askIndex}`}
+                  ask={ask}
+                  said={said[call.id]?.[ask.header] ?? { picked: [], own: '' }}
+                  onChange={(next) => setSaid({ ...said, [call.id]: { ...said[call.id], [ask.header]: next } })}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="reply">
+              <label htmlFor={`reply-${call.id}`}>
+                {questions.length === 1 ? 'Your reply' : `Your reply to question ${index + 1}`}
+              </label>
+              <textarea
+                id={`reply-${call.id}`}
+                rows={4}
+                value={replies[call.id] ?? ''}
+                onChange={(event) => setReplies({ ...replies, [call.id]: event.target.value })}
+              />
+            </div>
+          )}
         </div>
       ))}
       {signOffs.length > 0 && (

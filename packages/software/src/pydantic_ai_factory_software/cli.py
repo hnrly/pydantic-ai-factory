@@ -86,7 +86,9 @@ def _parser() -> argparse.ArgumentParser:
         answers.add_argument("--approve", action="store_true", help="approve without asking")
         answers.add_argument("--changes", metavar="NOTE", help="ask for changes, with a note")
         answers.add_argument("--reject", metavar="NOTE", help="reject, with a note")
-        answers.add_argument("--answer", metavar="TEXT", help="answer the agent's question")
+        answers.add_argument(
+            "--answer", metavar="TEXT", help="answer every question the agent asks with this text"
+        )
 
     run = commands.add_parser("run", help="start a run")
     run.add_argument("mission", nargs="?", help="the mission, as text")
@@ -191,9 +193,12 @@ def _answer_calls(args: argparse.Namespace, run: Run, ask: Ask, say: Say) -> Rep
         raise CommandError(
             f"run {run.run_id} waits for a tool call to be allowed; answer it from Python"
         )
-    answers: dict[Question, str] = {}
+    answers: dict[Question, str | list[str]] = {}
     for question in run.questions:
         say(f"Question: {question}")
+        for number, option in enumerate(question.options, start=1):
+            about = f": {option.description}" if option.description else ""
+            say(f"  {number}. {option.label}{about}")
         if args.answer:
             answers[question] = args.answer
             continue
@@ -201,11 +206,31 @@ def _answer_calls(args: argparse.Namespace, run: Run, ask: Ask, say: Say) -> Rep
             return None
         answer = ""
         while not answer:
-            answer = ask("Your answer: ").strip()
-        answers[question] = answer
+            if question.multi_select:
+                prompt = "Your answer, numbers separated by commas, or your own words: "
+            elif question.options:
+                prompt = "Your answer, a number or your own words: "
+            else:
+                prompt = "Your answer: "
+            answer = ask(prompt).strip()
+        answers[question] = _picked(question, answer)
     if not answers:
         return None
     return run.reply(answers, by=args.by)
+
+
+def _picked(question: Question, answer: str) -> str | list[str]:
+    """The options ``answer`` picks by number, or else the person's own words.
+
+    One number picks one option. For a ``multi_select`` question, numbers separated by
+    commas pick each of those options, and give a list of labels.
+    """
+    count = len(question.options)
+    numbers = [part.strip() for part in answer.split(",")] if question.multi_select else [answer]
+    if not all(n.isdigit() and 1 <= int(n) <= count for n in numbers):
+        return answer
+    labels = [question.options[int(n) - 1].label for n in dict.fromkeys(numbers)]
+    return labels if question.multi_select else labels[0]
 
 
 def _decide(

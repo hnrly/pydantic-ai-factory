@@ -22,7 +22,7 @@ Each field but `title` and `goal` is a list of short sentences. The Design stati
 
 The designer asks for prompt caching, `model_settings={"cache": True}`. Each review round resends the whole conversation, so the provider can serve all but the newest part from its cache.
 
-A design that still has open questions fails the station's gate, `no_open_questions`, and goes back to the designer, which asks you or settles them. After `repairs` tries, two by default, a person decides.
+A design that still has open questions fails the station's gate, `no_open_questions`, and goes back to the designer, which asks you or settles them. The designer asks through [`AskPerson`](approvals.md#asking-a-person): each question has options, the recommended one first, and you pick one or answer in your own words. After `repairs` tries, two by default, a person decides.
 
 ## The review
 

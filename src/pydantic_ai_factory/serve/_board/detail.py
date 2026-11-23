@@ -11,25 +11,54 @@ from pydantic_ai.messages import ToolCallPart
 
 from ...artifacts import OutputFormat
 from ...factory import FactoryShape, Reply, Run
-from ...stations import Station
+from ...stations import Question, Station
 from .history import history, track
 from .reading import BoardReader
-from .views import AnswerView, RunDetail, StepView, ToolCallView, WaitingView, job_view
+from .views import (
+    AnswerView,
+    AskView,
+    OptionView,
+    RunDetail,
+    StepView,
+    ToolCallView,
+    WaitingView,
+    job_view,
+)
 
 log = logging.getLogger("pydantic_ai_factory.serve")
 
 
-def _calls(parts: list[ToolCallPart], metadata: dict[str, dict[str, Any]]) -> list[ToolCallView]:
+def _calls(
+    parts: list[ToolCallPart], metadata: dict[str, dict[str, Any]], questions: tuple[Question, ...]
+) -> list[ToolCallView]:
     views: list[ToolCallView] = []
     for part in parts:
         args = part.args_as_dict()
-        question = metadata.get(part.tool_call_id, {}).get("question", args.get("question"))
+        asks = [
+            AskView(
+                header=asked.header,
+                question=asked.text,
+                options=[
+                    OptionView(label=option.label, description=option.description)
+                    for option in asked.options
+                ],
+                multi_select=asked.multi_select,
+            )
+            for asked in questions
+            if asked.call_id == part.tool_call_id and asked.header is not None
+        ]
+        question = (
+            None
+            if asks
+            else metadata.get(part.tool_call_id, {}).get("question", args.get("question"))
+        )
         views.append(
             ToolCallView(
                 id=part.tool_call_id,
                 tool=part.tool_name,
                 args=args,
                 question=None if question is None else str(question),
+                asks=asks,
             )
         )
     return views
@@ -46,8 +75,8 @@ def _wait_view(run: Run) -> WaitingView | None:
         agent=waiting.agent,
         reasons=list(waiting.reasons),
         offers_work=waiting.artifact is not None,
-        questions=_calls(requests.calls, requests.metadata) if requests else [],
-        sign_offs=_calls(requests.approvals, requests.metadata) if requests else [],
+        questions=_calls(requests.calls, requests.metadata, waiting.questions) if requests else [],
+        sign_offs=_calls(requests.approvals, requests.metadata, ()) if requests else [],
     )
 
 

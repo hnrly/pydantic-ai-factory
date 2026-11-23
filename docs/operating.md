@@ -43,9 +43,9 @@ A run waits for one of three things. `run.waiting.kind` says which:
 
 - `"approval"`: a station with `approval=True` passed its checks. Answer with `run.approve`, `run.request_changes` or `run.reject`.
 - `"escalation"`: something only a person should settle, such as a check that still fails after the allowed retries. The same three answers apply. Approving accepts the work as it stands.
-- `"tool-calls"`: an agent asked a person a question, or asked before an action. `run.question` says what it asked; answer with `run.reply("...", by=...)`. For an action, answer with `run.allow` or `run.deny`.
+- `"tool-calls"`: an agent asked a person a question, or asked before an action. `run.question` says what it asked, and its `options` what it offers, the recommended one first; answer with an option's label or your own words, `run.reply("...", by=...)`. For an action, answer with `run.allow` or `run.deny`.
 
-Here the designer can ask questions, through [`AskPerson`](approvals.md#tool-calls), and its design needs approval. Its run waits twice, and each answer comes from a fresh store object, as it would in another process:
+Here the designer can ask questions, through [`AskPerson`](approvals.md#asking-a-person), and its design needs approval. Its run waits twice, and each answer comes from a fresh store object, as it would in another process:
 
 ```python
 from pydantic_ai import Agent
@@ -68,7 +68,9 @@ print(run.waiting.kind)
 #> tool-calls
 print(run.question)
 #> Should ticked tasks stay after a reload?
-answer = run.reply("Yes, keep them.", by="ada")
+print([option.label for option in run.question.options])
+#> ['Keep them (Recommended)', 'Drop them']
+answer = run.reply("Keep them (Recommended)", by="ada")
 run = software.resume_sync(answer, store=store)
 
 store = SQLiteStore("factory.db")

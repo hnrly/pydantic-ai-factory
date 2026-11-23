@@ -91,7 +91,7 @@ It prints the design in full first, so you decide on what you have read. Answer 
 | `--brief FILE` | Read the mission from a file instead. |
 | `--model NAME` | The model to use. The default is `FACTORY_MODEL`, or `anthropic:claude-opus-5-5`. |
 | `--approve`, `--changes NOTE`, `--reject NOTE` | Decide without being asked. |
-| `--answer TEXT` | Answer the designer's question without being asked. |
+| `--answer TEXT` | Answer every question the designer asks with this text, without being asked. Asked in the terminal, type an option's number or your own words. When a question lets you pick several, type their numbers separated by commas, such as `1, 3`. |
 | `--store FOLDER` | Where runs are kept. The default is `.factory`. |
 | `--out FOLDER` | Where approved designs are written. The default is `designs`. |
 

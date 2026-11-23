@@ -75,7 +75,9 @@ A goldfish that fails or times out did not run, and nor did the station. Its sil
 
 ## Scoping questions
 
-Before drafting, the author may ask a person what the mission leaves open, such as whether ticked tasks should survive a reload. Each question waits for an answer like any [tool call](approvals.md#tool-calls). `max_questions`, three by default, caps them; set it to 0 to switch them off. A question asked mid-review keeps the review as it was: the round count, and any finding already contested or escalated, carry on once the person answers.
+Elephant Goldfish brings [`AskPerson`](approvals.md#asking-a-person), so you need not remember it: before drafting, the author may ask a person what the mission leaves open, such as whether ticked tasks should survive a reload, and the run waits for the answers. A question asked mid-review keeps the review as it was: the round count, and any finding already contested or escalated, carry on once the person answers.
+
+To change how the author asks, pass your own: `ElephantGoldfish(goldfish=..., ask=AskPerson(max_rounds=1))`. For review with no asking, pass `ask=None`. An `AskPerson` you list on the agent itself wins over the one Elephant Goldfish brings, so `capabilities=[ElephantGoldfish(goldfish=...), AskPerson(max_rounds=1)]` asks once. An author with no review can still ask: give it `AskPerson()` alone.
 
 ## Settings
 
@@ -84,6 +86,5 @@ Before drafting, the author may ask a person what the mission leaves open, such 
 | `goldfish` | required | The reviewers. |
 | `rounds` | 2 | Rounds of review before what is left goes to a person. |
 | `model` | the author's | The model the goldfish use. |
-| `max_questions` | 3 | Questions the author may ask before drafting. |
 
 The goldfish spend from the author's budget. Their requests and tokens count in the author's usage, and a limit given to the author's run, such as `usage_limits=UsageLimits(request_limit=10)`, stops them too.

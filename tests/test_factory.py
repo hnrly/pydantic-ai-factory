@@ -13,9 +13,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from asking import ask
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
@@ -760,7 +761,7 @@ async def test_asking_for_changes_claims_the_run_at_the_waiting_station() -> Non
 
 
 async def test_replying_to_tool_calls_claims_the_run_at_the_waiting_station() -> None:
-    question = ModelResponse(parts=[ToolCallPart("ask_person", {"question": "Colour?"}, "q1")])
+    question = ask("Colour?", call_id="q1")
     asker = a_person_agent("asker", question, "Blue.", capabilities=[AskPerson()])
     built = Factory("software", [station(asker), build])
 

@@ -6,9 +6,11 @@ import re
 from pathlib import Path
 
 import pytest
-from pydantic_ai import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
+from asking import ASK, ask, asked
+from pydantic_ai import ModelMessage, ModelResponse, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from pydantic_ai_factory import Question, QuestionOption
 from pydantic_ai_factory_software import cli
 from pydantic_ai_factory_software._offline import BLANK_RULE, offline_model, title_of
 from pydantic_ai_factory_software.cli import ENDED, PASSED, USAGE, WAITING, main, slug
@@ -206,14 +208,15 @@ def test_show_prints_a_run_and_exits_with_its_state(tmp_path: Path) -> None:
 def asks_first(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     """The offline designer, except that it asks the person one question before drafting."""
     answered = any(
-        isinstance(part, ToolReturnPart) and part.tool_name == "ask_person"
+        isinstance(part, ToolReturnPart) and part.tool_name == ASK
         for message in messages
         for part in message.parts
     )
-    may_ask = "ask_person" in {tool.name for tool in info.function_tools}
+    may_ask = ASK in {tool.name for tool in info.function_tools}
     if may_ask and not answered:
-        question = {"question": "Should ticked tasks survive a reload?"}
-        return ModelResponse(parts=[ToolCallPart("ask_person", question, "q1")])
+        return ask(
+            asked("Should ticked tasks survive a reload?", "Ticks", ("Keep them", "Drop them"))
+        )
     return offline_model().function(messages, info)  # pyright: ignore[reportOptionalCall, reportReturnType]
 
 
@@ -226,14 +229,49 @@ def curious(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_an_agent_question_is_asked_in_the_terminal_and_the_answer_goes_back(
     tmp_path: Path,
 ) -> None:
-    terminal = Terminal("Yes, they stay ticked.", "a")
+    terminal = Terminal("1", "a")
 
     code = factory(terminal, tmp_path, "run", MISSION, "--offline")
 
     assert code == PASSED
     assert "The designer agent is asking you something." in terminal.lines
     assert "Question: Should ticked tasks survive a reload?" in terminal.lines
-    assert terminal.asked[0] == "Your answer: "
+    assert [
+        line for line in terminal.lines if line.startswith("  1.") or line.startswith("  2.")
+    ] == ["  1. Keep them", "  2. Drop them"]
+    assert terminal.asked[0] == "Your answer, a number or your own words: "
+
+
+def test_a_number_picks_its_option_and_other_words_are_the_persons_own() -> None:
+    question = Question(
+        call_id="q1",
+        tool=ASK,
+        text="Keep ticks?",
+        header="Ticks",
+        options=(QuestionOption(label="Keep them"), QuestionOption(label="Drop them")),
+    )
+
+    assert cli._picked(question, "2") == "Drop them"  # pyright: ignore[reportPrivateUsage]
+    assert cli._picked(question, "3") == "3"  # pyright: ignore[reportPrivateUsage]
+    assert cli._picked(question, "Keep them, in grey.") == "Keep them, in grey."  # pyright: ignore[reportPrivateUsage]
+
+
+def test_numbers_separated_by_commas_pick_several_options_when_a_question_allows_it() -> None:
+    options = tuple(QuestionOption(label=label) for label in ("Email", "Slack", "SMS"))
+    several = Question(
+        call_id="q1",
+        tool=ASK,
+        text="Notify how?",
+        header="Notify",
+        options=options,
+        multi_select=True,
+    )
+    one = Question(call_id="q2", tool=ASK, text="Notify how?", header="Notify", options=options)
+
+    assert cli._picked(several, "1, 3") == ["Email", "SMS"]  # pyright: ignore[reportPrivateUsage]
+    assert cli._picked(several, "2") == ["Slack"]  # pyright: ignore[reportPrivateUsage]
+    assert cli._picked(several, "1, 4") == "1, 4"  # pyright: ignore[reportPrivateUsage]
+    assert cli._picked(one, "1, 3") == "1, 3"  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.usefixtures("curious")

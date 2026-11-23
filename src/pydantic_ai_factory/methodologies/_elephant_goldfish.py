@@ -11,12 +11,13 @@ import contextlib
 import copy
 import re
 import secrets
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, DeferredToolRequests, ModelRetry, RunContext
+from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
     ModelMessage,
@@ -26,7 +27,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import Model, ModelRequestContext
 from pydantic_ai.output import OutputContext
-from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, FunctionToolset
+from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 
 from .._methodology import Methodology, MethodologyDefinitionError
 from ..artifacts import Artifact
@@ -323,8 +324,10 @@ class ElephantGoldfish(Methodology):
     when the last round was clean for this exact output and nothing was contested or
     escalated; contested, escalated and still-open findings go to a person.
 
-    It includes :class:`~pydantic_ai_factory.AskPerson`, so the author may ask the person
-    up to ``max_questions`` scoping questions before drafting; 0 switches them off.
+    It brings :class:`~pydantic_ai_factory.AskPerson` by default, so the author may ask a
+    person what the mission leaves open. Pass ``ask=AskPerson(max_rounds=...)`` to change
+    how, or ``ask=None`` for review with no asking. An ``AskPerson`` the agent lists
+    itself wins over this one.
     ``model`` is the goldfish's model; by default they use the author's.
 
     It is loaded eagerly, not with ``defer_loading``: its hook must see every draft, and
@@ -338,11 +341,10 @@ class ElephantGoldfish(Methodology):
     goldfish: Sequence[Goldfish]
     rounds: int = 2
     model: Model | str | None = None
-    max_questions: int = 3
+    ask: AskPerson | None = field(default_factory=AskPerson)
     _agents: dict[str, Agent[None, Any]] = field(
         init=False, repr=False, compare=False, default_factory=lambda: {}
     )
-    _asker: AskPerson = field(init=False, repr=False, compare=False)
     _state: _Rounds | None = field(init=False, repr=False, compare=False, default=None)
 
     def __post_init__(self) -> None:
@@ -361,21 +363,23 @@ class ElephantGoldfish(Methodology):
             f"two goldfish are named {name!r}; give each its own name"
             for name in sorted({n for n in names if names.count(n) > 1})
         )
-        for label, value, least in (
-            ("rounds", self.rounds, 1),
-            ("max_questions", self.max_questions, 0),
-        ):
-            if isinstance(value, bool) or not isinstance(value, int) or value < least:  # pyright: ignore[reportUnnecessaryIsInstance]
-                problems.append(f"{label} must be a whole number, {least} or more")
+        rounds: object = self.rounds
+        if isinstance(rounds, bool) or not isinstance(rounds, int) or rounds < 1:  # pyright: ignore[reportUnnecessaryIsInstance]
+            problems.append("rounds must be a whole number, 1 or more")
+        if self.ask is not None and not isinstance(self.ask, AskPerson):  # pyright: ignore[reportUnnecessaryIsInstance]
+            problems.append("ask must be an AskPerson, or None for no asking")
         if problems:
             raise MethodologyDefinitionError("methodology 'elephant-goldfish'", problems)
+        if self.ask is not None:
+            # Marked as brought by the method, so one the agent lists itself wins.
+            self.ask = copy.copy(self.ask)
+            self.ask.bundled = True
         ordered = sorted(cast("tuple[Goldfish, ...]", fishes), key=lambda f: STAGES.index(f.stage))
         self.goldfish = tuple(ordered)
         if self.id is None:
             self.id = self.name
         # Each round that finds something uses one output retry; ctx.run_agent adds this.
         setattr(self, "output_retries", self.rounds)  # noqa: B010
-        self._asker = AskPerson(max_questions=self.max_questions)
         self._agents = {
             fish.name: Agent(
                 self.model,
@@ -388,7 +392,27 @@ class ElephantGoldfish(Methodology):
             for fish in self.goldfish
         }
 
-    async def for_run(self, ctx: RunContext[Any]) -> ElephantGoldfish:
+    def apply(self, visitor: Callable[[AbstractCapability[Any]], None]) -> None:
+        # ``ask`` is a child, so an AskPerson elsewhere on the agent combines with it.
+        visitor(self)
+        if self.ask is not None:
+            self.ask.apply(visitor)
+
+    def visit_and_replace(
+        self, visitor: Callable[[AbstractCapability[Any]], AbstractCapability[Any] | None]
+    ) -> AbstractCapability[Any] | None:
+        replaced = visitor(self)
+        if replaced is not self or self.ask is None:
+            return replaced
+        ask = self.ask.visit_and_replace(visitor)
+        if ask is self.ask:
+            return self
+        # The agent's own AskPerson won (None), or ``ask`` is the combined one now.
+        changed = copy.copy(self)
+        changed.ask = cast("AskPerson | None", ask)
+        return changed
+
+    async def for_run(self, ctx: RunContext[Any]) -> AbstractCapability[Any]:
         fresh = copy.copy(self)
         fresh._state = _Rounds.restored(ctx.messages)
         # Answers given in the response the run stopped at ran after it was saved.
@@ -396,7 +420,11 @@ class ElephantGoldfish(Methodology):
         if fresh._state.pending is not None and last is not None:
             for part in last.tool_calls:
                 fresh._replay(part)
-        return fresh
+        if self.ask is None:
+            return fresh
+        # The agent runs this capability's own children no other way: offer ``ask`` here.
+        fresh.ask = None
+        return CombinedCapability([fresh, await self.ask.for_run(ctx)])
 
     def _replay(self, part: ToolCallPart) -> None:
         args = part.args_as_dict()
@@ -419,19 +447,13 @@ class ElephantGoldfish(Methodology):
         return response
 
     def get_instructions(self) -> str:
-        text = (
+        return (
             "You work by the Elephant Goldfish method. When you finish a draft, fresh "
             "reviewers who know nothing of this conversation read it. If they find a "
             "Blocker or a Major, you get their findings and revise. Answer every Blocker "
             "and Major: fix it, contest it with the contest tool and your evidence, or "
             "escalate it to a person with the escalate tool. Nits never block."
         )
-        if self.max_questions > 0:
-            text += (
-                " Before you draft, if the mission leaves open something that matters, "
-                "ask the person with ask_person, one question at a time."
-            )
-        return text
 
     def get_toolset(self) -> AbstractToolset[Any]:
         toolset: FunctionToolset[Any] = FunctionToolset(id="elephant-goldfish")
@@ -456,8 +478,7 @@ class ElephantGoldfish(Methodology):
             """
             return self._answer(finding_id, "escalated", reason)
 
-        asks = self._asker.get_toolset()
-        return toolset if asks is None else CombinedToolset([toolset, asks])
+        return toolset
 
     def _answer(self, finding_id: str, answer: Answer, note: str) -> str:
         state = self._state

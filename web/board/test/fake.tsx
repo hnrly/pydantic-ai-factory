@@ -101,7 +101,7 @@ export function waiting(fields: Partial<Waiting> = {}): Waiting {
 }
 
 export function call(fields: Partial<ToolCall> = {}): ToolCall {
-  return { id: 'call-1', tool: 'ask_person', args: {}, question: null, ...fields };
+  return { id: 'call-1', tool: 'ask_me', args: {}, question: null, asks: [], ...fields };
 }
 
 export function job(fields: Partial<Job> = {}): Job {

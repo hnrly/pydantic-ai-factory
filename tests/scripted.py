@@ -17,6 +17,7 @@ from collections.abc import AsyncIterator, Callable, Generator, Mapping, Sequenc
 from contextlib import contextmanager
 from typing import Any
 
+from asking import ASK, ask, asked
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
@@ -222,9 +223,9 @@ QUESTION = "Should ticked tasks stay after a reload?"
 
 def asking_designer(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     """Asks one question first when it can ask a person, then writes the design."""
-    can_ask = any(tool.name == "ask_person" for tool in info.function_tools)
-    if can_ask and not _answered(messages, "ask_person"):
-        return call("ask_person", question=QUESTION)
+    can_ask = any(tool.name == ASK for tool in info.function_tools)
+    if can_ask and not _answered(messages, ASK):
+        return ask(asked(QUESTION, "Ticks", ("Keep them (Recommended)", "Drop them")))
     return ModelResponse(parts=[TextPart(DESIGN)])
 
 
