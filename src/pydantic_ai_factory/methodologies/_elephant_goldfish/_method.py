@@ -28,12 +28,12 @@ from pydantic_ai.models import Model, ModelRequestContext
 from pydantic_ai.output import OutputContext
 from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, FunctionToolset
 
-from .._methodology import Methodology, MethodologyDefinitionError
-from ..artifacts import Artifact
-from ..artifacts._artifact import adapter_for
-from ..contracts import Digest, FactoryError, Name, Record, check_name, digest_of
-from ..gates import Evidence, Gate, Verdict, escalate, failed, passed
-from ..stations import AskPerson
+from ..._methodology import Methodology, MethodologyDefinitionError
+from ...artifacts import Artifact
+from ...artifacts._artifact import adapter_for
+from ...contracts import Digest, FactoryError, Name, Record, check_name, digest_of
+from ...gates import Evidence, Gate, Verdict, escalate, failed, passed
+from ...stations import AskPerson
 
 Severity = Literal["Blocker", "Major", "Nit"]
 """How much a finding matters. A ``Blocker`` or a ``Major`` stops a round being clean."""
