@@ -94,7 +94,7 @@ Choose it when more than one process on one machine shares the work, such as a w
 
 Two processes can save the same run at once. One wins, and the other gets `RunConflict`, as with every store. A save waits up to `busy_timeout` seconds, 5 by default, for another process to finish writing. If it waits longer, it raises `StoreBusy`, which is a kind of `RunConflict`. So `RunConflict` means someone answered first, unless it is a `StoreBusy`, which means try again.
 
-A file written with another schema version, by another version of the library, is refused with `StoreSchemaMismatch`. Its message names both versions.
+The file keeps its schema version in SQLite's own `user_version` slot. A file written with another schema version, by another version of the library, is refused with `StoreSchemaMismatch`. Its message names both versions. A file that has the store's tables, `artifacts` or `runs`, but no version is refused the same way. Other tables may share the file: the example app keeps its jobs table there.
 
 `SQLiteStore` is for one machine. Do not keep its file on a network share: SQLite's locks are not reliable there.
 
