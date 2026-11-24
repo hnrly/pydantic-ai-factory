@@ -1,0 +1,30 @@
+{
+  "case_name": "todo",
+  "challenge_class": "critical-ambiguity",
+  "canary": "canary-7f3a9c1e5b2d",
+  "fallback_reply": "I don't have anything to add on that.",
+  "approval_reply": "I can't sign anything off here.",
+  "scored": false,
+  "facts": [
+    {
+      "id": "tick-retention",
+      "value": "47 days",
+      "criticality": "critical",
+      "obtainable": true,
+      "held_by": "product owner",
+      "statement": "Ticked tasks are kept for 47 days.",
+      "direct_question": "How long are ticked tasks kept?",
+      "keywords": ["ticked", "kept", "retention"]
+    },
+    {
+      "id": "title-length",
+      "value": "83 characters",
+      "criticality": "low",
+      "obtainable": true,
+      "held_by": "product owner",
+      "statement": "A task title can be up to 83 characters.",
+      "direct_question": "How long can a task title be?",
+      "keywords": ["title", "length", "characters"]
+    }
+  ]
+}

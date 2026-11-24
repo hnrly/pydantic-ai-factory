@@ -32,3 +32,6 @@ skills-lock.json
 
 # The board's interface, built from web/board by `npm run build`
 src/pydantic_ai_factory/serve/_static/
+
+# Benchmark runs
+evals-out/
