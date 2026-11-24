@@ -16,10 +16,12 @@ from .artifacts import (
 )
 from .contracts import DefinitionError, FactoryError, MethodologyRef
 from .factory import (
+    Abandoned,
     Answer,
     AnswerProblem,
     ApprovalRefused,
     Approve,
+    CannotAbandon,
     Changes,
     Declined,
     Factory,
@@ -68,6 +70,7 @@ from .stores import LocalStore, MemoryStore, SQLiteStore, StoreBusy, StoreSchema
 __version__ = "0.1.1"
 
 __all__ = [
+    "Abandoned",
     "Action",
     "Answer",
     "AnswerProblem",
@@ -80,6 +83,7 @@ __all__ = [
     "ArtifactRef",
     "ArtifactStore",
     "AskPerson",
+    "CannotAbandon",
     "Changes",
     "Declined",
     "DefinitionError",

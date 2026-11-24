@@ -42,6 +42,31 @@ class ApprovalRefused(FactoryError):
     """
 
 
+class CannotAbandon(FactoryError):
+    """A run could not be abandoned, so nothing changed.
+
+    Only a run that is still ``"running"`` can be abandoned, or a waiting run that a
+    factory of the same name but another shape made, since nobody can answer it here.
+    """
+
+
+class Abandoned(Record):
+    """Why a run was ended before it could finish, who ended it, and when.
+
+    ``Factory.abandon`` records it on a run whose worker stopped part-way through.
+    """
+
+    reason: str
+    by: Name
+    at: AwareDatetime
+
+    @model_validator(mode="after")
+    def _says_why(self) -> Self:
+        if not self.reason.strip():
+            raise ValueError("an abandoned run needs a reason saying why it was ended")
+        return self
+
+
 class Run(Record):
     """The record of one piece of work moving through a factory.
 
@@ -61,6 +86,15 @@ class Run(Record):
     compare-and-swap in the store. A run read back from a store holds its payloads as
     plain JSON data.
 
+    ``station`` is the station the work is at while the run is ``"running"`` or
+    ``"waiting"``, and ``None`` once it has ended. The runner saves it before each
+    station attempt starts, so a store always says where a running run is. On rework it
+    names the station the work went back to. ``stopped_at`` names where a run that did
+    not finish stopped, a waiting run included.
+
+    ``abandoned`` is set when ``Factory.abandon`` ended the run, which is then
+    ``"did_not_run"``.
+
     ``mission_id`` is the id of the run's mission, and ``mission_ref`` names the artifact
     that records it. When a run of a mission made by intake ends, ``outcome_signal``
     names the outcome signal it emitted.
@@ -78,6 +112,7 @@ class Run(Record):
     revision: int = 0
     outcome: RunOutcome
     finished: bool
+    station: Name | None
     stopped_at: Name | None = None
     input_ref: ArtifactRef
     output_ref: ArtifactRef | None = None
@@ -89,6 +124,7 @@ class Run(Record):
     mission_id: Name | None = None
     mission_ref: ArtifactRef | None = None
     outcome_signal: ArtifactRef | None = None
+    abandoned: Abandoned | None = None
     created_at: AwareDatetime
     updated_at: AwareDatetime
 
@@ -96,6 +132,14 @@ class Run(Record):
     def _is_consistent(self) -> Self:
         if (self.outcome == "waiting") != (self.waiting is not None):
             raise ValueError("a run is waiting exactly when it says what it waits for")
+        if (self.station is None) != (self.outcome not in ("running", "waiting")):
+            raise ValueError("a run names the station it is at exactly while it has not ended")
+        if self.waiting is not None and not (
+            self.station == self.stopped_at == self.waiting.station
+        ):
+            raise ValueError("a waiting run is at the station where it stopped and waits")
+        if self.abandoned is not None and self.outcome != "did_not_run":
+            raise ValueError("an abandoned run did not run")
         if (self.mission_id is None) != (self.mission_ref is None):
             raise ValueError("a run names its mission's id and the mission's artifact together")
         if self.outcome_signal is not None and (
@@ -345,10 +389,12 @@ class _Progress:
         outcome: RunOutcome,
         *,
         finished: bool = False,
+        station: str | None = None,
         stopped_at: str | None = None,
         output: Artifact[Any] | None = None,
         waiting: Waiting | None = None,
     ) -> Run:
+        """Make the run's next record. A waiting run is at the station where it stopped."""
         now = _now()
         return Run(
             run_id=self.run_id,
@@ -358,6 +404,7 @@ class _Progress:
             revision=0 if self.saved is None else self.saved.revision + 1,
             outcome=outcome,
             finished=finished,
+            station=stopped_at if outcome == "waiting" else station,
             stopped_at=stopped_at,
             input_ref=self.incoming.ref,
             output_ref=output.ref if output else None,
@@ -373,35 +420,36 @@ class _Progress:
         )
 
     async def save(self, run: Run) -> Run:
-        run = await self._emit_outcome(run)
+        run = await _emit_outcome(self.store, self.factory.name, self.mission, run)
         await self.store.put_run(run, replaces=self.saved)
         self.saved = run
         if self.on_step is not None:
             await self.on_step(run)
         return run
 
-    async def _emit_outcome(self, run: Run) -> Run:
-        """Store the outcome signal of a run that has ended, if intake made its mission."""
-        mission, mission_ref = self.mission, self.mission_ref
-        if (
-            mission is None
-            or mission_ref is None
-            or not mission.signals
-            or run.outcome in ("running", "waiting")
-        ):
-            return run
-        outcome = Outcome(
-            factory=self.factory.name,
-            run_id=run.run_id,
-            mission_id=mission.id,
-            objective=mission.objective,
-            mission_ref=mission_ref,
-            outcome=run.outcome,
-            finished=run.finished,
-            output_ref=run.output_ref,
-        )
-        emitted = await self.store.put(signal_artifact(Signal(outcome, self.factory.name)))
-        return run.model_copy(update={"outcome_signal": emitted})
+
+async def _emit_outcome(store: Store, factory: str, mission: Mission | None, run: Run) -> Run:
+    """Store the outcome signal of a run that has ended, if intake made its mission."""
+    mission_ref = run.mission_ref
+    if (
+        mission is None
+        or mission_ref is None
+        or not mission.signals
+        or run.outcome in ("running", "waiting")
+    ):
+        return run
+    outcome = Outcome(
+        factory=factory,
+        run_id=run.run_id,
+        mission_id=mission.id,
+        objective=mission.objective,
+        mission_ref=mission_ref,
+        outcome=run.outcome,
+        finished=run.finished,
+        output_ref=run.output_ref,
+    )
+    emitted = await store.put(signal_artifact(Signal(outcome, factory)))
+    return run.model_copy(update={"outcome_signal": emitted})
 
 
 def _trace_factory(factory: Factory, resumed: bool = False) -> AbstractContextManager[tracing.Span]:
@@ -580,7 +628,7 @@ async def _run_factory(
         mission_ref=None if recorded is None else recorded.ref,
         on_step=on_step,
     )
-    await progress.save(progress.record("running"))
+    await progress.save(progress.record("running", station=first.name))
     return await _drive(progress, index=0, input=incoming)
 
 
@@ -651,7 +699,7 @@ async def _resume_factory(
     _trace_answer(run, waiting, answer)
 
     if isinstance(answer, Reply):
-        await _claim(progress)
+        await _claim(progress, station.name)
         return await _drive(
             progress, index=index, input=station_input, resume=step, answer=answer.results
         )
@@ -659,22 +707,63 @@ async def _resume_factory(
         return await progress.save(progress.record("failed", stopped_at=station.name))
     if isinstance(answer, Changes):
         feedback = Feedback(reasons=(answer.note,), by=answer.by)
-        await _claim(progress)
+        await _claim(progress, station.name)
         return await _drive(progress, index=index, input=station_input, feedback=feedback)
     # check has made sure an approval has work to accept.
     accepted = await store.get(cast(ArtifactRef, answer.work), station.output_type)
-    await _claim(progress)
+    # The work moves on to the next station, or, after the last one, stays to finish there.
+    after = factory.stations[index + 1] if index + 1 < len(factory.stations) else station
+    await _claim(progress, after.name)
     return await _drive(progress, index=index + 1, input=accepted)
 
 
-async def _claim(progress: _Progress) -> None:
-    """Save the answer, and the run as running, before any resumed work starts.
+async def abandon_run(factory: Factory, run: Run, *, reason: str, by: str, store: Store) -> Run:
+    """Do the work of :meth:`Factory.abandon`."""
+    # A waiting run made by this factory under another shape: nobody can answer it here.
+    stranded = (
+        run.outcome == "waiting"
+        and run.factory == factory.name
+        and run.factory_digest != factory.digest
+    )
+    if run.outcome != "running" and not stranded:
+        raise CannotAbandon(
+            f"run {run.run_id!r} is not running, so it cannot be abandoned; "
+            f"its outcome is {run.outcome!r}"
+        )
+    try:
+        abandoned = Abandoned(reason=reason, by=by, at=_now())
+        ended = Run.model_validate(
+            {
+                **dict(run),
+                "revision": run.revision + 1,
+                "outcome": "did_not_run",
+                "station": None,
+                "stopped_at": run.station,
+                "waiting": None,
+                "abandoned": abandoned,
+                "updated_at": abandoned.at,
+            }
+        )
+    except ValueError as error:
+        raise CannotAbandon(f"run {run.run_id!r}: {error}") from error
+    mission = None if run.mission_ref is None else (await store.get(run.mission_ref, Mission))
+    ended = await _emit_outcome(
+        store, run.factory, None if mission is None else mission.payload, ended
+    )
+    # A compare-and-swap on the revision that was read, as for every save. A worker still
+    # driving the run saves with the old revision afterwards, and gets RunConflict.
+    await store.put_run(ended, replaces=run)
+    return ended
+
+
+async def _claim(progress: _Progress, station: str) -> None:
+    """Save the answer, and the run as running at ``station``, before any resumed work starts.
 
     The save is a compare-and-swap on the revision that was waiting, so of two answers
     to the same run only one gets here: the other raises :class:`RunConflict` and runs
     nothing.
     """
-    await progress.save(progress.record("running"))
+    await progress.save(progress.record("running", station=station))
 
 
 async def _drive(
@@ -713,7 +802,10 @@ async def _drive(
             return await progress.save(
                 progress.record("waiting", stopped_at=station.name, waiting=result.waiting)
             )
-        await progress.save(progress.record("running"))
+        # Saved before the next attempt starts, so the run names the station it goes to.
+        await progress.save(
+            progress.record("running", station=_next_station(progress, index, result))
+        )
 
         if result.outcome == "failed":
             rule = factory.rework_for(station.name)
@@ -754,6 +846,26 @@ async def _drive(
             "failed" if _any_failed(progress) else "passed", finished=True, output=current
         )
     )
+
+
+def _next_station(progress: _Progress, index: int, result: StationResult) -> str:
+    """Where the work goes after the station at ``index`` gave ``result``.
+
+    Failed work goes back to its rework target while the limit allows. Failed work that
+    halts or escalates stays where it is, and so does work that has passed the last
+    station, until the run ends.
+    """
+    factory = progress.factory
+    station = factory.stations[index]
+    if result.outcome == "failed":
+        rule = factory.rework_for(station.name)
+        if rule is not None and progress.reworked[station.name] < rule.limit:
+            return rule.target.name
+        if rule is None or rule.on_limit != "continue":
+            return station.name
+    if index + 1 < len(factory.stations):
+        return factory.stations[index + 1].name
+    return station.name
 
 
 def _input_of(progress: _Progress, index: int) -> ArtifactRef:
