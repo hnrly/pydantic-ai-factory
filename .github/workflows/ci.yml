@@ -67,6 +67,27 @@ jobs:
       - run: uv sync --locked
       - run: uv run --locked pytest
 
+  example-app:
+    name: Example app
+    # The software factory app has its own project and lock file, so it is checked on its own.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: examples/software-factory-app
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: examples/software-factory-app/uv.lock
+      - run: uv sync --locked
+      - run: uv run --locked ruff check .
+      - run: uv run --locked pyright
+      - run: uv run --locked pytest
+
   keep-out:
     runs-on: ubuntu-latest
     timeout-minutes: 5
