@@ -26,7 +26,7 @@ jobs:
       UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
           enable-cache: true
       - run: uv sync --locked
@@ -61,7 +61,7 @@ jobs:
         os: [windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
           enable-cache: true
       - run: uv sync --locked
@@ -72,7 +72,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
       # Generic rules always run. Private terms are checked only when the repository
       # secret is set; the log line says how many were loaded.
       - run: uv run --no-project --python 3.13 scripts/keep_out_scan.py
@@ -84,7 +84,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
       - run: uv build --all-packages --no-sources
       - name: Install exactly the built wheels and import them
         run: |

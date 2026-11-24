@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
       - name: Check the tag matches both packages and the changelog
         run: uv run --no-project --python 3.13 scripts/release_check.py "$TAG" --notes notes.md
       - run: uv build --all-packages --no-sources
@@ -45,7 +45,7 @@ jobs:
           mv dist/pydantic_ai_factory-* out/core/
           cp notes.md out/
           ls -R out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release
           path: out/
@@ -62,7 +62,7 @@ jobs:
     permissions:
       id-token: write # trusted publishing: PyPI trusts this workflow, so no token is stored
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release
           path: out/
@@ -82,7 +82,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release
           path: out/
@@ -98,7 +98,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release
           path: out/
