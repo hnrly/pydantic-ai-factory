@@ -29,6 +29,18 @@ print(done.outcome)
 
 Before the run waited for you, a designer drafted the design and fresh reviewers read it under the [Elephant Goldfish](elephant-goldfish.md) method. The designer revised it until a round of review was clean. Only then were you asked.
 
+To try it in Python with no model key, give it `offline_model()`, the scripted model the `--offline` option of the [command](#from-the-terminal) uses. It makes no network calls. Its designs show that the factory works, not how a real model behaves.
+
+```python
+from pydantic_ai_factory import MemoryStore
+from pydantic_ai_factory_software import SoftwareFactory, offline_model
+
+software = SoftwareFactory(offline_model())
+run = software.run_sync("A to-do list web page where I can add tasks and tick them off.", store=MemoryStore())
+print(run.waiting.output.title)
+#> To-do list
+```
+
 ## The stations
 
 | Station | Does | Status |
