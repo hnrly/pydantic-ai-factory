@@ -1,48 +1,83 @@
-# The software factory app
+# The software factory, served as a board
 
-This folder runs the software factory as a small service. A person starts a mission, the factory designs the software, and the person approves the design, asks for changes or rejects it. The work is done by a separate worker, so the web process never needs a model key.
+This folder serves the software factory to other people, from one short file. A person types a mission into a web page. The factory designs the software, and the design waits on the board for a person to approve it, ask for changes or reject it. The work is done by a separate worker, so the web process never needs a model key.
 
-It has two processes that share one SQLite file:
+[`board.py`](board.py) is the whole service, in 20 lines. Its heart is this:
 
-- **The web process** (`app/api.py`) is a FastAPI app. It lists runs, shows one run, checks an answer fits the run, and adds a job to a queue. It never runs the factory.
-- **The worker** (`app/worker.py`) claims each job in turn and does it: it starts a run, or carries a waiting run on with a person's answer. It is the only process that needs a model key.
+```python
+store = SQLiteStore(DB)
+dispatcher = SQLiteDispatcher(DB)
 
-The file holds the factory's runs and artifacts, kept by the library's `SQLiteStore`, and a `jobs` table that this app owns. Stop either process and start it again: nothing that was saved is lost. A run that stopped part-way through a station, because its worker was killed, is shown as stalled. It cannot be carried on yet. [Operating a factory](https://hnrly.github.io/pydantic-ai-factory/operating/#stalled-runs) explains why.
+app = board_app(SoftwareFactory, store, dispatcher)
 
-[Deploying a factory](https://hnrly.github.io/pydantic-ai-factory/deploying/) explains why the app is shaped this way, and what to change when you deploy your own.
+if __name__ == "__main__":
+    work(SoftwareFactory, store, dispatcher, model="anthropic:claude-opus-5-5")
+```
 
-The web interface that sat on top of this API has moved into the library, as the board in [`web/board`](../../web/board/). See "The web interface" below.
+It runs as two processes that share one SQLite file:
+
+- **The web process**, `uvicorn board:app`, serves the board and its API. It reads runs and queues work. It never runs the factory.
+- **The worker**, `python board.py`, takes each queued job in turn and does it: it starts a run, or carries a waiting run on with a person's answer. It is the only process that needs a model key.
+
+[Serving a factory as a board](https://hnrly.github.io/pydantic-ai-factory/board/) explains the board: its columns, its cards and what a person can do on each. [Deploying a factory](https://hnrly.github.io/pydantic-ai-factory/deploying/) explains why the service is shaped this way.
 
 ## Try it offline
 
-You need [uv](https://docs.astral.sh/uv/). Nothing here needs a model key. In this folder:
+You need [uv](https://docs.astral.sh/uv/). Nothing here needs a model key.
+
+In a checkout of the repository, build the board's page once first. It needs Node 22 or later. An install from PyPI ships the page already built, so a copy of this folder skips this step:
+
+```bash
+(cd ../../web/board && npm ci && npm run build)
+```
+
+Then, in this folder:
 
 ```bash
 uv sync
-uv run python -m app.worker --offline     # terminal 1: the worker, on a scripted model
-uv run uvicorn app.api:app                # terminal 2: the web process, on port 8000
+uv run python . --offline          # terminal 1: the worker, on a scripted model
+uv run uvicorn board:app           # terminal 2: the web process, on port 8000
 ```
 
-Then, in a third terminal, start a run, see it wait, and approve it:
+Open <http://localhost:8000> and give your name. Type a mission in the "Add a mission" box at the top of the Missions column, and press Enter. Its card appears in Missions as queued, then glides to the Design column and waits there for you. Open it: the run opens as a panel over the board, with the design to read and Approve at the top. Approve it. The card moves to Done.
+
+`python . --offline=asking` uses a scripted model whose designer asks one question first, so you can see an agent's question on a card and reply to it.
+
+`python .` is [`__main__.py`](__main__.py): the worker of `board.py`, with a choice of model. It also takes `--until-idle`, which stops it once no job is queued.
+
+## Run it with a model
+
+Only the worker needs a key. Run `board.py` itself, which uses Claude, with the key its provider reads:
 
 ```bash
-curl -s localhost:8000/api/runs -H 'content-type: application/json' \
-  -d '{"mission": "A to-do list web page where I can add tasks and tick them off.", "by": "Ada"}'
-curl -s 'localhost:8000/api/runs?outcome=waiting&order=oldest'     # the inbox
-curl -s localhost:8000/api/runs/RUN_ID                              # the design, as Markdown
-curl -s localhost:8000/api/runs/RUN_ID/answer -H 'content-type: application/json' \
-  -d '{"choice": "approve", "by": "Ada", "revision": REVISION}'
+ANTHROPIC_API_KEY=... uv run python board.py
+uv run uvicorn board:app
 ```
 
-`REVISION` is the run's `revision` as you saw it. If the run has moved on since, the answer is refused with `409` and the run as it is now.
+Or name any Pydantic AI model in `FACTORY_MODEL`, and run `python .`:
 
-`--offline=asking` uses a scripted model whose designer asks one question first, so you can see an agent's question and answer it with `{"choice": "reply", "replies": {CALL_ID: "Yes."}, ...}`.
+```bash
+FACTORY_MODEL=anthropic:claude-opus-5-5 ANTHROPIC_API_KEY=... uv run python .
+```
 
-## The web interface
+With no `FACTORY_MODEL` and no `--offline`, `python .` says how to start and stops.
 
-The interface has moved to [`web/board`](../../web/board/) at the root of the repository, and is now the library's board. It shows the factory's work as cards in one column per station, then Done and Stopped, and is served by `board_app` in `pydantic_ai_factory.serve`, which the wheel ships with the interface built in. It talks to the board's API, not to this app's, so this app's web process serves the API alone. The next change shrinks this folder to one short file that serves the board.
+## Settings
 
-To work on the board's interface, see its folder. You need Node 22 or later:
+| Setting | Default | What it does |
+|---|---|---|
+| `FACTORY_DB` | `factory.db` | The SQLite file both processes share. |
+| `FACTORY_MODEL` | none | The model `python .` uses. Only the worker reads it. |
+
+Stop the worker with Ctrl+C. It finishes the job in hand, then exits. Press Ctrl+C again to stop at once.
+
+## Your own factory
+
+Put your own factory in place of `SoftwareFactory` in `board.py`. Pass a function that takes a model and returns your factory, such as `build_factory(model) -> Factory`. The web process calls it with a model that needs no key, only to read the factory's shape. The worker calls it with the real model. The factory's first station must take a `Mission` or a `str`.
+
+## The board's interface
+
+The page ships built inside the library's wheel, so serving it from an install from PyPI needs no Node. A checkout of the repository does not hold the built page; build it as in [Try it offline](#try-it-offline). Its source is in [`web/board`](../../web/board/) at the root of the repository. To work on it, you need Node 22 or later:
 
 ```bash
 cd ../../web/board
@@ -51,46 +86,9 @@ npm test
 npm run build      # writes the library's src/pydantic_ai_factory/serve/_static/
 ```
 
-## Run it with a model
-
-Only the worker needs a key. Give it the model's name and the key its provider reads:
-
-```bash
-FACTORY_MODEL=anthropic:claude-opus-5-5 ANTHROPIC_API_KEY=... uv run python -m app.worker
-uv run uvicorn app.api:app
-```
-
-## Settings
-
-Both processes read these from the environment:
-
-| Setting | Default | What it does |
-|---|---|---|
-| `FACTORY_DB` | `factory.db` | The SQLite file both processes share. |
-| `FACTORY_STALLED_MINUTES` | `10` | How long a running run, or a claimed job, may go without a change before it is shown as stalled. Set it above your slowest real step. |
-| `FACTORY_MODEL` | none | The model the worker uses. Only the worker reads it. |
-
-The worker also takes `--db` in place of `FACTORY_DB`. Stop it with Ctrl+C: it finishes the job in hand, then exits. Press Ctrl+C again to stop at once.
-
-## The API
-
-| Route | Does |
-|---|---|
-| `POST /api/runs` | Takes `{mission, by}`. Queues a start job and returns `{run_id, job_id}`. |
-| `GET /api/runs?outcome=&order=&limit=` | Lists runs, each with its display state, and `more` when more matched than were returned. |
-| `GET /api/runs/{run_id}` | One run: its state, steps, answers, what it waits for, its output as Markdown and its latest job of each kind. |
-| `POST /api/runs/{run_id}/answer` | Takes `{choice, by, revision, note, replies, approvals}`. Queues the answer, or returns `422` when it does not fit and `409` when the run has moved on. |
-| `GET /api/jobs/{job_id}` | One job's state, and why it failed if it did. |
-
-The name in `by` is recorded with every answer. It is a name, not a sign-in: anyone can type any name.
-
-## Your own factory
-
-`app/factory.py` is the only file that knows this is the software factory. Change its two functions, `build_factory` and `render_output`, and the worker and the API run your factory instead.
-
 ## Copying this folder
 
-This folder reaches nothing outside itself. Inside the repository, `pyproject.toml` installs the library from the repository's own folders. In a copy, install the published packages instead:
+Inside the repository, this folder uses two things outside itself: `pyproject.toml` installs the library from the repository's own folders, and the board's page is built from `web/board`. A copy needs neither. Install the published packages instead, which ship the built page:
 
 ```bash
 uv sync --no-sources

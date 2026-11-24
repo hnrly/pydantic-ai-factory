@@ -1,14 +1,12 @@
 [project]
 name = "software-factory-app"
 version = "0.2.0"
-description = "The software factory run as a small service: a web interface, an API and a worker."
+description = "The software factory served as a board, from one short file: a web process and a worker."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "pydantic-ai-factory==0.2.0",
+  "pydantic-ai-factory[web]==0.2.0",
   "pydantic-ai-factory-software==0.2.0",
-  "fastapi==0.162.0",
-  "uvicorn==0.54.0",
 ]
 
 [dependency-groups]
@@ -34,7 +32,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "S101"]
 per-file-ignores = { "tests/**" = ["S101"] }
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "tests"]
+known-first-party = ["asking", "board", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -42,7 +40,7 @@ pythonpath = ["."]
 filterwarnings = ["error"]
 
 [tool.pyright]
-include = ["app", "tests"]
+include = ["board.py", "__main__.py", "asking.py", "tests"]
 typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
