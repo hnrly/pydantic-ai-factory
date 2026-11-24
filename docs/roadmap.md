@@ -24,6 +24,8 @@ The first delivery is complete. It is the core contract and one real station.
 | Have work reviewed by fresh goldfish, revised in the author's own conversation | [Elephant Goldfish](elephant-goldfish.md) |
 | See a run as a trace | [Observability](observability.md) |
 | Score a methodology against doing without it | [Measuring a methodology](measuring.md) |
+| Find the runs waiting for a person, from any process that shares the store | [Operating a factory](operating.md) |
+| Run a factory behind a web page, with its work done by a separate worker | [Deploying a factory](deploying.md) |
 
 What "complete" does not mean: the API may still change before 1.0. The getting-started path is run against a real model by hand before each release, with the `live` test marker. The evaluation set has been run against a real model once, on 16 November 2026.
 

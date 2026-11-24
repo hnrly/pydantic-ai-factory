@@ -9,6 +9,8 @@ It has two processes that share one SQLite file:
 
 The file holds the factory's runs and artifacts, kept by the library's `SQLiteStore`, and a `jobs` table that this app owns. Stop either process and start it again: nothing that was saved is lost. A run that stopped part-way through a station, because its worker was killed, is shown as stalled. It cannot be carried on yet. [Operating a factory](https://hnrly.github.io/pydantic-ai-factory/operating/#stalled-runs) explains why.
 
+[Deploying a factory](https://hnrly.github.io/pydantic-ai-factory/deploying/) explains why the app is shaped this way, and what to change when you deploy your own.
+
 A small web interface, in `web/`, sits on top of the API. It shows the runs waiting for a person, every run, a box to start a new mission, and each run with the actions it allows.
 
 ## Try it offline

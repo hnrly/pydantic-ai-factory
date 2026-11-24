@@ -98,3 +98,11 @@ The words used below each have a page under Concepts, starting with [factories](
 **Decided.** The type is spelled `Artifact`, and these pages use "artifact" as a defined term. All other prose is British.
 
 **Why.** It is what Python developers will type and search for, and code and prose should match.
+
+## A store lists its runs, and the queue belongs to the deployment
+
+**Decided.** Every store must list its runs. `list_runs` is part of the `RunStore` protocol, filtered by outcome or factory and sorted by when each run last changed. A queue of work, and the worker that takes from it, belong to the deployment, not the library.
+
+**Why.** Every application that operates a factory needs to find the runs waiting for a person, and before, each had to keep its own index of run ids beside the store. A store that cannot list its runs is a store nobody can operate. A queue is different: teams already have one, and the right choice depends on where they deploy. The library gives every process what it needs to share the work instead: a store any process can open, `list_runs`, and `run_id=` to name a run before it starts. The example on [Deploying a factory](deploying.md) keeps its queue in a table of its own, in the same file as its store.
+
+**Rejected.** A separate, optional protocol for listing, which would have kept stores written for 0.1 working but let a store opt out of being operated. Also rejected: a queued state on a run and a call to claim it in the library. That starts the library down the road to a workflow engine, which the [roadmap](roadmap.md#not-planned) rules out. Durable runs may revisit it.
