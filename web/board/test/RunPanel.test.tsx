@@ -193,6 +193,136 @@ describe('the one thing the run asks of a person', () => {
     );
   });
 
+  test("an AskPerson call shows each question's options, recommended first, and sends a label or the person's own words", async () => {
+    const run = waitingRun(
+      waiting({
+        kind: 'tool-calls',
+        agent: 'designer',
+        questions: [
+          call({
+            id: 'q1',
+            tool: 'ask_user_question',
+            asks: [
+              {
+                header: 'Ticks',
+                question: 'Should ticked tasks survive a reload?',
+                options: [
+                  { label: 'Keep them (Recommended)', description: 'Store them in the browser.' },
+                  { label: 'Drop them', description: null },
+                ],
+                multi_select: false,
+              },
+              {
+                header: 'Colour',
+                question: 'What colour are done tasks?',
+                options: [
+                  { label: 'Grey (Recommended)', description: null },
+                  { label: 'Green', description: null },
+                ],
+                multi_select: false,
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+    const api = showRun(run, {
+      answer: async () => ({ run_id: 'run-1', job_id: 'job-1' }),
+      getJob: async () => job({ state: 'done' }),
+    });
+
+    const keep = (await screen.findByRole('radio', { name: /^Keep them/ })) as HTMLInputElement;
+    // The board tags the recommended option instead of showing the suffix, and shows each header.
+    expect(screen.queryByText(/\(Recommended\)/)).toBeNull();
+    expect(screen.getAllByText('Recommended')).toHaveLength(2);
+    expect(screen.getByText('Ticks')).toBeTruthy();
+    expect(screen.getByText('Store them in the browser.')).toBeTruthy();
+    const send = screen.getByRole('button', { name: 'Send reply' }) as HTMLButtonElement;
+    await userEvent.click(keep);
+    expect(send.disabled).toBe(true);
+    const own = screen.getByLabelText(/Your own answer to “Colour”/);
+    await userEvent.type(own, '   ');
+    expect(send.disabled).toBe(true);
+    await userEvent.clear(own);
+    await userEvent.type(own, 'Blue, please.');
+    await userEvent.click(send);
+
+    expect(api.answer).toHaveBeenCalledWith(
+      'run-1',
+      { kind: 'reply', revision: 3, replies: { q1: { Ticks: 'Keep them (Recommended)', Colour: 'Blue, please.' } } },
+      'Ada',
+    );
+  });
+
+  test('one send answers a multi-select question, a free-text question from a tool of your own, and a sign-off together', async () => {
+    const run = waitingRun(
+      waiting({
+        kind: 'tool-calls',
+        agent: 'designer',
+        questions: [
+          call({
+            id: 'q1',
+            tool: 'ask_user_question',
+            asks: [
+              {
+                header: 'Platforms',
+                question: 'Which browsers must it work in?',
+                options: [
+                  { label: 'Chrome (Recommended)', description: null },
+                  { label: 'Firefox', description: null },
+                  { label: 'Safari', description: null },
+                ],
+                multi_select: true,
+              },
+            ],
+          }),
+          call({ id: 'q2', tool: 'ask_me', question: 'What is the page called?' }),
+        ],
+        sign_offs: [call({ id: 's1', tool: 'read_file', args: { path: 'README.md' } })],
+      }),
+    );
+    const api = showRun(run, {
+      answer: async () => ({ run_id: 'run-1', job_id: 'job-1' }),
+      getJob: async () => job({ state: 'done' }),
+    });
+
+    await userEvent.click(await screen.findByRole('checkbox', { name: /^Chrome/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Safari/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Chrome/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /^Firefox/ }));
+    await userEvent.type(screen.getByLabelText('Your reply to question 2'), 'To-do list');
+    const send = screen.getByRole('button', { name: 'Send reply' }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    await userEvent.click(send);
+
+    expect(api.answer).toHaveBeenCalledWith(
+      'run-1',
+      {
+        kind: 'reply',
+        revision: 3,
+        replies: { q1: { Platforms: ['Safari', 'Firefox'] }, q2: 'To-do list' },
+        approvals: { s1: true },
+      },
+      'Ada',
+    );
+  });
+
+  test('a reply the server refuses shows its reason', async () => {
+    const run = waitingRun(
+      waiting({ kind: 'tool-calls', agent: 'designer', questions: [call({ id: 'q2', question: 'What is the page called?' })] }),
+    );
+    showRun(run, {
+      answer: async () => {
+        throw new ApiError(422, "call 'q2' asks no question with the header 'Name'");
+      },
+    });
+
+    await userEvent.type(await screen.findByLabelText('Your reply'), 'To-do list');
+    await userEvent.click(screen.getByRole('button', { name: 'Send reply' }));
+    expect(await screen.findByText(/asks no question with the header 'Name'/)).toBeTruthy();
+  });
+
   test('a stalled run says why, offers Start again with its warning, and Keep waiting closes the panel', async () => {
     const onClose = vi.fn();
     const run = detail({

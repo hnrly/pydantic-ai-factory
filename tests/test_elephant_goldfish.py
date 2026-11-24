@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from asking import ASK, ask
 from pydantic import BaseModel
 from pydantic_ai import Agent, DeferredToolRequests
 from pydantic_ai.exceptions import UsageLimitExceeded
@@ -17,10 +18,12 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import UsageLimits
 
 from pydantic_ai_factory import (
     AskPerson,
+    DefinitionError,
     Factory,
     MemoryStore,
     MethodologyDefinitionError,
@@ -63,6 +66,7 @@ class Author:
         self.replies = list(replies)
         self.seen: list[list[ModelMessage]] = []
         self.tools: list[list[str]] = []
+        self.instructions: list[str] = []
 
     @property
     def calls(self) -> int:
@@ -71,6 +75,7 @@ class Author:
     def __call__(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         self.seen.append(list(messages))
         self.tools.append([tool.name for tool in info.function_tools])
+        self.instructions.append(info.instructions or "")
         reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
         return reply if isinstance(reply, ModelResponse) else ModelResponse(parts=[TextPart(reply)])
 
@@ -99,8 +104,11 @@ def call(tool: str, **args: Any) -> ModelResponse:
 
 
 def designer(
-    author: Author, pond: Pond | None = None, **settings: Any
+    author: Author, pond: Pond | None = None, *, asks: bool = True, **settings: Any
 ) -> tuple[Agent[None, str], ElephantGoldfish]:
+    """An author with Elephant Goldfish, which brings ``AskPerson`` unless ``asks`` is false."""
+    if not asks:
+        settings["ask"] = None
     method = ElephantGoldfish(
         goldfish=POND, model=FunctionModel(pond) if pond else None, **settings
     )
@@ -298,7 +306,7 @@ async def test_a_goldfish_that_fails_means_the_station_did_not_run() -> None:
 
 
 async def test_the_author_may_ask_a_question_and_the_run_waits_for_the_answer() -> None:
-    author = Author(call("ask_person", question="Should ticked tasks survive a reload?"), FIXED)
+    author = Author(ask("Should ticked tasks survive a reload?"), FIXED)
     pond = Pond(newcomer=[CLEAR], critique=[{"findings": []}])
     agent, _ = designer(author, pond)
     software = Factory("software", [station(agent)])
@@ -311,7 +319,7 @@ async def test_the_author_may_ask_a_question_and_the_run_waits_for_the_answer() 
     done = await software.resume(run.reply("Yes.", by="ada"), store=store)
 
     assert (done.outcome, done.output) == ("passed", FIXED)
-    assert "ask_person" in author.tools[0]
+    assert ASK in author.tools[0]
 
 
 def both(*responses: ModelResponse) -> ModelResponse:
@@ -329,7 +337,7 @@ async def test_a_finding_contested_before_a_question_still_goes_to_a_person(
     together: bool,
 ) -> None:
     contest = call("contest", finding_id="r1-critique-1", evidence="Blank tasks are out of scope.")
-    question = call("ask_person", question="Should ticked tasks survive a reload?")
+    question = ask("Should ticked tasks survive a reload?")
     replies = [both(contest, question)] if together else [contest, question]
     author = Author(DRAFT, *replies, DRAFT)
     pond = Pond(newcomer=[CLEAR], critique=[{"findings": [BLANK]}, {"findings": []}])
@@ -347,7 +355,7 @@ async def test_a_finding_contested_before_a_question_still_goes_to_a_person(
 
 
 async def test_a_question_between_rounds_does_not_reset_the_round_count() -> None:
-    question = call("ask_person", question="Should ticked tasks survive a reload?")
+    question = ask("Should ticked tasks survive a reload?")
     author = Author(DRAFT, question, DRAFT)
     pond = Pond(newcomer=[CLEAR], critique=[{"findings": [BLANK]}])
     agent, _ = designer(author, pond, rounds=2)
@@ -383,14 +391,54 @@ async def test_goldfish_stop_when_the_authors_request_limit_is_reached() -> None
     assert pond.prompts["critique"] == []
 
 
-async def test_max_questions_of_zero_takes_the_question_tool_away() -> None:
+async def test_elephant_goldfish_brings_ask_person_so_the_author_can_ask() -> None:
     author = Author(DRAFT)
     pond = Pond(newcomer=[CLEAR], critique=[{"findings": []}])
-    agent, _ = designer(author, pond, max_questions=0)
+    agent, _ = designer(author, pond)
+
+    await station(agent).run(MISSION, store=MemoryStore())
+
+    assert sorted(author.tools[0]) == sorted([ASK, "contest", "escalate"])
+    assert "3 rounds of questions" in author.instructions[0]
+
+
+async def test_with_ask_none_elephant_goldfish_gives_the_author_no_way_to_ask() -> None:
+    author = Author(DRAFT)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": []}])
+    agent, _ = designer(author, pond, asks=False)
 
     await station(agent).run(MISSION, store=MemoryStore())
 
     assert sorted(author.tools[0]) == ["contest", "escalate"]
+
+
+async def test_an_ask_person_the_agent_lists_wins_over_the_one_elephant_goldfish_brings() -> None:
+    author = Author(DRAFT)
+    pond = Pond(newcomer=[CLEAR], critique=[{"findings": []}])
+    method = ElephantGoldfish(goldfish=POND, model=FunctionModel(pond), ask=AskPerson(max_rounds=5))
+    agent = Agent(
+        FunctionModel(author), name="designer", capabilities=[method, AskPerson(max_rounds=1)]
+    )
+
+    await station(agent).run(MISSION, store=MemoryStore())
+
+    assert author.tools[0].count(ASK) == 1
+    assert "1 round of questions" in author.instructions[0]
+    assert "5 rounds" not in author.instructions[0]
+
+
+def test_elephant_goldfish_refuses_an_ask_that_is_not_ask_person() -> None:
+    with pytest.raises(MethodologyDefinitionError, match="ask must be an AskPerson"):
+        ElephantGoldfish(goldfish=POND, ask="yes")  # pyright: ignore[reportArgumentType]
+
+
+def test_two_ask_person_the_agent_lists_must_agree() -> None:
+    with pytest.raises(DefinitionError, match="two AskPerson with different max_rounds"):
+        Agent(
+            TestModel(),
+            name="asker",
+            capabilities=[AskPerson(max_rounds=1), AskPerson(max_rounds=2)],
+        )
 
 
 async def test_on_resume_a_replayed_author_call_keeps_its_reports() -> None:
@@ -398,7 +446,7 @@ async def test_on_resume_a_replayed_author_call_keeps_its_reports() -> None:
     pond = Pond(newcomer=[CLEAR], critique=[{"findings": [BLANK]}, {"findings": []}])
     agent, _ = designer(author, pond)
     checker = Agent(
-        FunctionModel(Author(call("ask_person", question="Ship it?"), "Yes.")),
+        FunctionModel(Author(ask("Ship it?"), "Yes.")),
         name="checker",
         capabilities=[AskPerson()],
     )
@@ -496,7 +544,6 @@ def test_a_factory_lists_elephant_goldfish_among_its_methodologies() -> None:
         ({"goldfish": "newcomer"}, "must be a list of Goldfish"),
         ({"goldfish": (POND[0], POND[0])}, "two goldfish are named 'newcomer'"),
         ({"goldfish": POND, "rounds": 0}, "rounds must be a whole number, 1 or more"),
-        ({"goldfish": POND, "max_questions": -1}, "max_questions must be a whole number"),
     ],
 )
 def test_a_badly_set_up_elephant_goldfish_is_refused(
@@ -516,7 +563,7 @@ def test_a_goldfish_needs_a_short_name_a_stage_and_a_job() -> None:
 
 
 def test_a_deferred_question_is_not_reviewed_as_a_draft() -> None:
-    author = Author(call("ask_person", question="Keep ticks?"))
+    author = Author(ask("Keep ticks?"))
     pond = Pond(newcomer=[CLEAR], critique=[{"findings": []}])
     agent, _ = designer(author, pond)
 

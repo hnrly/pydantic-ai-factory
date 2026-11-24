@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from asking import QUESTION
+from asking import ASK, HEADER, OPTIONS, QUESTION
 from tests.conftest import Served
 from tests.support import answer, run, start
 
@@ -50,10 +50,12 @@ def test_a_person_answers_the_designers_question_and_the_run_then_waits_for_appr
         ["reply"],
     )
     [question] = asked["wait"]["questions"]
-    assert (question["tool"], question["question"]) == ("ask_person", QUESTION)
+    [asked] = question["asks"]
+    assert (question["tool"], asked["header"], asked["question"]) == (ASK, HEADER, QUESTION)
+    assert [option["label"] for option in asked["options"]] == list(OPTIONS)
 
     assert answer(client, run_id, "reply", replies={"other": "Yes."}) == 422
-    assert answer(client, run_id, "reply", replies={question["id"]: "Yes."}) == 202
+    assert answer(client, run_id, "reply", replies={question["id"]: {HEADER: OPTIONS[0]}}) == 202
     worker()(["--offline=asking", "--until-idle"])
 
     designed = run(client, run_id)

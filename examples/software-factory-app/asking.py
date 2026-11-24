@@ -2,7 +2,8 @@
 
 The software factory's own scripted model never asks, because its missions say enough.
 This one lets a person see an agent's question with no model key. As the designer, it
-calls the ``ask_person`` tool once with a fixed question. Every other request, and every
+calls ``AskPerson``'s ``ask_user_question`` tool once with a fixed question and two
+options, the recommended one first. Every other request, and every
 request after the answer, goes to the software package's scripted model.
 """
 
@@ -19,9 +20,11 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai_factory_software import offline_model
+from pydantic_ai_harness.ask_user import TOOL_NAME as ASK
 
-ASK = "ask_person"
 QUESTION = "Should ticked tasks stay on the list after the page is reloaded?"
+HEADER = "Ticked tasks"
+OPTIONS = ("Keep them (Recommended)", "Clear them")
 
 
 def _asked(messages: list[ModelMessage]) -> bool:
@@ -42,7 +45,12 @@ def asking_model() -> FunctionModel:
     async def reply(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         can_ask = any(tool.name == ASK for tool in info.function_tools)
         if can_ask and not _asked(messages):
-            return ModelResponse(parts=[ToolCallPart(ASK, {"question": QUESTION}, "ask-1")])
+            asked = {
+                "header": HEADER,
+                "question": QUESTION,
+                "options": [{"label": label} for label in OPTIONS],
+            }
+            return ModelResponse(parts=[ToolCallPart(ASK, {"questions": [asked]}, "ask-1")])
         response = scripted(messages, info)
         return await response if inspect.isawaitable(response) else response
 

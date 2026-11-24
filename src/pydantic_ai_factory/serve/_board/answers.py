@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ...factory import Answer, ApprovalRefused, Run
 from .views import AnswerBody
 
@@ -25,4 +27,17 @@ def make_answer(run: Run, body: AnswerBody, by: str) -> Answer:
     replies, approvals = body.replies or {}, body.approvals or {}
     if twice := sorted(set(replies) & set(approvals)):
         raise ApprovalRefused(f"more than one answer for {', '.join(map(repr, twice))}")
-    return run.reply({**replies, **approvals}, by=by, revision=body.revision)
+    answers: dict[Any, Any] = dict(approvals)
+    for call_id, reply in replies.items():
+        if isinstance(reply, str):
+            answers[call_id] = reply
+            continue
+        # An AskPerson call is answered question by question, keyed by header.
+        asked = {q.header: q for q in run.questions if q.call_id == call_id and q.header}
+        for header, value in reply.items():
+            if header not in asked:
+                raise ApprovalRefused(
+                    f"call {call_id!r} asks no question with the header {header!r}"
+                )
+            answers[asked[header]] = value
+    return run.reply(answers, by=by, revision=body.revision)

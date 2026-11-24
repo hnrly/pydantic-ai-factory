@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic_ai import Agent, DeferredToolRequests
+from asking import ASK, ask, ask_call
+from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
@@ -22,6 +23,7 @@ from pydantic_ai_factory import (
     ApprovalRefused,
     Artifact,
     AskPerson,
+    DefinitionError,
     Escalate,
     Evidence,
     Factory,
@@ -70,10 +72,6 @@ def prompts(messages: list[ModelMessage]) -> list[str]:
         for part in message.parts
         if isinstance(part, UserPromptPart)
     ]
-
-
-def ask(question: str) -> ModelResponse:
-    return ModelResponse(parts=[ToolCallPart("ask_person", {"question": question}, "q1")])
 
 
 async def test_a_station_with_approval_waits_for_a_person_and_carries_on_when_approved() -> None:
@@ -247,9 +245,8 @@ async def test_an_agent_question_makes_the_run_wait_until_the_person_answers() -
     assert run.waiting.agent == "designer"
     requests = run.waiting.requests
     assert isinstance(requests, DeferredToolRequests)
-    assert requests.metadata[requests.calls[0].tool_call_id] == {
-        "question": "Should ticked tasks survive a reload?"
-    }
+    asked = requests.metadata[requests.calls[0].tool_call_id]["questions"]
+    assert [question["question"] for question in asked] == ["Should ticked tasks survive a reload?"]
 
     assert str(run.question) == "Should ticked tasks survive a reload?"
     done = await software.resume(run.reply("Yes.", by="ada"), store=store)
@@ -456,20 +453,113 @@ async def test_a_resumed_station_that_runs_its_agents_in_another_order_did_not_r
     assert "keep the code between agent runs deterministic" in (done.steps[-1].reason or "")
 
 
-def test_ask_person_stops_asking_at_its_limit() -> None:
-    designer, script = agent(
-        "designer", ask("One?"), ask("Two?"), "Done.", capabilities=[AskPerson(max_questions=1)]
+def tools_seen(
+    *responses: ModelResponse, max_rounds: int
+) -> tuple[Agent[None, str], list[list[str]]]:
+    """An agent with ``AskPerson`` whose model gives ``responses`` while it may ask."""
+    seen: list[list[str]] = []
+    queue = list(responses)
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.append([tool.name for tool in info.function_tools])
+        if ASK in seen[-1] and queue:
+            return queue.pop(0)
+        return ModelResponse(parts=[TextPart("Done.")])
+
+    asker = Agent(
+        FunctionModel(model), name="designer", capabilities=[AskPerson(max_rounds=max_rounds)]
     )
+    return asker, seen
+
+
+def answer_all(requests: DeferredToolRequests) -> DeferredToolResults:
+    return DeferredToolResults(
+        calls={
+            call.tool_call_id: {q["header"]: ["No"] for q in call.args_as_dict()["questions"]}
+            for call in requests.calls
+        }
+    )
+
+
+def test_ask_person_takes_its_tool_away_once_its_rounds_are_answered() -> None:
+    designer, seen = tools_seen(ask("One?"), ask("Two?", call_id="q2"), max_rounds=1)
     result = designer.run_sync("x", output_type=[str, DeferredToolRequests])
     assert isinstance(result.output, DeferredToolRequests)
-    answer = result.output.build_results(calls={result.output.calls[0].tool_call_id: "Yes."})
 
     again = designer.run_sync(
         None,
         conversation=result.conversation,
-        deferred_tool_results=answer,
+        deferred_tool_results=answer_all(result.output),
         output_type=[str, DeferredToolRequests],
     )
 
     assert again.output == "Done."
-    assert script.calls == 3
+    assert seen == [[ASK], []]
+
+
+def test_once_its_rounds_are_answered_ask_person_tells_the_agent_to_carry_on() -> None:
+    said: list[str] = []
+    queue = [ask("One?")]
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        said.append(info.instructions or "")
+        return queue.pop(0) if queue else ModelResponse(parts=[TextPart("Done.")])
+
+    designer = Agent(FunctionModel(model), name="designer", capabilities=[AskPerson(max_rounds=1)])
+    result = designer.run_sync("x", output_type=[str, DeferredToolRequests])
+    assert isinstance(result.output, DeferredToolRequests)
+
+    designer.run_sync(
+        None,
+        conversation=result.conversation,
+        deferred_tool_results=answer_all(result.output),
+        output_type=[str, DeferredToolRequests],
+    )
+
+    assert ASK in said[0]
+    assert ASK not in said[1]
+    assert "Do not ask again" in said[1]
+
+
+def test_several_ask_calls_in_one_response_are_one_round() -> None:
+    together = ModelResponse(parts=[ask_call("One?"), ask_call("Two?", call_id="q2")])
+    designer, seen = tools_seen(together, max_rounds=2)
+    result = designer.run_sync("x", output_type=[str, DeferredToolRequests])
+    assert isinstance(result.output, DeferredToolRequests)
+    assert len(result.output.calls) == 2
+
+    designer.run_sync(
+        None,
+        conversation=result.conversation,
+        deferred_tool_results=answer_all(result.output),
+        output_type=[str, DeferredToolRequests],
+    )
+
+    assert seen == [[ASK], [ASK]]
+
+
+def test_ask_person_with_no_rounds_gives_the_agent_no_way_to_ask() -> None:
+    designer, seen = tools_seen(ask("One?"), max_rounds=0)
+
+    assert designer.run_sync("x").output == "Done."
+    assert seen == [[]]
+
+
+def test_ask_person_says_how_to_ask_in_its_instructions() -> None:
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        said.append(info.instructions or "")
+        return ModelResponse(parts=[TextPart("Done.")])
+
+    said: list[str] = []
+    Agent(FunctionModel(model), name="designer", capabilities=[AskPerson(max_rounds=2)]).run_sync(
+        "x"
+    )
+
+    assert "2 rounds of questions" in said[0]
+    assert '" (Recommended)"' in said[0] and "why it matters" in said[0]
+
+
+@pytest.mark.parametrize("rounds", [-1, 1.5, True, "3"])
+def test_a_badly_set_up_ask_person_is_refused(rounds: object) -> None:
+    with pytest.raises(DefinitionError, match="max_rounds must be a whole number, 0 or more"):
+        AskPerson(max_rounds=rounds)  # pyright: ignore[reportArgumentType]

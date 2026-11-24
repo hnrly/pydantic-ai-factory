@@ -17,6 +17,7 @@ from .. import _tracing as tracing
 from ..artifacts import Artifact, ArtifactRef
 from ..contracts import Digest, FactoryError, Name, Record, check_name
 from ..stations import Action, Feedback, Question, StationInputInvalid, StationResult, Waiting
+from ..stations._ask import ask_request, ask_result
 from ..stations._station import coerce, recorded_as
 from ._answer import Answer, Approve, Changes, Reject, Reply, reply_problem
 from ._mission import Mission, Outcome, Signal, signal_artifact
@@ -214,26 +215,55 @@ class Run(Record):
     ) -> Reply:
         """Answer what an agent asked. Pass the answer to ``Factory.resume``.
 
-        When the run waits on one question, ``answer`` is the text of the answer. When it
-        waits on more than one tool call, ``answer`` maps each :class:`Question` to its
-        answer and each :class:`Action` to ``True`` to allow it or ``False`` to deny it.
-        Pydantic AI's ``ToolApproved`` and ``ToolDenied`` may stand in for ``True`` and
-        ``False``. Raises :class:`ApprovalRefused`, with the reason ``Factory.check`` would
-        give, unless every tool call gets exactly one answer.
+        When the run waits on one question, ``answer`` is the answer to it. When it waits
+        on more, ``answer`` maps each :class:`Question` to its answer and each
+        :class:`Action` to ``True`` to allow it or ``False`` to deny it. Pydantic AI's
+        ``ToolApproved`` and ``ToolDenied`` may stand in for ``True`` and ``False``.
+
+        A question asked with ``AskPerson`` is answered with one of its option labels, a
+        list of labels when it is ``multi_select``, or your own words. The answers to one
+        call go back to the agent together, as Pydantic AI Harness's ``ask_user_result``
+        makes them. Raises :class:`ApprovalRefused`, with the reason ``Factory.check``
+        would give, unless every question and action gets exactly one answer.
         """
         waiting = self._tool_calls(revision)
         if isinstance(answer, str):
-            question = self._only(waiting, "question")
-            answers: dict[str, Any] = {question.call_id: answer}
+            pairs: list[tuple[Any, Any]] = [(self._only(waiting, "question"), answer)]
         else:
-            answers = {}
-            for key, value in answer.items():
-                call_id = key if isinstance(key, str) else key.call_id
-                if call_id in answers:
+            pairs = list(answer.items())
+        answers: dict[str, Any] = {}
+        asked: dict[str, dict[str, Any]] = {}
+        for key, value in pairs:
+            if isinstance(key, Question) and key.header is not None:
+                headers = asked.setdefault(key.call_id, {})
+                if key.header in headers:
                     raise ApprovalRefused(
-                        f"run {self.run_id!r}: more than one answer for {call_id!r}"
+                        f"run {self.run_id!r}: more than one answer for {key.text!r}"
                     )
-                answers[call_id] = value
+                headers[key.header] = value
+                continue
+            call_id = key if isinstance(key, str) else key.call_id
+            if call_id in answers:
+                raise ApprovalRefused(f"run {self.run_id!r}: more than one answer for {call_id!r}")
+            answers[call_id] = value
+        calls = (
+            {call.tool_call_id: call for call in waiting.requests.calls} if waiting.requests else {}
+        )
+        for call_id, headers in asked.items():
+            call = calls.get(call_id)
+            request = (
+                None
+                if call is None
+                else ask_request(call, waiting.requests and waiting.requests.metadata.get(call_id))
+            )
+            if call_id in answers or request is None:
+                raise ApprovalRefused(
+                    f"run {self.run_id!r}: it does not wait on one question call {call_id!r}"
+                )
+            try:
+                answers[call_id] = ask_result(request, headers)
+            except ValueError as error:
+                raise ApprovalRefused(f"run {self.run_id!r}: {error}") from None
         return self._reply(waiting, answers, by=by, revision=revision)
 
     def allow(self, *, by: str, revision: int | None = None) -> Reply:

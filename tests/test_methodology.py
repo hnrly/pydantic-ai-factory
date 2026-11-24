@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from asking import ask
 from pydantic import BaseModel
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.exceptions import UnexpectedModelBehavior
@@ -277,7 +278,7 @@ async def test_the_methodology_rounds_are_added_to_the_agents_own_retry_budget()
 async def test_a_replayed_agent_call_still_gives_its_methodology_evidence() -> None:
     agent, drafted = designer(design(SCENARIO))
     script = Script(
-        ModelResponse(parts=[ToolCallPart("ask_person", {"question": "Keep ticks?"}, "q1")]),
+        ask("Keep ticks?", call_id="q1"),
         design(SCENARIO),
     )
     reviewer = Agent(

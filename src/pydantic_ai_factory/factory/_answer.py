@@ -10,6 +10,7 @@ from pydantic_ai import DeferredToolResults
 from ..artifacts import ArtifactRef
 from ..contracts import Name, Record
 from ..stations import Waiting, WaitingKind
+from ..stations._ask import ask_request, result_problem
 
 
 class AnswerBase(Record):
@@ -97,10 +98,17 @@ def reply_problem(waiting: Waiting, results: DeferredToolResults) -> str | None:
     """Whether ``results`` answer each of the wait's tool calls exactly once, in the right place.
 
     A question is answered in ``results.calls`` and an action in ``results.approvals``;
-    Pydantic AI would drop a result in the wrong place. ``run.reply`` and
-    ``Factory.check`` both use this rule, so they refuse a reply with the same reason.
+    Pydantic AI would drop a result in the wrong place. The answer to an ``AskPerson``
+    call must answer each of its questions, as Pydantic AI Harness's ``check_response``
+    checks. ``run.reply`` and ``Factory.check`` both use this rule, so they refuse a
+    reply with the same reason.
     """
-    named = {question.call_id: repr(question.text) for question in waiting.questions}
+    named: dict[str, str] = {}
+    for question in waiting.questions:
+        text = repr(question.text)
+        named[question.call_id] = (
+            f"{named[question.call_id]}, {text}" if question.call_id in named else text
+        )
     named |= {action.call_id: str(action) for action in waiting.actions}
     actions = {action.call_id for action in waiting.actions}
     questions = {question.call_id for question in waiting.questions}
@@ -116,6 +124,13 @@ def reply_problem(waiting: Waiting, results: DeferredToolResults) -> str | None:
         found.append(f"an answer for {say(extra)}, which it is not waiting on")
     if twice := given_calls & given_actions:
         found.append(f"more than one answer for {say(twice)}")
+    requests = waiting.requests
+    for call in requests.calls if requests is not None else ():
+        request = ask_request(call, requests.metadata.get(call.tool_call_id)) if requests else None
+        if request is None or call.tool_call_id not in results.calls:
+            continue
+        if problem := result_problem(request, results.calls[call.tool_call_id]):
+            found.append(f"the answer for {say({call.tool_call_id})} does not fit: {problem}")
     if not found:
         return None
     return "a reply needs exactly one answer for each tool call it waits on: " + "; ".join(found)

@@ -57,7 +57,7 @@ class AnswerBody(BaseModel):
     kind: Literal["approve", "changes", "reject", "reply"]
     revision: int = Field(ge=0)
     note: str | None = None
-    replies: dict[str, str] | None = None
+    replies: dict[str, str | dict[str, str | list[str]]] | None = None
     approvals: dict[str, bool] | None = None
 
 
@@ -148,13 +148,35 @@ class CardPage(BaseModel):
     before: str | None = None
 
 
+class OptionView(BaseModel):
+    """One choice a question offers. The recommended one comes first."""
+
+    label: str
+    description: str | None = None
+
+
+class AskView(BaseModel):
+    """One question in an ``AskPerson`` call. Answer it by ``header``."""
+
+    header: str
+    question: str
+    options: list[OptionView]
+    multi_select: bool
+
+
 class ToolCallView(BaseModel):
-    """One pending tool call: a question an agent asked, or a call that needs sign-off."""
+    """One pending tool call: questions an agent asked, or a call that needs sign-off.
+
+    An ``AskPerson`` call lists its questions in ``asks``; reply to it with an object that
+    maps each header to a label, a list of labels, or your own words. Any other call
+    that waits for an answer has its question in ``question``; reply to it with text.
+    """
 
     id: str
     tool: str
     args: dict[str, Any]
     question: str | None = None
+    asks: list[AskView] = []
 
 
 class WaitingView(BaseModel):

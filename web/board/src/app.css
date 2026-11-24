@@ -1372,3 +1372,115 @@ button.needs:hover:not(:disabled) {
     margin-left: 0;
   }
 }
+
+/* An AskPerson question: its header, its options with the recommended one tagged, and a
+   box for the person's own answer. Controls take the text colour, not the browser's blue. */
+.ask {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.ask legend {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0;
+  margin-bottom: 0.15rem;
+}
+.ask-header {
+  justify-self: start;
+  font-family: var(--hn-font-mono);
+  font-size: 0.6875rem;
+  color: var(--hn-gray-2);
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 999px;
+  overflow-wrap: anywhere;
+}
+.ask-question {
+  font-weight: 500;
+  color: var(--hn-white);
+  overflow-wrap: anywhere;
+}
+.ask-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--hn-gray-3);
+}
+.ask-options {
+  display: grid;
+  gap: 0.4rem;
+}
+.ask-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 8px;
+  color: var(--hn-gray-1);
+}
+.ask-option:hover {
+  border-color: var(--hn-gray-3);
+}
+.ask-option:has(input:checked) {
+  border-color: var(--hn-gray-1);
+  background: color-mix(in srgb, var(--hn-white) 4%, transparent);
+}
+.ask-option input {
+  flex: none;
+  margin: 0.2rem 0 0;
+  accent-color: var(--hn-white);
+}
+.ask-option-text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.ask-option-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  color: var(--hn-white);
+  overflow-wrap: anywhere;
+}
+.ask-recommended {
+  font-family: var(--hn-font-mono);
+  font-size: 0.6875rem;
+  color: var(--hn-gray-2);
+}
+.ask-option-description {
+  font-size: 0.8125rem;
+  color: var(--hn-gray-3);
+  overflow-wrap: anywhere;
+}
+.ask .ask-option {
+  font-weight: 400;
+}
+.ask-option-label {
+  font-weight: 500;
+}
+.ask .ask-own-label {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--hn-gray-2);
+}
+/* Your own answer starts as one line and grows as you type. */
+.panel .ask textarea {
+  min-height: 2.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  resize: none;
+  field-sizing: content;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

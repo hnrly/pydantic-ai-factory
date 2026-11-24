@@ -101,6 +101,14 @@ The words used below each have a page under Concepts, starting with [factories](
 
 **Rejected.** Putting the harness behind a `methodologies` extra that only Elephant Goldfish needed. It kept the harness's capabilities out of the core layers that need them, such as asking a person in `stations`, and it needed a guarded import and tests that hide the harness.
 
+## Asking a person is the harness's AskUser, with rounds
+
+**Decided.** `AskPerson` is a thin wrapper over Pydantic AI Harness's `AskUser(answerer=None)`. The agent asks with `ask_user_question`, and each question has a header, options with the recommended one first, and `multi_select`. A person answers each question with a label, labels, or their own words, and the core sends the answers back with the harness's `ask_user_result`, after checking them with its `check_response`. `AskPerson` adds instructions on how to ask and a cap on rounds, `max_rounds`, which takes the tool away with `prepare_tools`. Elephant Goldfish brings an `AskPerson` by default, `ask=AskPerson()`, so its authors ask without anyone remembering to add it; `ask=None` turns it off. Every `AskPerson` has the id `ask_person`, so an agent has one: an `AskPerson` listed on the agent wins over the one a methodology brings, and two listed with different `max_rounds` are refused. An author with no review still asks with `AskPerson` alone.
+
+**Why.** The harness already has the question schema, its validation, the deferred wait and the answer format. Our own `ask_person` tool repeated them, with one free-text question per call.
+
+**Rejected.** Making people add `AskPerson` beside Elephant Goldfish themselves, which they would forget. Keeping our own `ask_person` tool and `Question` model, and a cap that counts questions rather than rounds, which refused an agent for asking its questions together.
+
 ## The type is `Artifact`
 
 **Decided.** The type is spelled `Artifact`, and these pages use "artifact" as a defined term. All other prose is British.

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
+from asking import ask_call
 from fastapi.testclient import TestClient
 from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
+from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from pydantic_ai_factory import (
@@ -145,7 +146,7 @@ def test_a_reply_to_an_agents_question_is_built_from_the_runs_wait_and_queued(
     store: SQLiteStore, jobs: SQLiteDispatcher
 ) -> None:
     def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        question = ToolCallPart("ask_person", {"question": "Which colour?"}, "q1")
+        question = ask_call("Which colour?", call_id="q1")
         return ModelResponse(parts=[question])
 
     asker = Agent(FunctionModel(model), name="asker", capabilities=[AskPerson()])
@@ -158,17 +159,34 @@ def test_a_reply_to_an_agents_question_is_built_from_the_runs_wait_and_queued(
             json={"kind": "reply", "revision": run.revision, "replies": {"q9": "Blue."}},
             headers=ADA,
         )
-        right = client.post(
+        unkeyed = client.post(
             "/api/runs/asking/answer",
             json={"kind": "reply", "revision": run.revision, "replies": {"q1": "Blue."}},
             headers=ADA,
         )
+        right = client.post(
+            "/api/runs/asking/answer",
+            json={"kind": "reply", "revision": run.revision, "replies": {"q1": {"Q1": "Blue."}}},
+            headers=ADA,
+        )
 
     assert shown["actions"] == ["reply"]
-    assert [call["question"] for call in shown["wait"]["questions"]] == ["Which colour?"]
-    assert wrong.status_code == 422
+    [call] = shown["wait"]["questions"]
+    assert (call["tool"], call["question"]) == ("ask_user_question", None)
+    assert call["asks"] == [
+        {
+            "header": "Q1",
+            "question": "Which colour?",
+            "options": [
+                {"label": "Yes (Recommended)", "description": None},
+                {"label": "No", "description": None},
+            ],
+            "multi_select": False,
+        }
+    ]
+    assert (wrong.status_code, unkeyed.status_code) == (422, 422)
     assert right.status_code == 202, right.text
     (job,) = answer_jobs(jobs)
     assert isinstance(job.answer, Reply)
-    assert job.answer.results.calls == {"q1": "Blue."}
+    assert job.answer.results.calls == {"q1": {"Q1": ["Blue."]}}
     assert job.answer.results.answered_by == {"q1": "Ada"}

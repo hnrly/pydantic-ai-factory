@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from asking import ask
 from opentelemetry import trace
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -327,9 +328,7 @@ async def test_a_request_for_changes_records_who_asked_but_not_their_note() -> N
 
 
 async def test_answered_tool_calls_are_an_answer_span_without_the_reply_text() -> None:
-    question = ModelResponse(
-        parts=[ToolCallPart("ask_person", {"question": "Keep ticked tasks?"}, "q1")]
-    )
+    question = ask("Keep ticked tasks?", call_id="q1")
     designer = Agent(replies(question, FIXED), name="designer", capabilities=[AskPerson()])
     software = Factory("software", [station(designer)])
     store = MemoryStore()

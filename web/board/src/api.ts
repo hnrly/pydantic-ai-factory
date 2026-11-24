@@ -69,12 +69,32 @@ export interface CardPage {
   before: string | null;
 }
 
+/** One choice a question offers. The recommended one comes first. */
+export interface Option {
+  label: string;
+  description: string | null;
+}
+
+/** One question in an AskPerson call, answered by its header. */
+export interface Ask {
+  header: string;
+  question: string;
+  options: Option[];
+  multi_select: boolean;
+}
+
 export interface ToolCall {
   id: string;
   tool: string;
   args: Record<string, unknown>;
+  /** The question of a call that is answered in words. */
   question: string | null;
+  /** The questions of an AskPerson call, each answered by its header. */
+  asks: Ask[];
 }
+
+/** An AskPerson call's answer: each header mapped to a label, labels, or the person's own words. */
+export type AskReply = Record<string, string | string[]>;
 
 export interface Waiting {
   kind: WaitingKind;
@@ -180,7 +200,7 @@ export interface Answer {
   kind: 'approve' | 'changes' | 'reject' | 'reply';
   revision: number;
   note?: string;
-  replies?: Record<string, string>;
+  replies?: Record<string, string | AskReply>;
   approvals?: Record<string, boolean>;
 }
 

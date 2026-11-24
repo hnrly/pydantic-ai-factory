@@ -101,11 +101,19 @@ print(done.output)
 
 The agent resumes in the same conversation and the tool runs. `run.deny(by="ada", note="Not on a Friday.")` stops the tool instead: the agent is told the note and carries on without it.
 
-To let an agent ask questions, give it the `AskPerson` capability, which adds an `ask_person` tool. Each question waits like any tool call; `AskPerson(max_questions=3)` caps them. Answer the question with its text: `run.reply("Yes, keep them.", by="ada")`. [Operating](operating.md#answering-a-waiting-run) shows it end to end.
+### Asking a person
 
-An agent may ask more than one thing at once. Then `run.question` and `run.action` are `None`, and `run.questions` and `run.actions` list every call. Answer them all in one reply, with each question or action as a key, such as `first, second = run.questions`, then `run.reply({first: "Yes, keep them.", second: "Grey."}, by="ada")`. For an action, `True` allows it and `False` denies it.
+To let an agent ask a person what its mission leaves open, give it the `AskPerson` capability. It is built on [Pydantic AI Harness's `AskUser`](https://pydantic.dev/docs/ai/harness/ask-user/), with no answerer, so the run waits instead of asking in the same process. The agent gets the `ask_user_question` tool. One call asks up to ten questions, each with a short `header`, the question, two to six options, and `multi_select` when more than one may be picked. The run waits once for every question the agent asked in one response: that is one round.
 
-A reply needs exactly one answer for each call, so `run.reply` refuses one that misses a call, and names it. `run.reply("Yes.", by="ada")` on a run that waits on two questions is refused, and the error says to use the mapping. Each verb wraps Pydantic AI's `DeferredToolResults` in a `Reply` that names the run and who answered.
+`AskPerson` adds two things to `AskUser`. Its instructions tell the agent to ask everything in one call, to say in each question why it matters, and to put the option it recommends first, with " (Recommended)" at the end of its label. And it caps the rounds: once `max_rounds` rounds, three by default, have been answered, the tool is taken away and the agent carries on. `AskPerson(max_rounds=0)` gives the agent no way to ask.
+
+Each question is a `Question` in `run.questions`, with its `header`, its text, its `options` and `multi_select`. Answer it with one option's label, a list of labels for a `multi_select` question, or your own words: `run.reply("Keep them (Recommended)", by="ada")`. The answers to one call go back to the agent together, as `AskUser` makes them, `{header: [label]}`, with your own words in place of a label. [Operating](operating.md#answering-a-waiting-run) shows it end to end.
+
+A tool of your own can wait for a person too: raise Pydantic AI's `CallDeferred` with `kind="question"` and the question as `question` in its metadata. Its `Question` has no header and no options, and you answer it in words.
+
+An agent may ask more than one thing at once. Then `run.question` and `run.action` are `None`, and `run.questions` and `run.actions` list every question and call. Answer them all in one reply, with each question or action as a key, such as `first, second = run.questions`, then `run.reply({first: "Keep them (Recommended)", second: "Grey, please."}, by="ada")`. For an action, `True` allows it and `False` denies it.
+
+A reply needs exactly one answer for each question and each call, so `run.reply` refuses one that misses a question, and names it. An answer that picks a label its question does not offer, or more than one label for a question that is not `multi_select`, is refused with the harness's reason. `run.reply("Yes.", by="ada")` on a run that waits on two questions is refused, and the error says to use the mapping. Each verb wraps Pydantic AI's `DeferredToolResults` in a `Reply` that names the run and who answered.
 
 `ctx.run_agent` lets the run wait by adding `DeferredToolRequests` to the agent's output type. Pydantic AI refuses that for an agent with output validators, so such an agent keeps its own output type and runs normally. To let it wait as well, put `DeferredToolRequests` in its `output_type` yourself.
 
