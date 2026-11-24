@@ -10,11 +10,11 @@ A factory is a line of stations, each doing one job, with a person approving the
 ## Install
 
 ```bash
-pip install pydantic-ai-factory "pydantic-ai-harness[coder,anthropic]"
+pip install "pydantic-ai-factory[coder]" "pydantic-ai-slim[anthropic]"
 export ANTHROPIC_API_KEY=...
 ```
 
-The builder uses [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/) to write files. Run the sample in an empty folder: the app is written there.
+The core is built on [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/). The `coder` extra adds the harness's Coder, which the builder uses to write files. Run the sample in an empty folder: the app is written there.
 
 ## Your first factory
 

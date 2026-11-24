@@ -85,6 +85,14 @@ The words used below each have a page under Concepts, starting with [factories](
 
 **Why.** The claim that the core is generic should rest on a package boundary, not on discipline.
 
+## Pydantic AI Harness is part of the core
+
+**Decided.** `pydantic-ai-factory` depends on Pydantic AI Harness, and any core layer may import it. The core uses the harness's capabilities where one fits, such as `Skills` for Agent Skills, rather than building its own. Harness extras that bring heavy dependencies, such as Coder, are optional extras of the core: `pip install "pydantic-ai-factory[coder]"`.
+
+**Why.** People should be able to build their own factory, such as a software factory of their own, from the core and Pydantic AI without the opinionated software package. Asking a person and loading skills are core features, and the harness already provides them. A copy of our own would drift from it.
+
+**Rejected.** Putting the harness behind a `methodologies` extra that only Elephant Goldfish needed. It kept the harness's capabilities out of the core layers that need them, such as asking a person in `stations`, and it needed a guarded import and tests that hide the harness.
+
 ## The type is `Artifact`
 
 **Decided.** The type is spelled `Artifact`, and these pages use "artifact" as a defined term. All other prose is British.

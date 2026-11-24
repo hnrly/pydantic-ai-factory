@@ -23,10 +23,17 @@ classifiers = [
 ]
 dependencies = [
   "pydantic-ai-slim>=2.68,<3",
+  # Capabilities the core builds on, such as Skills and AskUser. Heavy harness extras are
+  # optional extras below.
+  "pydantic-ai-harness[skills]>=0.68,<0.69",
   "pydantic>=2.14,<3",
   "opentelemetry-api>=1.30,<2",
   "typing-extensions>=4.12",
 ]
+
+[project.optional-dependencies]
+# The harness's Coder: file editing and shell tools for agents that write code.
+coder = ["pydantic-ai-harness[coder]>=0.68,<0.69"]
 
 [project.urls]
 Homepage = "https://github.com/hnrly/pydantic-ai-factory"

@@ -4,7 +4,7 @@ This file tells a coding agent, or a new contributor, how to work here. The libr
 
 ## The shape of the code
 
-- `src/pydantic_ai_factory/` is the generic core. It holds no software words and never imports a domain package.
+- `src/pydantic_ai_factory/` is the generic core. It holds no software words and never imports a domain package. Anyone should be able to build their own factory from the core and Pydantic AI alone, such as a software factory of their own, without the opinionated `packages/software/`.
 - `packages/software/` is the software domain: stations such as Design. It may import the core.
 - Core layers import downwards only: `methodologies`, `stores`, `factory`, `stations`, `_methodology`, `gates`, `artifacts`, `contracts`. `uv run lint-imports` checks both rules. A `cli` layer is reserved at the top but does not exist yet: the `factory` command lives in `packages/software/`.
 - `_tracing` is a side module any layer may use. It depends only on the OpenTelemetry API.
@@ -13,6 +13,23 @@ This file tells a coding agent, or a new contributor, how to work here. The libr
 ## Pydantic AI first
 
 Before writing infrastructure, check what Pydantic AI already provides, against the version in `uv.lock`. Do not add a second scheduler, serialiser, tool registry or retry loop.
+
+Pydantic AI Harness is a core dependency, and any core layer may import it. Harness extras that bring heavy dependencies, such as Coder or a sandbox, are optional extras of the core. The core must import and run without them.
+
+### Check the harness before every feature
+
+For every feature you build, check whether Pydantic AI or the harness already provides it, before you design it. Read the documentation for the versions in `uv.lock`:
+
+1. The `pydantic-ai-harness` and `building-pydantic-ai-agents` skills, when your agent has them installed. They list the harness capabilities and how to use them.
+2. The installed packages. Each harness capability has a `README.md` in `.venv/lib/python*/site-packages/pydantic_ai_harness/<capability>/`. Pydantic AI's own capabilities are in `pydantic_ai/capabilities/`.
+3. The documentation sites, [Pydantic AI](https://pydantic.dev/docs/ai/) and [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/), through Context7 or the web.
+
+Then:
+
+- Use the existing capability when one fits, such as `AskUser` for asking a person or `Skills` for Agent Skills. Wrap it thinly only for what it lacks.
+- If you build your own, say why the existing one does not fit, in the pull request and on the Decisions page.
+- Do not import a harness module whose name starts with `_`. Use a public API, or write the small piece yourself.
+- In the pull request, list what you checked and what you found, under "How it was proven".
 
 - "Capability" means Pydantic AI's `AbstractCapability`, nothing else. Give each one a stable `id`.
 - A capability instance is reused across runs. Keep per-run state out of it, or return a fresh instance from `for_run()`.
