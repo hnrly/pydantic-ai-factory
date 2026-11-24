@@ -37,7 +37,7 @@ export interface RunSummary {
   revision: number | null;
   created_at: string | null;
   updated_at: string | null;
-  last_change: string | null;
+  last_change: string;
   waiting: Waiting | null;
   actions: Action[];
 }

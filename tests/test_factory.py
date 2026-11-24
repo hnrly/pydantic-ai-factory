@@ -23,6 +23,7 @@ from pydantic_ai_factory import (
     Run,
     StationContext,
     StationInputInvalid,
+    StoreSchemaMismatch,
     Verdict,
     escalate,
     failed,
@@ -519,7 +520,7 @@ async def test_a_runs_times_are_in_utc_even_when_read_back_from_json() -> None:
 
     restored = Run.model_validate_json(run.model_dump_json())
     for when in (run.created_at, run.updated_at, restored.created_at, restored.updated_at):
-        assert when is not None and when.utcoffset() == timedelta(0)
+        assert when.utcoffset() == timedelta(0)
         assert before <= when <= datetime.now(UTC)
 
 
@@ -545,36 +546,20 @@ async def test_a_resumed_run_keeps_its_created_at_and_moves_its_updated_at(clock
 
     assert done.outcome == "passed"
     assert done.created_at == waiting.created_at == clock.readings[0]
-    assert waiting.updated_at is not None
     assert done.updated_at == clock.readings[-1] > waiting.updated_at
     assert (await store.get_run(done.run_id)).created_at == clock.readings[0]
 
 
-async def test_a_run_saved_without_times_loads_and_a_resume_leaves_its_created_at_empty(
-    clock: Clock, tmp_path: Path
+async def test_a_run_saved_by_0_1_without_times_is_refused_with_a_schema_mismatch(
+    tmp_path: Path,
 ) -> None:
-    @gate(version="1")
-    def sign_off(output: Artifact[Checked], evidence: Evidence) -> Verdict:
-        return escalate("only a person can settle this")
-
-    @station(gate=sign_off, name="check")
-    async def approve_me(ctx: StationContext[Deps], draft: Draft) -> Checked:
-        return Checked(text=draft.text)
-
-    waiting_factory = Factory("document", [draft, approve_me, publish])
     store = LocalStore(tmp_path)
-    waiting = await waiting_factory.run(Brief(goal="x"), store=store, deps=Deps())
+    run = await factory().run(Brief(goal="x"), store=store, deps=Deps())
     # Rewrite the saved file as 0.1 would have written it: with neither time.
-    path = store.run_path_for(waiting.run_id)
+    path = store.run_path_for(run.run_id)
     saved_by_0_1 = json.loads(path.read_bytes())
     del saved_by_0_1["created_at"], saved_by_0_1["updated_at"]
     path.write_text(json.dumps(saved_by_0_1))
 
-    old = await store.get_run(waiting.run_id)
-    assert (old.created_at, old.updated_at) == (None, None)
-
-    done = await waiting_factory.resume(old, old.approve(by="ana"), store=store, deps=Deps())
-
-    assert done.outcome == "passed"
-    assert done.created_at is None
-    assert done.updated_at == clock.readings[-1]
+    with pytest.raises(StoreSchemaMismatch, match="another version"):
+        await store.get_run(run.run_id)

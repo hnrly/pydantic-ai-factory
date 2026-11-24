@@ -45,7 +45,7 @@ Name a factory for what it makes, such as `"software"`, not for one piece of wor
 | `waiting` | What a person is being asked, when the outcome is `"waiting"`. See [approvals](approvals.md). |
 | `steps` | One result per station attempt, in order. |
 | `approvals` | Every decision a person made. |
-| `created_at` | When the run was first saved, in UTC. It never changes. It is `None` on a run first saved by version 0.1. |
+| `created_at` | When the run was first saved, in UTC. It never changes. |
 | `updated_at` | When the run was last saved, in UTC. For a waiting run, that is when it started waiting. |
 
 `"failed"` means a [gate](gates.md) judged the work and it fell short. `"did_not_run"` means something could not be done at all, such as an unreachable model. The library never reports one as the other.

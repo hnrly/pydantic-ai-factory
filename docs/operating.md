@@ -31,7 +31,7 @@ for run in store.list_runs_sync(outcome="waiting", order="oldest"):
     #> approval designer A shopping list web page.
 ```
 
-A waiting run's `updated_at` is when it started waiting, so it tells you how long it has waited. Pass `factory="software"` to list one factory's runs. [Listing runs](stores.md#listing-runs) has the rest: the limit, and where runs saved by version 0.1 go.
+A waiting run's `updated_at` is when it started waiting, so it tells you how long it has waited. Pass `factory="software"` to list one factory's runs. [Listing runs](stores.md#listing-runs) has the rest, such as the limit.
 
 ## Answering a waiting run
 
@@ -164,7 +164,7 @@ STALLED_AFTER = timedelta(minutes=10)
 def stalled_runs(store: SQLiteStore, now: datetime | None = None) -> list[Run]:
     cutoff = (now or datetime.now(UTC)) - STALLED_AFTER
     running = store.list_runs_sync(outcome="running", order="oldest")
-    return [run for run in running if run.updated_at is not None and run.updated_at < cutoff]
+    return [run for run in running if run.updated_at < cutoff]
 
 
 designer = Agent("anthropic:claude-opus-5-5", name="designer", instructions="Write a short design.")
@@ -189,7 +189,7 @@ print(len(stalled_runs(store, now=datetime.now(UTC) + timedelta(minutes=11))))
 #> 1
 ```
 
-The run is not stalled straight away: it looks like a live station for the first ten minutes. A running run saved by version 0.1 has no `updated_at`, so this check cannot tell how old it is and leaves it out.
+The run is not stalled straight away: it looks like a live station for the first ten minutes.
 
 A stalled run cannot be resumed yet. `factory.resume` carries on only a run that is waiting for a person. Carrying on a run that stopped part-way needs [durable runs](roadmap.md#next), which are on the roadmap. Until then, start the mission again as a new run.
 
