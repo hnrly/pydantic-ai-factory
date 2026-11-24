@@ -36,6 +36,8 @@ dependencies = [
 coder = ["pydantic-ai-harness[coder]>=0.68,<0.69"]
 # The board's web process: `board_app` in `pydantic_ai_factory.serve`.
 web = ["fastapi>=0.115,<1", "uvicorn>=0.32,<1"]
+# Measuring factories and stations: `pydantic_ai_factory.evals`, built on Pydantic Evals.
+evals = ["pydantic-evals>=2.68,<3"]
 
 [project.urls]
 Homepage = "https://github.com/hnrly/pydantic-ai-factory"
@@ -50,7 +52,7 @@ pydantic-ai-factory-software = { workspace = true }
 
 [dependency-groups]
 dev = [
-  "pydantic-ai-factory[web]",
+  "pydantic-ai-factory[web,evals]",
   "pydantic-ai-factory-software",
   "anyio>=4,<5",
   # FastAPI's TestClient, for the board's tests.
@@ -60,8 +62,6 @@ dev = [
   # The getting-started sample builds with Pydantic AI Harness. Its docs test needs
   # `coder`; the `live` tests need `anthropic`, the provider the samples name.
   "pydantic-ai-harness[coder,anthropic]>=0.68,<0.69",
-  # The evaluation set in evals/ is built on it.
-  "pydantic-evals>=2.68,<3",
   "pyright>=1.1.410,<2",
   "pytest>=9,<10",
   "pytest-examples>=0.0.18,<0.1",
@@ -129,6 +129,7 @@ type = "layers"
 containers = ["pydantic_ai_factory"]
 # Highest layer first. A layer in brackets may not exist yet; it is added by a later change.
 layers = [
+  "(evals)",
   "(serve)",
   "(cli)",
   "(methodologies)",
