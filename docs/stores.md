@@ -50,7 +50,7 @@ store = MemoryStore()
 run_id = software.run_sync("A to-do list web page.", store=store).run_id
 
 run = store.get_run_sync(run_id)
-done = software.resume_sync(run, run.approve(by="ada"), store=store)
+done = software.resume_sync(run.approve(by="ada"), store=store)
 print(done.outcome)
 #> passed
 ```
@@ -73,7 +73,7 @@ software = Factory("software", [station(designer, approval=True)])
 store = MemoryStore()
 first = software.run_sync("A to-do list web page.", store=store)
 second = software.run_sync("A shopping list web page.", store=store)
-software.resume_sync(second, second.approve(by="ada"), store=store)
+software.resume_sync(second.approve(by="ada"), store=store)
 
 waiting = store.list_runs_sync(outcome="waiting", order="oldest")
 print(len(waiting), waiting[0].run_id == first.run_id, waiting[0].waiting.station)
@@ -94,7 +94,7 @@ Choose it when more than one process on one machine shares the work, such as a w
 
 Two processes can save the same run at once. One wins, and the other gets `RunConflict`, as with every store. A save waits up to `busy_timeout` seconds, 5 by default, for another process to finish writing. If it waits longer, it raises `StoreBusy`, which is a kind of `RunConflict`. So `RunConflict` means someone answered first, unless it is a `StoreBusy`, which means try again.
 
-The file keeps its schema version in SQLite's own `user_version` slot. A file written with another schema version, by another version of the library, is refused with `StoreSchemaMismatch`. Its message names both versions. A file that has the store's tables, `artifacts` or `runs`, but no version is refused the same way. Other tables may share the file: the example app keeps its jobs table there.
+The file keeps its schema version, now 2, in SQLite's own `user_version` slot. A file written with another schema version, by another version of the library, is refused with `StoreSchemaMismatch`. Its message names both versions. A file that has the store's tables, `artifacts` or `runs`, but no version is refused the same way. Other tables may share the file: the example app keeps its jobs table there.
 
 `SQLiteStore` is for one machine. Do not keep its file on a network share: SQLite's locks are not reliable there.
 
@@ -115,7 +115,7 @@ store = SQLiteStore("factory.db")
 async def approve(run_id: str, user_name: str) -> dict[str, str]:
     """Route POST /runs/{run_id}/approve here, after your sign-in has named the user."""
     run = await store.get_run(run_id)
-    done = await software.resume(run, run.approve(by=user_name), store=store)
+    done = await software.resume(run.approve(by=user_name), store=store)
     return {"outcome": done.outcome}
 ```
 
@@ -130,7 +130,7 @@ A store written for version 0.1 must add `list_runs`. Every store keeps these ru
 - An artifact comes back from `get` exactly as it was put.
 - `put` refuses an artifact that does not match its digest, and `get` refuses one asked for under the wrong ref. Both raise `ArtifactCorrupt`.
 - A run comes back from `get_run` exactly as it was saved.
-- A stored run that this version cannot read, such as one saved by version 0.1, raises `StoreSchemaMismatch`. `decode_run` does this for you.
+- A stored run that this version cannot read, such as one saved by version 0.1, or one that holds `approvals` instead of `answers`, raises `StoreSchemaMismatch`. `decode_run` does this for you.
 - `put_run(run, replaces=previous)` saves only if the stored run is still `previous`. Otherwise it raises `RunConflict` and saves nothing.
 - `put_run(run, replaces=None)` saves only if no run has that id. Otherwise it raises `RunConflict`.
 - `list_runs` returns the latest save of each run, filtered by `outcome` and `factory` when given.

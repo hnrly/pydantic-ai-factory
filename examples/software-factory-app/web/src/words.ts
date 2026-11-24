@@ -1,5 +1,5 @@
 // Words and times as the interface shows them.
-import type { DisplayState, Waiting } from './api';
+import type { AnswerGiven, DisplayState, Waiting } from './api';
 
 export const STATE_LABEL: Record<DisplayState, string> = {
   earlier_version: 'Earlier version',
@@ -16,6 +16,13 @@ export const WAITING_LABEL: Record<Waiting['kind'], string> = {
   approval: 'Waiting for approval',
   escalation: 'Escalated to a person',
   'tool-calls': 'An agent needs an answer',
+};
+
+export const ANSWER_LABEL: Record<AnswerGiven['kind'], string> = {
+  approve: 'approved',
+  changes: 'asked for changes',
+  reject: 'rejected',
+  reply: 'replied',
 };
 
 export const NEEDS_NAME = 'Type your name at the top first.';

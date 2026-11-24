@@ -73,7 +73,7 @@ run = software.run_sync("A to-do list web page where I can add tasks and tick th
 print(run.waiting.output)
 #> One page, index.html. Type a task and press Enter to add it; tick its box to mark it done.
 
-done = software.resume_sync(run, run.approve(by="ada"), store=store)
+done = software.resume_sync(run.approve(by="ada"), store=store)
 print(done.output.review)
 #> The page matches the design: tasks can be added and ticked off. Nothing is wrong.
 print(done.output.diff)

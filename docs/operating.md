@@ -35,13 +35,13 @@ A waiting run's `updated_at` is when it started waiting, so it tells you how lon
 
 ## Answering a waiting run
 
-Load the run by its id, answer it and pass the answer to `factory.resume`. It need not be the process that started the run. It only needs the same store and a factory of the same shape.
+Load the run by its id, answer it and pass the answer to `factory.resume`. The answer names its run, so `resume` loads the run from the store itself. It need not be the process that started the run. It only needs the same store and a factory of the same shape.
 
 A run waits for one of three things. `run.waiting.kind` says which:
 
 - `"approval"`: a station with `approval=True` passed its checks. Answer with `run.approve`, `run.request_changes` or `run.reject`.
 - `"escalation"`: something only a person should settle, such as a check that still fails after the allowed retries. The same three answers apply. Approving accepts the work as it stands.
-- `"tool-calls"`: an agent asked a person a question, or asked before an action. Answer with Pydantic AI's `DeferredToolResults`, which `run.waiting.requests.build_results` makes.
+- `"tool-calls"`: an agent asked a person a question, or asked before an action. `run.question` says what it asked; answer with `run.reply("...", by=...)`. For an action, answer with `run.allow` or `run.deny`.
 
 Here the designer can ask questions, through [`AskPerson`](approvals.md#tool-calls), and its design needs approval. Its run waits twice, and each answer comes from a fresh store object, as it would in another process:
 
@@ -64,22 +64,22 @@ store = SQLiteStore("factory.db")
 run = store.get_run_sync(run_id)
 print(run.waiting.kind)
 #> tool-calls
-question = run.waiting.requests.calls[0]
-print(question.args["question"])
+print(run.question)
 #> Should ticked tasks stay after a reload?
-answer = run.waiting.requests.build_results(calls={question.tool_call_id: "Yes, keep them."})
-run = software.resume_sync(run, answer, store=store)
+answer = run.reply("Yes, keep them.", by="ada")
+run = software.resume_sync(answer, store=store)
 
 store = SQLiteStore("factory.db")
 run = store.get_run_sync(run_id)
 print(run.waiting.kind)
 #> approval
-done = software.resume_sync(run, run.approve(by="ada"), store=store)
+answer = run.approve(by="ada")
+done = software.resume_sync(answer, store=store)
 print(done.outcome)
 #> passed
 ```
 
-[Approvals](approvals.md) says what each answer does to the run.
+[Approvals](approvals.md) says what each answer does to the run. Every answer, tool replies included, is recorded in `run.answers`.
 
 ## Hearing when a run starts waiting
 
@@ -110,7 +110,7 @@ Keep `on_step` short, and catch your own errors inside it. The next station wait
 
 ## When two people answer at once
 
-Two people can open the same waiting run and answer it together. The first answer is saved. The second gets `RunConflict` before any of its work runs, so a design is never both approved and rejected. Load the run again and show the person what happened:
+Two people can open the same waiting run and answer it together. Each answer carries the revision its person saw. The first answer is saved. The second gets `RunConflict` before any of its work runs, so a design is never both approved and rejected. To find out first, without running anything, call `factory.check(run, answer)`: its problem has `stale=True`. Load the run again and show the person what happened:
 
 ```python
 from pydantic_ai import Agent
@@ -124,10 +124,10 @@ run_id = software.run_sync("A to-do list web page.", store=store).run_id
 
 adas_page = store.get_run_sync(run_id)
 bobs_page = store.get_run_sync(run_id)
-software.resume_sync(adas_page, adas_page.approve(by="ada"), store=store)
+software.resume_sync(adas_page.approve(by="ada"), store=store)
 
 try:
-    software.resume_sync(bobs_page, bobs_page.reject(by="bob", note="Not now."), store=store)
+    software.resume_sync(bobs_page.reject(by="bob", note="Not now."), store=store)
 except StoreBusy:
     print("The store was busy. Try again.")
 except RunConflict:
@@ -211,7 +211,7 @@ run = before.run_sync("A to-do list web page.", store=store)
 
 after = Factory("software", [station(designer, approval=True), station(builder)])
 try:
-    after.resume_sync(run, run.approve(by="ada"), store=store)
+    after.resume_sync(run.approve(by="ada"), store=store)
 except ApprovalRefused as error:
     print("refused:", "another shape" in str(error))
     #> refused: True

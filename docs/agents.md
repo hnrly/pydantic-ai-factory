@@ -35,7 +35,7 @@ It returns Pydantic AI's own `AgentRunResult`, and passes any other argument, su
 `ctx.run_agent` fills in the arguments of `Agent.run` that a station would otherwise pass by hand, and keeps what comes back.
 
 - **The conversation.** It stores the agent's Pydantic AI `Conversation`, keyed by the agent's `name`, and passes it back on a later attempt.
-- **Questions to a person.** When the agent calls a tool that waits for a person, the run waits. The answer is passed back as Pydantic AI's `DeferredToolResults`. See [approvals](approvals.md#tool-calls).
+- **Questions to a person.** When the agent calls a tool that waits for a person, the run waits. `run.question` says what it asked, and `run.reply("...", by=...)` answers it. See [approvals](approvals.md#tool-calls).
 - **Methodologies.** It collects the evidence each [methodology](methodologies.md) on the agent records, and adds the methodology's gate to the station's.
 - **Retries.** It sizes the agent's output retry budget so a methodology's review rounds and ordinary validation retries do not starve each other.
 

@@ -19,11 +19,21 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from pydantic_ai import DeferredToolResults
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models import Model
 
-from pydantic_ai_factory import ApprovalRefused, Decision, FactoryError, LocalStore, Run
+from pydantic_ai_factory import (
+    Answer,
+    ApprovalRefused,
+    Approve,
+    Changes,
+    FactoryError,
+    LocalStore,
+    Question,
+    Reject,
+    Reply,
+    Run,
+)
 from pydantic_ai_factory.methodologies import GoldfishReport
 
 from . import offline_model
@@ -175,43 +185,31 @@ def _show_waiting(run: Run, store: LocalStore, say: Say) -> None:
     say(f"Waiting for a decision on {waiting.artifact}.")
 
 
-def _questions(run: Run) -> list[tuple[str, str]]:
-    """Each question an agent asked, as (tool call id, question)."""
-    requests = run.waiting.requests if run.waiting else None
-    if requests is None:
-        return []
-    return [
-        (call.tool_call_id, str(requests.metadata.get(call.tool_call_id, {}).get("question", "")))
-        for call in requests.calls
-    ]
-
-
-def _answer_calls(
-    args: argparse.Namespace, run: Run, ask: Ask, say: Say
-) -> DeferredToolResults | None:
-    requests = run.waiting.requests if run.waiting else None
-    if requests is None:
-        return None
-    if requests.approvals:
+def _answer_calls(args: argparse.Namespace, run: Run, ask: Ask, say: Say) -> Reply | None:
+    if run.actions:
         raise CommandError(
             f"run {run.run_id} waits for a tool call to be allowed; answer it from Python"
         )
-    answers: dict[str, str] = {}
-    for call_id, question in _questions(run):
+    answers: dict[Question, str] = {}
+    for question in run.questions:
         say(f"Question: {question}")
         if args.answer:
-            answers[call_id] = args.answer
+            answers[question] = args.answer
             continue
         if args.no_input:
             return None
         answer = ""
         while not answer:
             answer = ask("Your answer: ").strip()
-        answers[call_id] = answer
-    return requests.build_results(calls=answers)
+        answers[question] = answer
+    if not answers:
+        return None
+    return run.reply(answers, by=args.by)
 
 
-def _decide(args: argparse.Namespace, run: Run, ask: Ask, say: Say) -> Decision | None:
+def _decide(
+    args: argparse.Namespace, run: Run, ask: Ask, say: Say
+) -> Approve | Changes | Reject | None:
     if args.approve:
         return run.approve(by=args.by)
     if args.changes:
@@ -235,6 +233,15 @@ def _decide(args: argparse.Namespace, run: Run, ask: Ask, say: Say) -> Decision 
         say("Please answer a, c or r.")
 
 
+# How ``factory show`` words each kind of answer.
+_ANSWERED = {
+    "approve": "approved",
+    "changes": "changes requested",
+    "reject": "rejected",
+    "reply": "replied",
+}
+
+
 def _write_design(run: Run, store: LocalStore, out: Path) -> Path:
     if run.output_ref is None:
         raise CommandError(f"run {run.run_id} has no design to write")
@@ -256,7 +263,7 @@ def _carry_on(
     """Answer the run until it ends or must wait, then report how it went."""
     while run.waiting is not None:
         _show_waiting(run, store, say)
-        answer: Decision | DeferredToolResults | None
+        answer: Answer | None
         if run.waiting.kind == "tool-calls":
             answer = _answer_calls(args, run, ask, say)
         else:
@@ -269,7 +276,7 @@ def _carry_on(
             flag = '--answer "YOUR ANSWER"' if run.waiting.kind == "tool-calls" else "--approve"
             say(f"Answer it with: factory resume {run.run_id} {flag}{offline}")
             return WAITING
-        run = factory.resume_sync(run, answer, store=store)
+        run = factory.resume_sync(answer, store=store)
 
     say(f"Run {run.run_id} {run.outcome.replace('_', ' ')}.")
     if run.outcome != "passed":
@@ -307,9 +314,9 @@ def _show(args: argparse.Namespace, say: Say) -> int:
     say(f"Run {run.run_id} of factory {run.factory}: {run.outcome.replace('_', ' ')}")
     for step in run.steps:
         say(f"  {step.station} attempt {step.attempt}: {step.outcome.replace('_', ' ')}")
-    for decision in run.approvals:
-        note = f": {decision.note}" if decision.note else ""
-        say(f"  {decision.decision.replace('_', ' ')} by {decision.by}{note}")
+    for answer in run.answers:
+        note = f": {answer.note}" if not isinstance(answer, Reply) and answer.note else ""
+        say(f"  {_ANSWERED[answer.kind]} by {answer.by}{note}")
     _show_waiting(run, store, say)
     if run.waiting is not None:
         return WAITING

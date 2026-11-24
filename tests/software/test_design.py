@@ -125,12 +125,12 @@ def test_approving_the_design_passes_the_run_with_the_design_as_its_output() -> 
     store = MemoryStore()
     run = software.run_sync(MISSION, store=store)
 
-    done = software.resume_sync(run, run.approve(by="ada"), store=store)
+    done = software.resume_sync(run.approve(by="ada"), store=store)
 
     assert done.outcome == "passed"
     assert isinstance(done.output, Design)
     assert done.output.behaviour[-1] == BLANK
-    assert [decision.by for decision in done.approvals] == ["ada"]
+    assert [decision.by for decision in done.answers] == ["ada"]
 
 
 def test_a_finding_goes_back_to_the_designer_who_revises_in_the_same_conversation() -> None:
@@ -172,9 +172,11 @@ def test_a_contested_finding_goes_to_a_person_who_can_accept_the_design_once() -
         "clean_final_round: r1-readiness-1 contested: The design does not say where the "
         "styles go. (The mission asks for one file.)",
     )
-    done = software.resume_sync(run, run.approve(by="ada", note="One file is right."), store=store)
+    done = software.resume_sync(run.approve(by="ada", note="One file is right."), store=store)
     assert done.outcome == "passed"
-    assert [(d.waiting, d.overrode) for d in done.approvals] == [("escalation", True)]
+    assert [a.model_dump(include={"waiting", "overrode"}) for a in done.answers] == [
+        {"waiting": "escalation", "overrode": True}
+    ]
 
 
 def test_asking_for_changes_sends_the_note_to_the_designer_and_reviews_afresh() -> None:
@@ -187,7 +189,7 @@ def test_asking_for_changes_sends_the_note_to_the_designer_and_reviews_afresh() 
     run = software.run_sync(MISSION, store=store)
 
     run = software.resume_sync(
-        run, run.request_changes(by="ada", note="Add a way to delete tasks."), store=store
+        run.request_changes(by="ada", note="Add a way to delete tasks."), store=store
     )
 
     assert run.waiting is not None and run.waiting.kind == "approval"

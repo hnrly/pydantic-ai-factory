@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic_ai import DeferredToolResults
 from pydantic_ai.agent import AbstractAgent
 
 from .._methodology import Methodology
@@ -15,8 +14,9 @@ from ..artifacts import ArtifactRef, ArtifactStore
 from ..contracts import DefinitionError, check_name, digest_of, run_sync
 from ..stations import Station
 from ..stations._station import type_name
+from ._answer import Answer, AnswerProblem, Approve, Reply, reply_problem
 from ._mission import Accept, Declined, IntakeError, Mission, Signal, signal_artifact
-from ._runner import Decision, OnStep, Run, resume_factory, run_factory
+from ._runner import OnStep, Run, ahead_reason, resume_factory, run_factory, stale_reason
 from ._store import Store
 
 OnLimit = Literal["halt", "continue", "escalate"]
@@ -179,10 +179,35 @@ class Factory:
             on_step=on_step,
         )
 
+    def check(self, run: Run, answer: Answer) -> AnswerProblem | None:
+        """Say why ``answer`` does not fit ``run``, without running anything.
+
+        Returns ``None`` when the answer fits, and otherwise the first problem found, in
+        this order: the answer is for another run; it was made at an earlier revision of
+        the run (``stale`` is then true), or names a revision the run has not reached;
+        the run is not waiting; a factory of another shape made the run; the answer
+        names another station, wait or piece of work, or claims to have overridden a
+        gate; its kind does not fit the wait; it approves a wait that offers no work;
+        or, for a reply, there is not exactly one result for each pending tool call.
+        :meth:`resume` applies the same rules.
+        """
+        if answer.run_id == run.run_id:
+            if answer.revision < run.revision:
+                return AnswerProblem(
+                    stale=True, reason=stale_reason(run.run_id, answer.revision, run.revision)
+                )
+            if answer.revision > run.revision:
+                return AnswerProblem(
+                    stale=False, reason=ahead_reason(run.run_id, answer.revision, run.revision)
+                )
+        problem = _problem_with(self, run, answer)
+        if problem is None:
+            return None
+        return AnswerProblem(stale=False, reason=f"run {run.run_id!r}: {problem}")
+
     async def resume(
         self,
-        run: Run,
-        answer: Decision | DeferredToolResults,
+        answer: Answer,
         *,
         store: Store,
         deps: Any = None,
@@ -190,33 +215,32 @@ class Factory:
     ) -> Run:
         """Carry on a run that is waiting for a person, with that person's answer.
 
-        ``answer`` is a decision from ``run.approve``, ``run.request_changes`` or
-        ``run.reject``, or, when the run waits on tool calls, Pydantic AI's
-        ``DeferredToolResults``. Approving moves the work on; on an escalation it accepts
-        the work as it stands. Asking for changes sends the work back to the station once,
-        with the note as feedback. Rejecting ends the run as failed.
+        ``answer`` comes from ``run.approve``, ``run.request_changes``, ``run.reject`` or,
+        when the run waits on tool calls, ``run.reply``. It names its run, so the run is
+        loaded from ``store``, and can be resumed in another process. Approving moves the
+        work on; on an escalation it accepts the work as it stands. Asking for changes
+        sends the work back to the station once, with the note as feedback. Rejecting
+        ends the run as failed. Replying hands the results to the waiting agent.
 
-        The run is carried on from ``run`` and the store alone, so it can be resumed in
-        another process. Raises :class:`ApprovalRefused`, changing nothing, if the answer
-        does not fit what the run waits for, and :class:`RunConflict` if the stored run
-        has moved on since ``run`` was read.
+        The answer is recorded in ``run.answers``. Raises :class:`RunConflict`, changing
+        nothing, if the run has moved on since the answer's revision, and
+        :class:`ApprovalRefused` for any other problem :meth:`check` finds.
 
         The call is traced as a span of its own, in a new trace, with the same
         ``factory.run.id`` as the run that started the work.
         """
-        return await resume_factory(self, run, answer, store=store, deps=deps, on_step=on_step)
+        return await resume_factory(self, answer, store=store, deps=deps, on_step=on_step)
 
     def resume_sync(
         self,
-        run: Run,
-        answer: Decision | DeferredToolResults,
+        answer: Answer,
         *,
         store: Store,
         deps: Any = None,
         on_step: OnStep | None = None,
     ) -> Run:
         """Carry on a waiting run, from code that is not async. See :meth:`resume`."""
-        return run_sync(self.resume(run, answer, store=store, deps=deps, on_step=on_step))
+        return run_sync(self.resume(answer, store=store, deps=deps, on_step=on_step))
 
     def run_sync(
         self,
@@ -335,6 +359,41 @@ class Factory:
             if rule.station.gate is None:
                 findings.append(f"{label}: the station has no gate, so it can never fail")
         return findings
+
+
+def _problem_with(factory: Factory, run: Run, answer: Answer) -> str | None:
+    """The first refusal ``answer`` earns, after the stale rule, in ``Factory.check``'s order."""
+    if answer.run_id != run.run_id:
+        return f"the answer is for run {answer.run_id!r}"
+    waiting = run.waiting
+    if waiting is None:
+        return f"it is not waiting; its outcome is {run.outcome!r}"
+    if run.factory_digest != factory.digest:
+        return (
+            "a factory of another shape made it, so it cannot be resumed here; "
+            "resume it on the factory that started it"
+        )
+    if (answer.station, answer.waiting, answer.work) != (
+        waiting.station,
+        waiting.kind,
+        waiting.artifact,
+    ):
+        return (
+            f"the answer was made on {answer.waiting} at {answer.station!r} for "
+            f"{answer.work}, but the run waits on {waiting.kind} at {waiting.station!r} "
+            f"for {waiting.artifact}"
+        )
+    if isinstance(answer, Approve) and answer.overrode:
+        return "an answer cannot say it overrode a gate; only the factory sets overrode"
+    if waiting.kind == "tool-calls" and not isinstance(answer, Reply):
+        return "it waits on tool calls; answer them with run.reply"
+    if waiting.kind != "tool-calls" and isinstance(answer, Reply):
+        return f"it waits for {waiting.kind}; use run.approve, run.request_changes or run.reject"
+    if isinstance(answer, Approve) and waiting.artifact is None:
+        return f"station {waiting.station!r} offered no work to accept; ask for changes or reject"
+    if isinstance(answer, Reply):
+        return reply_problem(waiting, answer.results)
+    return None
 
 
 def _hands_on(output: Any, input: Any) -> bool:

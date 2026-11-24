@@ -50,7 +50,7 @@ export function summary(fields: Partial<RunSummary> = {}): RunSummary {
 }
 
 export function detail(fields: Partial<RunDetail> = {}): RunDetail {
-  return { ...summary(), steps: [], approvals: [], output: null, jobs: {}, ...fields };
+  return { ...summary(), steps: [], answers: [], output: null, jobs: {}, ...fields };
 }
 
 export function waiting(fields: Partial<Waiting> = {}): Waiting {

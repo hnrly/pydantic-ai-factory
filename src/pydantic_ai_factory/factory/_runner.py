@@ -4,20 +4,21 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal, Self, cast
+from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar, cast
 
 from pydantic import AwareDatetime, Field, model_validator
-from pydantic_ai import DeferredToolResults
+from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied
 
 from .. import _tracing as tracing
 from ..artifacts import Artifact, ArtifactRef
 from ..contracts import Digest, FactoryError, Name, Record, check_name
-from ..stations import Feedback, StationInputInvalid, StationResult, Waiting
+from ..stations import Action, Feedback, Question, StationInputInvalid, StationResult, Waiting
 from ..stations._station import coerce, recorded_as
+from ._answer import Answer, Approve, Changes, Reject, Reply, reply_problem
 from ._mission import Mission, Outcome, Signal, signal_artifact
 from ._store import RunConflict, Store
 
@@ -25,41 +26,20 @@ if TYPE_CHECKING:
     from ._factory import Factory
 
 RunOutcome = Literal["running", "passed", "failed", "did_not_run", "waiting"]
-DecisionKind = Literal["approved", "changes_requested", "rejected"]
 
 OnStep = Callable[["Run"], Awaitable[None]]
+
+_A = TypeVar("_A", Approve, Changes, Reject, Reply)
+_Key = TypeVar("_Key", bound=Question | Action | str)
 
 
 class ApprovalRefused(FactoryError):
     """An answer could not be applied to a run, so nothing changed.
 
-    The run is not waiting, the answer is of the wrong kind, names another artifact, or
-    the factory's shape has changed since the run stopped.
+    The run is not waiting, the answer is of the wrong kind, names another wait or
+    other work, or the factory's shape has changed since the run stopped.
+    ``Factory.check`` says the same thing without raising.
     """
-
-
-class Decision(Record):
-    """A person's answer to an approval or an escalation.
-
-    It names the exact artifact it was made on, by digest, so it cannot be carried over
-    to revised work. ``overrode`` is true when a person approved work that a gate, or a
-    station, had escalated.
-    """
-
-    decision: DecisionKind
-    station: Name
-    waiting: Literal["approval", "escalation"]
-    artifact: ArtifactRef | None
-    by: Name
-    note: str | None = None
-    at: AwareDatetime
-    overrode: bool = False
-
-    @model_validator(mode="after")
-    def _says_why_when_it_must(self) -> Self:
-        if self.decision != "approved" and not (self.note and self.note.strip()):
-            raise ValueError(f"a decision of {self.decision!r} needs a note saying why")
-        return self
 
 
 class Run(Record):
@@ -71,12 +51,15 @@ class Run(Record):
     ``input_ref`` and ``output_ref`` name the artifacts that hold the input and output.
 
     ``waiting`` says what a person is asked. Answer with :meth:`approve`,
-    :meth:`request_changes` or :meth:`reject`, or, for tool calls, with Pydantic AI's
-    ``DeferredToolResults``, and pass the answer to ``Factory.resume``.
+    :meth:`request_changes` or :meth:`reject`. When an agent asked something,
+    :attr:`question` or :attr:`questions` say what, and :attr:`action` or :attr:`actions`
+    what it wants to do; answer with :meth:`reply`, :meth:`allow` or :meth:`deny`. Pass
+    the answer to ``Factory.resume``.
 
-    ``steps`` holds one result per attempt, in order, and ``approvals`` every decision a
-    person made. ``revision`` counts the saves, for compare-and-swap in the store. A run
-    read back from a store holds its payloads as plain JSON data.
+    ``steps`` holds one result per attempt, in order, and ``answers`` every answer a
+    person gave, tool replies included. ``revision`` counts the saves, for
+    compare-and-swap in the store. A run read back from a store holds its payloads as
+    plain JSON data.
 
     ``mission_id`` is the id of the run's mission, and ``mission_ref`` names the artifact
     that records it. When a run of a mission made by intake ends, ``outcome_signal``
@@ -101,7 +84,7 @@ class Run(Record):
     output: Any = None
     waiting: Waiting | None = None
     steps: tuple[StationResult, ...] = ()
-    approvals: tuple[Decision, ...] = ()
+    answers: tuple[Answer, ...] = ()
     reworked: dict[Name, int] = Field(default_factory=lambda: {})
     mission_id: Name | None = None
     mission_ref: ArtifactRef | None = None
@@ -141,37 +124,184 @@ class Run(Record):
         """Return how many times ``station`` was attempted."""
         return len({step.attempt for step in self.steps if step.station == station})
 
-    def approve(self, *, by: str, note: str | None = None) -> Decision:
-        """Approve what this run is waiting on. Pass the result to ``Factory.resume``."""
-        return self._decide("approved", by=by, note=note)
+    # Each answer copies the run's id and its wait, so a caller supplies only who
+    # answered, what they said and, from a web page, the revision they saw. Leaving
+    # ``revision`` out uses the run's own, which is right for code that has just read it.
 
-    def request_changes(self, *, by: str, note: str) -> Decision:
+    def approve(self, *, by: str, note: str | None = None, revision: int | None = None) -> Approve:
+        """Approve what this run is waiting on. Pass the answer to ``Factory.resume``."""
+        return self._answer(Approve, by=by, revision=revision, note=note)
+
+    def request_changes(self, *, by: str, note: str, revision: int | None = None) -> Changes:
         """Send the waiting work back to its station once, with ``note`` as the feedback."""
-        return self._decide("changes_requested", by=by, note=note)
+        return self._answer(Changes, by=by, revision=revision, note=note)
 
-    def reject(self, *, by: str, note: str) -> Decision:
+    def reject(self, *, by: str, note: str, revision: int | None = None) -> Reject:
         """Reject the waiting work. The run ends as failed."""
-        return self._decide("rejected", by=by, note=note)
+        return self._answer(Reject, by=by, revision=revision, note=note)
 
-    def _decide(self, decision: DecisionKind, *, by: str, note: str | None) -> Decision:
-        waiting = self.waiting
-        if waiting is None or waiting.kind == "tool-calls":
+    @property
+    def questions(self) -> tuple[Question, ...]:
+        """The questions an agent is waiting for a person to answer, in the order it asked."""
+        return self.waiting.questions if self.waiting is not None else ()
+
+    @property
+    def question(self) -> Question | None:
+        """The question the run waits on, when it waits on exactly one; otherwise ``None``."""
+        return self.questions[0] if len(self.questions) == 1 else None
+
+    @property
+    def actions(self) -> tuple[Action, ...]:
+        """The tool calls an agent is waiting for a person to allow or deny."""
+        return self.waiting.actions if self.waiting is not None else ()
+
+    @property
+    def action(self) -> Action | None:
+        """The action the run waits on, when it waits on exactly one; otherwise ``None``."""
+        return self.actions[0] if len(self.actions) == 1 else None
+
+    def reply(
+        self,
+        answer: str | Mapping[_Key, Any],
+        /,
+        *,
+        by: str,
+        revision: int | None = None,
+    ) -> Reply:
+        """Answer what an agent asked. Pass the answer to ``Factory.resume``.
+
+        When the run waits on one question, ``answer`` is the text of the answer. When it
+        waits on more than one tool call, ``answer`` maps each :class:`Question` to its
+        answer and each :class:`Action` to ``True`` to allow it or ``False`` to deny it.
+        Pydantic AI's ``ToolApproved`` and ``ToolDenied`` may stand in for ``True`` and
+        ``False``. Raises :class:`ApprovalRefused`, with the reason ``Factory.check`` would
+        give, unless every tool call gets exactly one answer.
+        """
+        waiting = self._tool_calls(revision)
+        if isinstance(answer, str):
+            question = self._only(waiting, "question")
+            answers: dict[str, Any] = {question.call_id: answer}
+        else:
+            answers = {}
+            for key, value in answer.items():
+                call_id = key if isinstance(key, str) else key.call_id
+                if call_id in answers:
+                    raise ApprovalRefused(
+                        f"run {self.run_id!r}: more than one answer for {call_id!r}"
+                    )
+                answers[call_id] = value
+        return self._reply(waiting, answers, by=by, revision=revision)
+
+    def allow(self, *, by: str, revision: int | None = None) -> Reply:
+        """Let the one action the run waits on go ahead. Pass the answer to ``Factory.resume``."""
+        waiting = self._tool_calls(revision)
+        action = self._only(waiting, "action")
+        return self._reply(waiting, {action.call_id: ToolApproved()}, by=by, revision=revision)
+
+    def deny(self, *, by: str, note: str, revision: int | None = None) -> Reply:
+        """Stop the one action the run waits on. The agent is told ``note`` and carries on."""
+        waiting = self._tool_calls(revision)
+        action = self._only(waiting, "action")
+        if not note.strip():
+            raise ApprovalRefused(f"run {self.run_id!r}: denying an action needs a note saying why")
+        denied = ToolDenied(note)
+        return self._reply(waiting, {action.call_id: denied}, by=by, revision=revision)
+
+    def _tool_calls(self, revision: int | None) -> Waiting:
+        """The run's wait, when it can be answered at ``revision`` and is for tool calls."""
+        waiting = self._open(revision)
+        if waiting.kind != "tool-calls":
             raise ApprovalRefused(
-                f"run {self.run_id!r} is not waiting for a decision"
-                + ("; answer its tool calls with DeferredToolResults" if waiting else "")
+                f"run {self.run_id!r}: it waits for {waiting.kind}; "
+                "use run.approve, run.request_changes or run.reject"
             )
+        return waiting
+
+    def _only(self, waiting: Waiting, kind: Literal["question", "action"]) -> Any:
+        """The one question, or the one action, the wait is for, or a refusal saying what to do."""
+        questions, actions = waiting.questions, waiting.actions
+        wanted = questions if kind == "question" else actions
+        if len(wanted) == 1 and len(questions) + len(actions) == 1:
+            return wanted[0]
+        counted = [
+            f"{len(found)} {name}{'' if len(found) == 1 else 's'}"
+            for name, found in (("question", questions), ("action", actions))
+            if found
+        ]
+        raise ApprovalRefused(
+            f"run {self.run_id!r} waits on {' and '.join(counted)}; answer each one: "
+            "run.reply({question: answer, action: True, ...}, by=...)"
+        )
+
+    def _reply(
+        self, waiting: Waiting, answers: dict[str, Any], *, by: str, revision: int | None
+    ) -> Reply:
+        """Build Pydantic AI's results from ``answers``, check them, and wrap them as a reply."""
+        actions = {action.call_id for action in waiting.actions}
+        approvals: dict[str, Any] = {}
+        calls: dict[str, Any] = {}
+        for call_id, value in answers.items():
+            if call_id not in actions:
+                calls[call_id] = value
+            elif isinstance(value, bool | ToolApproved | ToolDenied):
+                approvals[call_id] = value
+            else:
+                raise ApprovalRefused(
+                    f"run {self.run_id!r}: an action is allowed with True or denied with "
+                    f"False, not {value!r}"
+                )
+        results = DeferredToolResults(
+            calls=calls, approvals=approvals, answered_by=dict.fromkeys(answers, by)
+        )
+        if problem := reply_problem(waiting, results):
+            raise ApprovalRefused(f"run {self.run_id!r}: {problem}")
+        return self._answer(Reply, by=by, revision=revision, results=results)
+
+    def _open(self, revision: int | None) -> Waiting:
+        """The run's wait, or why an answer made at ``revision`` cannot be given."""
+        if revision is not None and revision < self.revision:
+            # A person answering a page they loaded earlier: say so, even when the run has
+            # since stopped waiting, so a web page can tell them someone answered first.
+            raise RunConflict(stale_reason(self.run_id, revision, self.revision))
+        if revision is not None and revision > self.revision:
+            raise ApprovalRefused(ahead_reason(self.run_id, revision, self.revision))
+        if self.waiting is None:
+            raise ApprovalRefused(
+                f"run {self.run_id!r} is not waiting; its outcome is {self.outcome!r}"
+            )
+        return self.waiting
+
+    def _answer(self, kind: type[_A], *, by: str, revision: int | None, **said: Any) -> _A:
+        waiting = self._open(revision)
         try:
-            return Decision(
-                decision=decision,
+            return kind(
+                run_id=self.run_id,
+                revision=self.revision if revision is None else revision,
                 station=waiting.station,
                 waiting=waiting.kind,
-                artifact=waiting.artifact,
+                work=waiting.artifact,
                 by=by,
-                note=note,
                 at=datetime.now(UTC),
+                **said,
             )
         except ValueError as error:
             raise ApprovalRefused(f"run {self.run_id!r}: {error}") from error
+
+
+def stale_reason(run_id: str, revision: int, now: int) -> str:
+    """Why an answer made at an earlier revision of a run no longer fits it."""
+    return (
+        f"run {run_id!r} has moved on since revision {revision}: it is "
+        f"at revision {now}; load it again with get_run"
+    )
+
+
+def ahead_reason(run_id: str, revision: int, now: int) -> str:
+    """Why an answer that names a revision the run has not reached does not fit it."""
+    return (
+        f"run {run_id!r}: the answer names revision {revision}, but the run is only at "
+        f"revision {now}"
+    )
 
 
 def _now() -> datetime:
@@ -193,7 +323,7 @@ class _Progress:
     on_step: OnStep | None
     saved: Run | None = None
     steps: list[StationResult] = field(default_factory=lambda: [])
-    approvals: list[Decision] = field(default_factory=lambda: [])
+    answers: list[Answer] = field(default_factory=lambda: [])
     reworked: Counter[str] = field(default_factory=lambda: Counter[str]())
 
     def attempts(self, station: str) -> int:
@@ -234,7 +364,7 @@ class _Progress:
             output=output.payload if output else None,
             waiting=waiting,
             steps=tuple(self.steps),
-            approvals=tuple(self.approvals),
+            answers=tuple(self.answers),
             reworked=dict(self.reworked),
             mission_id=self.mission_id,
             mission_ref=self.mission_ref,
@@ -324,26 +454,30 @@ def _trace_run(span: tracing.Span, run: Run) -> Run:
     return run
 
 
-def _trace_answer(run: Run, waiting: Waiting, answer: Decision | DeferredToolResults) -> None:
+# The names an answer has on a trace. They are the words of the span, not stored data.
+_TRACED: dict[str, str] = {
+    "approve": "approved",
+    "changes": "changes_requested",
+    "reject": "rejected",
+    "reply": "answered",
+}
+
+
+def _trace_answer(run: Run, waiting: Waiting, answer: Answer) -> None:
     """Put the answer a person gave on the trace, as a span of its own.
 
     It records who answered, but never their note or the text of their reply.
     """
-    if isinstance(answer, Decision):
-        decision: str = answer.decision
-        attributes: dict[str, object] = {
-            "factory.answer.by": answer.by,
-            "factory.answer.artifact": answer.artifact.digest if answer.artifact else None,
-            "factory.answer.overrode": answer.overrode,
-        }
-    else:
+    decision = _TRACED[answer.kind]
+    attributes: dict[str, object] = {"factory.answer.by": answer.by}
+    if isinstance(answer, Reply):
         # Tool calls are answered as a whole; the answer is about the waiting conversation.
-        decision = "answered"
-        attributes = {
-            "factory.answer.artifact": (
-                waiting.conversation.digest if waiting.conversation else None
-            ),
-        }
+        attributes["factory.answer.artifact"] = (
+            waiting.conversation.digest if waiting.conversation else None
+        )
+    else:
+        attributes["factory.answer.artifact"] = answer.work.digest if answer.work else None
+        attributes["factory.answer.overrode"] = isinstance(answer, Approve) and answer.overrode
     with tracing.span(
         f"answer {waiting.kind} {decision}",
         {
@@ -452,8 +586,7 @@ async def _run_factory(
 
 async def resume_factory(
     factory: Factory,
-    run: Run,
-    answer: Decision | DeferredToolResults,
+    answer: Answer,
     *,
     store: Store,
     deps: Any = None,
@@ -462,40 +595,33 @@ async def resume_factory(
     """Do the work of :meth:`Factory.resume`, traced as one span of its own."""
     with _trace_factory(factory, resumed=True) as span:
         # The mission's objective is added once the mission is read from the store.
-        tracing.annotate(span, {"factory.run.id": run.run_id, "factory.mission.id": run.mission_id})
+        tracing.annotate(span, {"factory.run.id": answer.run_id})
         return _trace_run(
             span,
             await _resume_factory(
-                factory, run, answer, store=store, deps=deps, on_step=on_step, span=span
+                factory, answer, store=store, deps=deps, on_step=on_step, span=span
             ),
         )
 
 
 async def _resume_factory(
     factory: Factory,
-    run: Run,
-    answer: Decision | DeferredToolResults,
+    answer: Answer,
     *,
     store: Store,
     deps: Any,
     on_step: OnStep | None,
     span: tracing.Span,
 ) -> Run:
-    """Check the answer fits the waiting run, then carry the run on."""
-    waiting = run.waiting
-    if waiting is None or run.stopped_at is None:
-        raise ApprovalRefused(f"run {run.run_id!r} is not waiting; its outcome is {run.outcome!r}")
-    if run.factory_digest != factory.digest:
-        raise ApprovalRefused(
-            f"run {run.run_id!r} was made by a factory of another shape; "
-            "resume it on the factory that started it"
-        )
-    stored = await store.get_run(run.run_id)
-    if stored.revision != run.revision:
-        raise RunConflict(
-            f"run {run.run_id!r} has moved on since it was read; load it again with get_run"
-        )
-    index = factory.index_of(run.stopped_at)
+    """Load the answer's run, check the answer fits it, then carry the run on."""
+    run = await store.get_run(answer.run_id)
+    tracing.annotate(span, {"factory.mission.id": run.mission_id})
+    if problem := factory.check(run, answer):
+        if problem.stale:
+            raise RunConflict(problem.reason)
+        raise ApprovalRefused(problem.reason)
+    waiting = cast(Waiting, run.waiting)
+    index = factory.index_of(waiting.station)
     station = factory.stations[index]
     step = run.steps[-1]
     first = factory.stations[0]
@@ -511,56 +637,32 @@ async def _resume_factory(
         ),
         mission_ref=run.mission_ref,
         on_step=on_step,
-        saved=stored,
+        saved=run,
         steps=list(run.steps),
-        approvals=list(run.approvals),
+        answers=list(run.answers),
         reworked=Counter(run.reworked),
     )
     _trace_mission(span, run.run_id, progress.mission)
     station_input = await store.get(step.input_ref, station.input_type)
 
-    if isinstance(answer, DeferredToolResults):
-        if waiting.kind != "tool-calls":
-            raise ApprovalRefused(
-                f"run {run.run_id!r} waits for a decision; use run.approve, "
-                "run.request_changes or run.reject"
-            )
-        _trace_answer(run, waiting, answer)
+    if isinstance(answer, Approve) and waiting.kind == "escalation":
+        answer = answer.model_copy(update={"overrode": True})
+    progress.answers.append(answer)
+    _trace_answer(run, waiting, answer)
+
+    if isinstance(answer, Reply):
         await _claim(progress)
-        return await _drive(progress, index=index, input=station_input, resume=step, answer=answer)
-
-    if not isinstance(answer, Decision):  # pyright: ignore[reportUnnecessaryIsInstance]
-        raise ApprovalRefused(f"cannot resume with {type(answer).__name__}")
-    if waiting.kind == "tool-calls":
-        raise ApprovalRefused(
-            f"run {run.run_id!r} waits on tool calls; answer them with DeferredToolResults"
+        return await _drive(
+            progress, index=index, input=station_input, resume=step, answer=answer.results
         )
-    if (answer.station, answer.waiting, answer.artifact) != (
-        waiting.station,
-        waiting.kind,
-        waiting.artifact,
-    ):
-        raise ApprovalRefused(
-            f"the decision was made on {answer.artifact} at {answer.station!r}, "
-            f"but the run waits on {waiting.artifact} at {waiting.station!r}"
-        )
-    decided = answer.model_copy(
-        update={"overrode": answer.decision == "approved" and waiting.kind == "escalation"}
-    )
-    progress.approvals.append(decided)
-    _trace_answer(run, waiting, decided)
-
-    if decided.decision == "rejected":
+    if isinstance(answer, Reject):
         return await progress.save(progress.record("failed", stopped_at=station.name))
-    if decided.decision == "changes_requested":
-        feedback = Feedback(reasons=(cast(str, decided.note),), by=decided.by)
+    if isinstance(answer, Changes):
+        feedback = Feedback(reasons=(answer.note,), by=answer.by)
         await _claim(progress)
         return await _drive(progress, index=index, input=station_input, feedback=feedback)
-    if waiting.artifact is None:
-        raise ApprovalRefused(
-            f"station {station.name!r} offered no work to accept; ask for changes or reject"
-        )
-    accepted = await store.get(waiting.artifact, station.output_type)
+    # check has made sure an approval has work to accept.
+    accepted = await store.get(cast(ArtifactRef, answer.work), station.output_type)
     await _claim(progress)
     return await _drive(progress, index=index + 1, input=accepted)
 
@@ -668,9 +770,7 @@ def _any_failed(progress: _Progress) -> bool:
     """
     last = {step.station: step for step in progress.steps}
     accepted = {
-        (decision.station, decision.artifact)
-        for decision in progress.approvals
-        if decision.decision == "approved"
+        (answer.station, answer.work) for answer in progress.answers if isinstance(answer, Approve)
     }
     return any(
         step.outcome == "failed" and (name, step.output_ref) not in accepted

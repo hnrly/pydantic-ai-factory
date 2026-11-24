@@ -37,12 +37,11 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-from pydantic_ai.tools import DeferredToolResults
 from pydantic_evals import Case, Dataset
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 from pydantic_evals.reporting import EvaluationReport
 
-from pydantic_ai_factory import Factory, MemoryStore, Rework, Run, station
+from pydantic_ai_factory import Action, Factory, MemoryStore, Question, Rework, Run, station
 from pydantic_ai_factory.methodologies import ElephantGoldfish, GoldfishReport
 from pydantic_ai_factory_software import DESIGN_GOLDFISH, Design
 from pydantic_ai_factory_software._design import DESIGNER_INSTRUCTIONS, no_open_questions
@@ -360,15 +359,13 @@ async def run_design(designer: Agent[None, Design], mission: str) -> DesignResul
         if run.waiting is None:
             break
         answer: Any
-        requests = run.waiting.requests
-        if run.waiting.kind == "tool-calls" and requests is not None:
-            answer = DeferredToolResults(
-                calls={call.tool_call_id: ANSWER for call in requests.calls},
-                approvals={call.tool_call_id: True for call in requests.approvals},
-            )
+        if run.waiting.kind == "tool-calls":
+            answers: dict[Question | Action, str | bool] = dict.fromkeys(run.questions, ANSWER)
+            answers |= dict.fromkeys(run.actions, True)
+            answer = run.reply(answers, by=DECIDER)
         else:
             answer = run.approve(by=DECIDER)
-        run = await factory.resume(run, answer, store=store)
+        run = await factory.resume(answer, store=store)
     design = None
     if run.outcome == "passed" and run.output_ref is not None:
         design = (await store.get(run.output_ref, Design)).payload
