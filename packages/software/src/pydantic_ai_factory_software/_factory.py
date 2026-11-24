@@ -12,7 +12,12 @@ from pydantic_ai_factory import Factory, FactoryDefinitionError, Rework, station
 from pydantic_ai_factory.factory import Accept
 from pydantic_ai_factory.methodologies import ElephantGoldfish, Goldfish
 
-from ._design import DESIGN_GOLDFISH, DESIGNER_INSTRUCTIONS, Design, no_open_questions
+from ._design import (
+    DESIGN_GOLDFISH,
+    DESIGNER_INSTRUCTIONS,
+    Design,
+    no_open_questions,
+)
 
 
 @dataclass(frozen=True, init=False, eq=False, kw_only=True)
@@ -65,7 +70,11 @@ class SoftwareFactory(Factory):
             model_settings={"cache": True},
         )
         design = station(
-            designer, name="design", version="1", gate=no_open_questions, approval=True
+            designer,
+            name="design",
+            version="1",
+            gate=no_open_questions,
+            approval=True,
         )
         for label, value in (
             ("model", model),

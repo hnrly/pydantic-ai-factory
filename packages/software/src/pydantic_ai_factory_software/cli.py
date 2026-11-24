@@ -33,11 +33,12 @@ from pydantic_ai_factory import (
     Reject,
     Reply,
     Run,
+    to_markdown,
 )
 from pydantic_ai_factory.methodologies import GoldfishReport
 
 from . import offline_model
-from ._design import Design, render_markdown
+from ._design import Design
 from ._factory import SoftwareFactory
 
 PASSED, ENDED, USAGE, WAITING = 0, 1, 2, 3
@@ -160,7 +161,7 @@ def _show_work(run: Run, store: LocalStore, say: Say) -> None:
     if waiting is None or waiting.artifact is None or waiting.artifact.type != "Design":
         return
     design = store.get_sync(waiting.artifact, Design).payload
-    for line in render_markdown(design).rstrip().splitlines():
+    for line in to_markdown(design).rstrip().splitlines():
         say(line)
     say("")
 
@@ -248,7 +249,7 @@ def _write_design(run: Run, store: LocalStore, out: Path) -> Path:
     design = store.get_sync(run.output_ref, Design).payload
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{slug(design.title)}.md"
-    path.write_text(render_markdown(design), encoding="utf-8")
+    path.write_text(to_markdown(design), encoding="utf-8")
     return path
 
 

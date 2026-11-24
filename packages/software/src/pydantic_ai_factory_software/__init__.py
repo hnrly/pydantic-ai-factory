@@ -4,7 +4,7 @@
 Its first station is Design. Build, Quality and Release follow.
 """
 
-from ._design import DESIGN_GOLDFISH, DESIGN_STANDARDS, Design, render_markdown
+from ._design import DESIGN_GOLDFISH, DESIGN_STANDARDS, Design
 from ._factory import SoftwareFactory
 from ._offline import offline_model
 
@@ -17,5 +17,4 @@ __all__ = [
     "SoftwareFactory",
     "__version__",
     "offline_model",
-    "render_markdown",
 ]

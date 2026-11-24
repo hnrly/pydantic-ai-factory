@@ -13,10 +13,10 @@ Here the factory is the software factory, and its work is a ``Design``.
 from __future__ import annotations
 
 from pydantic_ai.models import Model
-from pydantic_ai_factory import ArtifactRef, Factory, Run
+from pydantic_ai_factory import ArtifactRef, Factory, Run, to_markdown
 from pydantic_ai_factory.factory import Store
 from pydantic_ai_factory.methodologies import GoldfishReport
-from pydantic_ai_factory_software import Design, SoftwareFactory, render_markdown
+from pydantic_ai_factory_software import Design, SoftwareFactory
 
 
 def build_factory(model: Model | str) -> Factory:
@@ -31,7 +31,7 @@ async def render_output(run: Run, store: Store) -> str | None:
     if ref is None or ref.type != "Design":
         return None
     design = (await store.get(ref, Design)).payload
-    text = render_markdown(design).rstrip()
+    text = to_markdown(design).rstrip()
     review = await _review_line(run, ref, store)
     return f"{text}\n\n{review}\n" if review else f"{text}\n"
 

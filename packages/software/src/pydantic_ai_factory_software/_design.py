@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from pydantic import Field
 
 from pydantic_ai_factory import Artifact, Evidence, Verdict, failed, gate, passed
@@ -44,36 +42,6 @@ class Design(Record):
         default_factory=lambda: [],
         description="Anything the mission left undecided that a person must settle.",
     )
-
-
-_LABEL = re.compile(r"^\s*AC\s*\d+\s*[:.)\-]\s*", re.IGNORECASE)
-"""A label such as "AC1:" that a designer wrote at the start of a criterion."""
-
-
-def render_markdown(design: Design) -> str:
-    """Turn a design into Markdown. The same design always gives the same text.
-
-    Each acceptance criterion is labelled by its place. A label the designer wrote
-    itself, such as "AC1:", is dropped, so it is not printed twice.
-    """
-    sections = (
-        ("Behaviour", design.behaviour),
-        (
-            "Acceptance criteria",
-            [
-                f"**AC{n}** {_LABEL.sub('', text, count=1)}"
-                for n, text in enumerate(design.acceptance_criteria, start=1)
-            ],
-        ),
-        ("Exclusions", design.exclusions),
-        ("Open questions", design.open_questions),
-    )
-    lines = [f"# {design.title}", "", design.goal, ""]
-    for heading, items in sections:
-        lines += [f"## {heading}", ""]
-        lines += [f"- {item}" for item in items] or ["None."]
-        lines.append("")
-    return "\n".join(lines)
 
 
 CLEAR = Standard(

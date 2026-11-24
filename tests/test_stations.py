@@ -4,18 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
+from pydantic_ai import Agent
+from pydantic_ai.models.test import TestModel
 
 from pydantic_ai_factory import (
     Artifact,
     DefinitionError,
     Evidence,
+    Factory,
     Feedback,
     MemoryStore,
+    OutputFormat,
     Producer,
     Station,
     StationClosed,
@@ -30,6 +35,7 @@ from pydantic_ai_factory import (
     passed,
     station,
 )
+from pydantic_ai_factory_software import SoftwareFactory
 
 pytestmark = pytest.mark.anyio
 
@@ -482,3 +488,69 @@ def test_a_result_that_contradicts_itself_is_refused() -> None:
     for wrong in contradictions:
         with pytest.raises(ValidationError):
             StationResult(**common, **wrong)
+
+
+class Tally(BaseModel):
+    title: str
+    words: int
+    longest: list[str]
+
+
+async def test_a_station_shows_a_model_output_as_markdown_the_library_writes() -> None:
+    @station
+    async def tally(ctx: StationContext, text: Text) -> Tally:
+        words = text.body.split()
+        return Tally(title="Tally", words=len(words), longest=sorted(words, key=len)[-2:])
+
+    store = MemoryStore()
+    result = await tally.run(Text(body="three short words"), store=store)
+    assert result.output_ref is not None
+    output = (await store.get(result.output_ref, Tally)).payload
+
+    assert tally.output_format is OutputFormat.MARKDOWN
+    assert tally.show(output) == "# Tally\n\n## Words\n\n3\n\n## Longest\n\n- short\n- words\n"
+    assert tally.show(output.model_dump(mode="json")) == tally.show(output)
+
+
+def test_a_station_whose_output_is_a_string_shows_it_as_text_as_written() -> None:
+    @station
+    async def echo(ctx: StationContext, text: Text) -> str:
+        return text.body
+
+    assert echo.output_format is OutputFormat.TEXT
+    assert echo.show("# not a heading") == "# not a heading"
+
+
+def test_a_station_can_ask_for_its_output_as_json() -> None:
+    counter = Agent(TestModel(), name="counter", output_type=Count)
+
+    counted = station(counter, output_format=OutputFormat.JSON)
+
+    assert counted.output_format is OutputFormat.JSON
+    assert json.loads(counted.show({"words": 3})) == {"words": 3}
+
+
+def test_an_output_format_that_is_not_one_of_the_formats_is_refused() -> None:
+    with pytest.raises(StationDefinitionError, match="output_format must be one of"):
+        dataclasses.replace(count_words, output_format="html")  # pyright: ignore[reportArgumentType]
+
+
+def test_an_output_format_given_as_its_name_is_read_as_the_format() -> None:
+    assert dataclasses.replace(count_words, output_format="json").output_format is OutputFormat.JSON  # pyright: ignore[reportArgumentType]
+
+
+def test_changing_output_format_does_not_change_the_factory_digest() -> None:
+    async def count(ctx: StationContext, text: Text) -> Count:
+        return Count(words=len(text.body.split()))
+
+    plain = station(name="count", gate=under_ten_words)(count)
+    shown = station(name="count", gate=under_ten_words, output_format=OutputFormat.JSON)(count)
+
+    assert Factory("words", [plain]).digest == Factory("words", [shown]).digest
+    assert Factory("words", [plain]).shape() == Factory("words", [shown]).shape()
+
+
+def test_the_software_factorys_design_station_shows_its_design_as_markdown() -> None:
+    (design,) = SoftwareFactory(TestModel()).stations
+
+    assert design.output_format is OutputFormat.MARKDOWN
