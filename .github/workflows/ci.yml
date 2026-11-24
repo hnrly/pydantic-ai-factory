@@ -71,7 +71,7 @@ jobs:
     name: Example app
     # The software factory app has its own project and lock file, so it is checked on its own.
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: examples/software-factory-app
@@ -87,6 +87,30 @@ jobs:
       - run: uv run --locked ruff check .
       - run: uv run --locked pyright
       - run: uv run --locked pytest
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: examples/software-factory-app/web/package-lock.json
+      - run: npm ci
+        working-directory: examples/software-factory-app/web
+      - run: npm test
+        working-directory: examples/software-factory-app/web
+      - run: npm run typecheck
+        working-directory: examples/software-factory-app/web
+      - name: Check the interface's copy of the design tokens matches the docs site's
+        run: |
+          cmp web/src/tokens.css ../../site/src/styles/tokens.css || {
+            echo "::error::web/src/tokens.css differs from site/src/styles/tokens.css. Copy the site's file over it."
+            exit 1
+          }
+      - name: Build the interface from a copy of its folder, to prove it needs nothing outside it
+        run: |
+          copy="$RUNNER_TEMP/web"
+          rsync -a --exclude /node_modules --exclude /dist web/ "$copy/"
+          cd "$copy"
+          npm ci
+          npm run build
 
   keep-out:
     runs-on: ubuntu-latest

@@ -18,7 +18,7 @@ export default defineConfig({
       title: 'Pydantic AI Factory',
       description: 'Composable, evidence-driven AI factories built on Pydantic AI.',
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/hnrly/pydantic-ai-factory' }],
-      // hnrly look: tokens in src/styles/hnrly.css, fonts as on hnrly.com.
+      // hnrly look: tokens in src/styles/tokens.css, mapped in src/styles/hnrly.css, fonts as on hnrly.com.
       customCss: ['./src/styles/hnrly.css'],
       components: { Footer: './src/components/Footer.astro' },
       credits: false,
