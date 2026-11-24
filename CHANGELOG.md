@@ -7,6 +7,7 @@ Every change a user can see is listed here, newest first.
 - `pydantic-ai-factory` now depends on Pydantic AI Harness (`pydantic-ai-harness[skills]`), so the core can use its capabilities. A new `coder` extra adds the harness's Coder: `pip install "pydantic-ai-factory[coder]"`.
 - Record when a run was created and last changed. `Run` has two new fields, `created_at` and `updated_at`, both in UTC and set by the runner on every save. A run saved by 0.1 still loads, with both `None`, and keeps `created_at` as `None` after 0.2 resumes it. Version 0.1 cannot read a run that 0.2 has saved, because it refuses fields it does not know. To go back to 0.1, use a store that only 0.1 has written to.
 - List the runs in a store with `list_runs`, newest first or oldest first, filtered by `outcome` or `factory`, with a `limit` of 1 to 1000 runs. `MemoryStore` and `LocalStore` have it, and `list_runs_sync` for code that is not async. `list_runs` is now part of the `RunStore` protocol, so a store written for 0.1 must add it. The Stores page lists the rules every store keeps.
+- Keep a factory's work in one SQLite file with `SQLiteStore(path, busy_timeout=5.0)`. It keeps the same rules as the other stores, and lets a web app and a worker on one machine share runs. A save that waits longer than `busy_timeout` seconds for another writer raises `StoreBusy`, a kind of `RunConflict`. A file of another schema version raises `StoreSchemaMismatch`. The web-app sample on the Stores page now uses it.
 
 ## 0.1.1
 
