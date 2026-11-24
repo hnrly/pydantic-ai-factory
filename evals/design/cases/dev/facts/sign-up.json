@@ -1,0 +1,36 @@
+{
+  "case_name": "sign-up",
+  "challenge_class": "complete",
+  "canary": "canary-a4841865fd45",
+  "fallback_reply": "I think the request already covers that.",
+  "approval_reply": "I can't sign anything off here.",
+  "facts": [
+    {
+      "id": "empty-page",
+      "value": "No trips yet",
+      "criticality": "low",
+      "obtainable": true,
+      "held_by": "product owner",
+      "statement": "When an account has no bookings, the page can just say No trips yet.",
+      "direct_question": "What should the page say when an account has no bookings?",
+      "keywords": ["empty", "no bookings"]
+    },
+    {
+      "id": "greeting",
+      "value": "Welcome aboard",
+      "criticality": "low",
+      "obtainable": true,
+      "held_by": "product owner",
+      "statement": "After sign-up, a short greeting such as Welcome aboard would be nice.",
+      "direct_question": "Should people see a greeting after they sign up?",
+      "keywords": ["greeting", "welcome"]
+    }
+  ],
+  "checklist": [
+    {"id": "migration", "item": "Adds the account and session tables in a new migration, leaving the existing migration untouched."},
+    {"id": "rules-module", "item": "Puts the account rules in a module of their own, beside the existing booking rules."},
+    {"id": "hashes", "item": "Stores each password only as a salted hash."},
+    {"id": "owner", "item": "Records which account made a booking, so only that account lists it."},
+    {"id": "signed-out", "item": "Leaves booking without an account working as it does now."}
+  ]
+}

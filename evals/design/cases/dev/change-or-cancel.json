@@ -1,0 +1,5 @@
+{
+  "name": "change-or-cancel",
+  "request": "Let signed-in people change a booking to another flight on the same route, or cancel it. Follow our fare rules.",
+  "rung": "r1"
+}

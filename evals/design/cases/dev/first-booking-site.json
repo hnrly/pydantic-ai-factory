@@ -1,0 +1,5 @@
+{
+  "name": "first-booking-site",
+  "request": "Build our first flight-booking website. People search flights, choose a seat, book it, and look their booking up later. A seat someone has not paid for must not stay held for ever, and one booking can cover a whole party, up to the limit our insurer allows.",
+  "rung": "empty"
+}

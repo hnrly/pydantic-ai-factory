@@ -64,6 +64,9 @@ answers the benchmark hides from a system under test.
   tests), you may read and draft the smoke and dev fact sheets.
 - Never open or write `evals/*/cases/test/facts/` or `evals/*/cases/test/repo/`.
   The author writes those.
+- The reference apps under `evals/design/reference/` hold no hidden value. Do not
+  add one; a case places a value in its repository only through its
+  overlay.
 
 ## Every change
 
@@ -72,6 +75,8 @@ answers the benchmark hides from a system under test.
 3. Add a line to `CHANGELOG.md` for anything a user can see.
 4. Run every command under "Develop" in the README and report what each returned.
 5. Run `uv run python scripts/keep_out_scan.py --require-terms` before pushing.
+
+The reference apps under `evals/design/reference/` are fixtures of the benchmark. The author owns them, and they change only with a new `BENCHMARK_VERSION`.
 
 Never merge a pull request or push to `main`. The maintainer merges.
 

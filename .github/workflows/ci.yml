@@ -120,6 +120,41 @@ jobs:
           npm run build
           test -f ../../src/pydantic_ai_factory/serve/_static/index.html
 
+  reference-apps:
+    # The benchmark's reference apps: each installs from its lockfile, type-checks,
+    # passes its own checks, and answers on its port after its one start command.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [r0, r1]
+    defaults:
+      run:
+        working-directory: evals/design/reference/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: evals/design/reference/${{ matrix.app }}/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Start the app and wait for it to answer on its port
+        run: |
+          PORT=3000 npm start > "$RUNNER_TEMP/start.log" 2>&1 &
+          for _ in $(seq 1 90); do
+            if curl -fsS -o /dev/null http://127.0.0.1:3000/; then
+              curl -fsS http://127.0.0.1:3000/ | grep -q "Search flights"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/start.log"
+          exit 1
+
   keep-out:
     runs-on: ubuntu-latest
     timeout-minutes: 5

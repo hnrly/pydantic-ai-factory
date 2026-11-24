@@ -1,0 +1,46 @@
+{
+  "case_name": "first-booking-site",
+  "challenge_class": "critical-ambiguity",
+  "canary": "canary-69f290da588c",
+  "fallback_reply": "I don't have anything to add on that.",
+  "approval_reply": "I can't sign anything off here.",
+  "facts": [
+    {
+      "id": "seat-hold",
+      "value": "17 minutes",
+      "criticality": "critical",
+      "obtainable": true,
+      "held_by": "product owner",
+      "statement": "An unpaid seat is held for 17 minutes, then released.",
+      "direct_question": "How long is an unpaid seat held before it is released?",
+      "keywords": ["held", "hold", "unpaid"]
+    },
+    {
+      "id": "party-limit",
+      "value": "7 passengers",
+      "criticality": "critical",
+      "obtainable": true,
+      "held_by": "insurance lead",
+      "statement": "One booking can cover at most 7 passengers.",
+      "direct_question": "How many passengers can one booking cover?",
+      "keywords": ["passengers", "party"]
+    },
+    {
+      "id": "site-name",
+      "value": "Fernwing Air",
+      "criticality": "low",
+      "obtainable": true,
+      "held_by": "product owner",
+      "statement": "The site is called Fernwing Air.",
+      "direct_question": "What is the site called?",
+      "keywords": ["called", "brand"]
+    }
+  ],
+  "checklist": [
+    {"id": "stack", "item": "Chooses a stack and a place to host it, and says why."},
+    {"id": "sold-once", "item": "Keeps a seat from being sold twice when two people book it at the same moment."},
+    {"id": "release", "item": "Releases a held seat once its hold runs out, without a person stepping in."},
+    {"id": "reference", "item": "Gives each booking a reference a person can type to look it up later."},
+    {"id": "whole-party", "item": "Books every passenger in a party together, so a party is never left half booked."}
+  ]
+}
