@@ -114,6 +114,15 @@ Each case belongs to a class: `critical-ambiguity`, where the system must ask; `
 
 **The checklist.** Stating every critical fact decides the outcome; it does not say whether the work took the right direction. A scored case's checklist holds three to six items. Pydantic Evals' own judge reads one item and the delivered text in each call, with the suite's instructions, and passes or fails it. Its reason must quote the passage that shows the item, and plain code keeps a pass only when that quote is an exact run of the text. Each verdict is stored beside the run with the hash of the text it read, so grading a run again calls no judge. Coverage sits beside the outcome and never changes it.
 
+## Factories and stations
+
+| System | What it runs |
+|---|---|
+| `FactorySystem` | A factory you build for each run, on a recording model that counts tokens and cost, with the run's workspace |
+| `StationSystem` | One station, inside a factory of that station alone. When the station has a gate, an output that fails it goes back up to `repairs` times |
+
+A factory or station system answers what the factory waits on as a person at the ports would. A round of questions from `ask_user_question` goes to the stakeholder port. The factory's own approval, and any escalation, is given, and noted in the event log. When rework runs out, the last output is delivered as `blocked`. A passing output is delivered as text, by default through the last station's own `show`.
+
 ## Plug in a system
 
-Any system can be measured. Write a class with a `name` and an `async run(brief, ports)` that asks through `ports.ask_stakeholder` and ends with `ports.deliver`. The contract imports nothing from the factory.
+Any system can be measured. Write a class with a `name` and an `async run(brief, ports)` that asks through `ports.ask_stakeholder` and ends with `ports.deliver`. The contract imports nothing from the factory; in the framework, only the factory and station systems do.

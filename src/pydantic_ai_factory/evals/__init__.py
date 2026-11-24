@@ -63,6 +63,7 @@ from ._scripted import KINDS as SCRIPTED_KINDS
 from ._scripted import Kind as ScriptedKind
 from ._scripted import ScriptedSystem, scripted_system
 from ._simulator import PICKER_PROMPT, Pick, Stakeholder, picker_agent, scripted_picker
+from ._systems import FactorySystem, RecordingModel, StationSystem, docker_sandbox
 
 __all__ = (
     "MAX_QUESTIONS_PER_CALL",
@@ -86,6 +87,7 @@ __all__ = (
     "Fact",
     "FactResult",
     "FactSheet",
+    "FactorySystem",
     "Grade",
     "Graded",
     "GradedRun",
@@ -96,6 +98,7 @@ __all__ = (
     "Ports",
     "QuestionMeasures",
     "RecordEnd",
+    "RecordingModel",
     "Reply",
     "ReportEnd",
     "RunPorts",
@@ -106,6 +109,7 @@ __all__ = (
     "ScriptedSystem",
     "SnapshotLeak",
     "Stakeholder",
+    "StationSystem",
     "Status",
     "SystemAdapter",
     "WorkspaceError",
@@ -120,6 +124,7 @@ __all__ = (
     "container_args",
     "coverage",
     "docker_available",
+    "docker_sandbox",
     "grade",
     "grade_run",
     "load_fact_sheet",
