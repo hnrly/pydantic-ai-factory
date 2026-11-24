@@ -31,7 +31,27 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
       - name: Check the tag matches both packages and the changelog
         run: uv run --no-project --python 3.13 scripts/release_check.py "$TAG" --notes notes.md
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/board/package-lock.json
+      - name: Build the board's interface into the library, so the wheel ships it
+        working-directory: web/board
+        run: npm ci && npm run build
       - run: uv build --all-packages --no-sources
+      - name: Check the sdist and the wheel both hold the board's interface
+        run: |
+          wheel=$(ls dist/pydantic_ai_factory-*.whl)
+          sdist=$(ls dist/pydantic_ai_factory-*.tar.gz)
+          unzip -l "$wheel" | grep -q "pydantic_ai_factory/serve/_static/index.html" || {
+            echo "::error::$wheel has no serve/_static/index.html"
+            exit 1
+          }
+          tar -tzf "$sdist" | grep -q "src/pydantic_ai_factory/serve/_static/index.html" || {
+            echo "::error::$sdist has no serve/_static/index.html"
+            exit 1
+          }
       - name: Install exactly the built wheels and import them
         run: |
           uv venv "$RUNNER_TEMP/wheels" --python 3.13

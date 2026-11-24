@@ -134,7 +134,12 @@ class Dispatcher(Protocol):
         updated_before: datetime | None = None,
         latest_per_run: bool = False,
         restart_of: str | Sequence[str] | None = None,
+        run_id: str | Sequence[str] | None = None,
         limit: int = 100,
     ) -> list[Job]:
-        """List jobs, newest change first, filtered by what is given."""
+        """List jobs, newest change first, filtered by what is given.
+
+        ``run_id`` keeps the jobs of one run or several. With ``latest_per_run``, it reads
+        the driving job of exactly those runs, however many other jobs changed since.
+        """
         ...

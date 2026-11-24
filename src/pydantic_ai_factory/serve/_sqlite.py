@@ -24,6 +24,9 @@ STARTED_AGAIN = "Started again"
 
 _LIMIT_MAX = 1000
 
+_IDS_PER_QUERY = 500
+"""How many run ids one query binds, well under the oldest SQLite's limit of 999 variables."""
+
 # The table's name differs from the example app's ``jobs`` table, whose rows are not
 # moved across. It never touches the store's tables or the file's user_version.
 _TABLE = "factory_jobs"
@@ -219,6 +222,7 @@ class SQLiteDispatcher:
         updated_before: datetime | None = None,
         latest_per_run: bool = False,
         restart_of: str | Sequence[str] | None = None,
+        run_id: str | Sequence[str] | None = None,
         limit: int = 100,
     ) -> list[Job]:
         """List jobs, newest change first, filtered by what is given.
@@ -227,6 +231,8 @@ class SQLiteDispatcher:
         considered, by when it was queued, and the other filters then apply to it. So
         ``state="claimed"`` with it lists the runs whose driving job is claimed. Only the
         filters given go into the query, which reads from an index on ``updated_at``.
+        ``run_id`` keeps the jobs of those runs; a long list of ids is read 500 at a time,
+        each bound as a parameter, and the results merged.
         """
         if not 1 <= limit <= _LIMIT_MAX:
             raise ValueError(f"limit must be between 1 and {_LIMIT_MAX}, not {limit}")
@@ -249,16 +255,32 @@ class SQLiteDispatcher:
             conditions.append("updated_at < ?")
             parameters.append(_moment(updated_before))
         where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-        source = (
-            f"(SELECT {_COLUMNS}, seq FROM (SELECT {_COLUMNS}, rowid AS seq, ROW_NUMBER() OVER "
-            f"(PARTITION BY run_id ORDER BY created_at DESC, rowid DESC) AS newest "
-            f"FROM {_TABLE} WHERE refused = 0) WHERE newest = 1)"
-            if latest_per_run
-            else f"(SELECT {_COLUMNS}, rowid AS seq FROM {_TABLE})"
+        runs = _several(run_id, "run_id")
+        chunks = (
+            [None]
+            if runs is None
+            else [runs[at : at + _IDS_PER_QUERY] for at in range(0, len(runs), _IDS_PER_QUERY)]
         )
-        query = f"SELECT {_COLUMNS} FROM {source}{where} ORDER BY updated_at DESC, seq DESC LIMIT ?"
-        rows = await asyncio.to_thread(self._fetch_all, query, (*parameters, limit))
-        return [_job(row) for row in rows]
+        rows: list[tuple[Any, ...]] = []
+        for chunk in chunks:
+            # The run filter goes inside, so the window reads only those runs' jobs.
+            inner = "" if chunk is None else f" AND run_id IN ({', '.join('?' for _ in chunk)})"
+            source = (
+                f"(SELECT {_COLUMNS}, seq FROM (SELECT {_COLUMNS}, rowid AS seq, ROW_NUMBER() OVER "
+                f"(PARTITION BY run_id ORDER BY created_at DESC, rowid DESC) AS newest "
+                f"FROM {_TABLE} WHERE refused = 0{inner}) WHERE newest = 1)"
+                if latest_per_run
+                else f"(SELECT {_COLUMNS}, rowid AS seq FROM {_TABLE} WHERE 1 = 1{inner})"
+            )
+            query = (
+                f"SELECT {_COLUMNS}, seq FROM {source}{where} "
+                "ORDER BY updated_at DESC, seq DESC LIMIT ?"
+            )
+            bound = (*(chunk or ()), *parameters, limit)
+            rows += await asyncio.to_thread(self._fetch_all, query, bound)
+        if len(chunks) > 1:
+            rows.sort(key=lambda row: (row[10], row[-1]), reverse=True)
+        return [_job(row[:-1]) for row in rows[:limit]]
 
     # The worker's calls.
 

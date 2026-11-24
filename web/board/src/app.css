@@ -1,0 +1,1374 @@
+/*
+ * The interface's look, built on the tokens in tokens.css, so it reads like the docs
+ * site: a black ground, Inter Tight and Geist Mono, pink for what needs a person.
+ * The board is dark only. Each column carries a grey dot; the greys are here,
+ * not in tokens.css, which must stay a copy of the site's file.
+ */
+
+:root {
+  color-scheme: dark;
+  font-family: var(--hn-font);
+  line-height: 1.55;
+  color: var(--hn-gray-1);
+  background: var(--hn-black);
+
+  /* Column colours, kept to greys so the board stays quiet: pink is the one colour,
+     and it means a card needs a person. Amber marks a stalled run. */
+  --strip-missions: #8a8a93;
+  --strip-station: #d4d4d8;
+  --strip-done: #ffffff;
+  --strip-stopped: #6e6e78;
+
+  --card: #111114;
+
+  /* Amber: a stalled run, and the warning before starting it again. Never used for
+     anything that waits for a person, which is pink. */
+  --amber: #f59e0b;
+  --amber-text: #fcd34d;
+  --amber-soft: #fde68a;
+  --amber-low: #2b1d05;
+  --amber-ground: #160f02;
+  --gutter: max(1rem, env(safe-area-inset-left, 0px));
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--hn-black);
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: var(--hn-line-height-headings);
+  color: var(--hn-white);
+}
+h1 {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  letter-spacing: -0.05em;
+  margin: 0.25rem 0 0.75rem;
+}
+a {
+  color: var(--hn-pink);
+  text-underline-offset: 3px;
+}
+a:hover {
+  color: var(--hn-white);
+}
+code {
+  font-family: var(--hn-font-mono);
+  font-size: 0.875em;
+}
+:not(pre) > code {
+  padding: 1px 6px;
+  border: 1px solid var(--hn-gray-5);
+  border-radius: 6px;
+  color: var(--hn-white);
+}
+
+main.page {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 2rem var(--gutter) 4rem;
+}
+
+/* Forms and buttons: white pill for the main action, hairline pill for the rest. */
+label {
+  color: var(--hn-gray-2);
+}
+input,
+textarea {
+  font: inherit;
+  color: var(--hn-white);
+  background: var(--hn-gray-6);
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+}
+textarea {
+  width: 100%;
+  resize: vertical;
+}
+/* The focus ring is the text colour: pink is kept for what needs a person. */
+:focus-visible {
+  outline: 2px solid var(--hn-gray-1);
+  outline-offset: 2px;
+}
+button {
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.4rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--hn-gray-4);
+  background: transparent;
+  color: var(--hn-gray-1);
+  transition: color 120ms, background-color 120ms, border-color 120ms;
+}
+button:hover:not(:disabled) {
+  color: var(--hn-pink);
+}
+button.primary {
+  background: var(--hn-white);
+  border-color: var(--hn-white);
+  color: var(--hn-black);
+}
+button.primary:hover:not(:disabled) {
+  color: var(--hn-black);
+  background: var(--hn-gray-1);
+}
+/* No hand pointer: as in a desktop app, a hover state shows what can be pressed. */
+a,
+button,
+summary,
+label,
+.scrim {
+  cursor: default !important;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.quiet-button {
+  padding: 0.15rem 0.7rem;
+  font-size: 0.8125rem;
+  color: var(--hn-gray-2);
+}
+fieldset {
+  border: 1px solid var(--hn-gray-5);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+legend {
+  padding: 0 0.25rem;
+  color: var(--hn-gray-1);
+}
+.stack {
+  display: grid;
+  gap: 0.5rem;
+}
+.decide {
+  margin-block: 1.5rem;
+  gap: 0.75rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Small grey text. */
+.lead,
+.quiet,
+.meta {
+  color: var(--hn-gray-3);
+}
+.meta {
+  font-size: 0.8125rem;
+}
+.eyebrow,
+.section-label {
+  font-family: var(--hn-font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--hn-gray-3);
+  margin: 2rem 0 0.5rem;
+}
+.eyebrow {
+  margin: 0;
+}
+
+/* A state badge: a hairline chip with a coloured dot, as an issue tracker shows a label.
+   Pink only for what needs a person. */
+.badge {
+  --dot: var(--hn-gray-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  padding: 0.1rem 0.55rem 0.1rem 0.5rem;
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 999px;
+  color: var(--hn-gray-1);
+}
+.badge::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--dot);
+  flex: none;
+}
+.badge-waiting,
+.badge-stalled {
+  --dot: var(--hn-pink);
+  border-color: color-mix(in srgb, var(--hn-pink) 55%, transparent);
+  color: var(--hn-white);
+}
+.badge-running,
+.badge-starting {
+  --dot: var(--strip, var(--hn-gray-2));
+}
+.badge-passed {
+  --dot: var(--strip-done);
+}
+.badge-failed,
+.badge-did_not_run,
+.badge-earlier_version {
+  --dot: var(--strip-stopped);
+}
+.badge-queued,
+.badge-rework {
+  color: var(--hn-gray-2);
+}
+.badge-rework {
+  --dot: var(--amber);
+}
+.badge-link {
+  text-decoration: none;
+}
+
+.explain {
+  margin-block: 1rem;
+}
+.notice {
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 10px;
+}
+.notice-error {
+  border-color: var(--hn-pink);
+  color: var(--hn-white);
+}
+.warning {
+  color: var(--hn-pink);
+}
+
+/* A run's output shown as JSON. */
+.json {
+  overflow-x: auto;
+  margin: 0;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--hn-gray-5);
+  border-radius: 12px;
+  background: var(--hn-black);
+  font-family: var(--hn-font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+/* A run's output shown as text, as it was written. */
+.text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+/* The first screen: one question in a small, quiet form. */
+.welcome {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 4rem var(--gutter);
+}
+.welcome-form {
+  display: grid;
+  gap: 0.6rem;
+  width: min(100%, 24rem);
+}
+.welcome-form .mark {
+  margin: 0 0 1.5rem;
+  font-size: 0.9375rem;
+}
+.welcome h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.welcome-why {
+  margin: 0 0 0.75rem;
+  font-size: 0.9375rem;
+  color: var(--hn-gray-3);
+}
+.welcome label {
+  font-size: 0.8125rem;
+  color: var(--hn-gray-2);
+}
+.welcome input {
+  font: inherit;
+  font-size: 1rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 8px;
+  background: var(--hn-gray-6);
+  color: var(--hn-white);
+}
+.welcome input:focus-visible {
+  outline: none;
+  border-color: var(--hn-gray-2);
+}
+.welcome .actions {
+  margin-top: 0.75rem;
+}
+.welcome .banner {
+  font-size: 0.8125rem;
+}
+.banner {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--hn-gray-3);
+}
+
+/* The header: one slim bar. */
+.top {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem var(--gutter);
+  border-bottom: 1px solid var(--hn-gray-5);
+  background: color-mix(in srgb, var(--hn-black) 82%, transparent);
+  backdrop-filter: blur(12px);
+}
+.mark {
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  color: var(--hn-white);
+  text-decoration: none;
+}
+.mark i {
+  font-style: normal;
+  color: var(--hn-pink);
+}
+.factory {
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--hn-gray-2);
+}
+.factory::before {
+  content: '/';
+  margin-right: 1rem;
+  color: var(--hn-gray-4);
+}
+.top-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-left: auto;
+}
+.needs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+button.needs {
+  padding: 0.25rem 0.8rem;
+  border-color: var(--hn-gray-4);
+  color: var(--hn-white);
+  background: transparent;
+}
+button.needs:hover:not(:disabled) {
+  color: var(--hn-white);
+  border-color: var(--hn-gray-3);
+}
+.needs-none {
+  color: var(--hn-gray-3);
+}
+.needs-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--hn-pink);
+}
+.who {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.who-name {
+  color: var(--hn-white);
+  font-weight: 500;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The board: columns side by side, scrolling sideways when they do not fit. */
+.board {
+  padding-block: 1.25rem 2rem;
+}
+.board-loading,
+.board-error {
+  margin: 1.25rem var(--gutter);
+}
+.columns {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  min-height: calc(100vh - 6rem);
+  overflow-x: auto;
+  padding: 0 var(--gutter) 1rem;
+  scroll-padding-inline: var(--gutter);
+  scroll-snap-type: x proximity;
+}
+/* A column is a quiet lane, as in an issue tracker: no frame, a mark in its strip
+   colour beside the title, and the cards stacked under it. */
+.column {
+  position: relative;
+  flex: 0 0 min(22rem, calc(100vw - 3rem));
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0.75rem;
+  border-radius: 12px;
+  background: var(--hn-gray-6);
+  scroll-snap-align: start;
+}
+.column-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.6rem 0.5rem 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.column-name {
+  text-transform: capitalize;
+}
+.column-mark {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--strip);
+}
+.column-title .count {
+  font-family: var(--hn-font-mono);
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--hn-gray-3);
+}
+.column-cards {
+  display: grid;
+  gap: 0.5rem;
+}
+.column-empty {
+  margin: 0;
+  padding: 0.25rem 0.5rem 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--hn-gray-3);
+}
+.see-all {
+  font-size: 0.875rem;
+  padding-inline: 0.5rem;
+}
+
+/* The box at the top of Missions. */
+.add {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 10px;
+  background: var(--hn-black);
+  transition: border-color 160ms;
+}
+.add:focus-within {
+  border-color: var(--hn-gray-2);
+}
+.add label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--hn-gray-1);
+}
+.add textarea {
+  min-height: 2.75rem;
+  max-height: 14rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  resize: none;
+  overflow-y: auto;
+  field-sizing: content;
+}
+.add textarea:focus-visible {
+  outline: none;
+}
+.add textarea::placeholder {
+  color: var(--hn-gray-3);
+}
+.add-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.add-hint {
+  font-size: 0.75rem;
+  color: var(--hn-gray-3);
+}
+.add .primary {
+  padding: 0.25rem 1rem;
+  font-size: 0.875rem;
+}
+.add .notice {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+/* A card. Its state shows quietly: a dashed edge while queued, a turning icon while it
+   works, a pink hairline while it waits for a person. */
+.card {
+  position: relative;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem 0.85rem 0.8rem;
+  border: 1px solid var(--hn-gray-5);
+  border-radius: 8px;
+  background: var(--card);
+  overflow: hidden;
+  isolation: isolate;
+}
+.card-foot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+}
+.card-id {
+  font-family: var(--hn-font-mono);
+  font-size: 0.6875rem;
+  color: var(--hn-gray-3);
+}
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+.card-head .state-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 0.2rem;
+  color: var(--hn-gray-2);
+}
+.card-needs-you .state-icon,
+.card-stalled .state-icon {
+  color: var(--hn-pink);
+}
+.card-running .state-icon,
+.card-starting .state-icon {
+  color: var(--strip, var(--hn-gray-2));
+}
+.card-passed .state-icon {
+  color: var(--strip-done);
+}
+.card-title {
+  color: var(--hn-white);
+  text-decoration: none;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.card-title::after {
+  /* The whole card opens the run; the other links and buttons sit above this. */
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.card-title:hover {
+  color: var(--hn-white);
+}
+.card:hover {
+  border-color: var(--hn-gray-4);
+  background: color-mix(in srgb, var(--card) 85%, var(--hn-gray-4));
+}
+.card .card-head .state-icon,
+.card .badges,
+.card .meta,
+.card .actions,
+.card .confirm {
+  position: relative;
+  z-index: 1;
+}
+.card .meta {
+  margin: 0;
+}
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.card-queued {
+  border-style: dashed;
+  border-color: var(--hn-gray-4);
+  background: transparent;
+}
+/* A running card's icon turns slowly; that is the only motion on a card. */
+.card-running .state-icon,
+.card-starting .state-icon {
+  animation: turn 2.4s linear infinite;
+}
+@keyframes turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* A card that needs a person: a pink hairline, nothing more. */
+.card-needs-you {
+  border-color: color-mix(in srgb, var(--hn-pink) 70%, transparent);
+}
+.card.flash {
+  animation: flash 500ms ease-in-out 2;
+}
+@keyframes flash {
+  50% {
+    outline: 2px solid var(--hn-pink);
+    outline-offset: 2px;
+  }
+}
+.column[aria-label='Done'] .card,
+.column[aria-label='Stopped'] .card {
+  background: transparent;
+}
+.confirm {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--hn-pink);
+  border-radius: 10px;
+  background: var(--hn-black);
+}
+.confirm p {
+  margin: 0;
+}
+.card .actions button {
+  padding: 0.2rem 0.8rem;
+  font-size: 0.8125rem;
+}
+
+/* "See all": one column as a list. */
+.back {
+  font-size: 0.875rem;
+}
+.list-columns {
+  display: flex;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+}
+.list-columns a {
+  color: var(--hn-gray-2);
+  text-decoration: none;
+}
+.list-columns a[aria-current='page'] {
+  color: var(--hn-white);
+  box-shadow: inset 0 -2px 0 var(--hn-pink);
+}
+.list {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 40rem;
+  margin-block: 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .card.flash {
+    outline: 3px solid var(--hn-pink);
+    outline-offset: 2px;
+  }
+}
+
+/* An opened run: a panel over the board, which stays in view, dimmed, on the left. */
+.board-under {
+  opacity: 0.35;
+  filter: saturate(0.6);
+}
+.panel-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+}
+.scrim {
+  flex: 1 1 0;
+  min-width: 0;
+  cursor: pointer;
+}
+.panel {
+  --panel-pad: clamp(1rem, 3vw, 2.5rem);
+  flex: 0 0 min(100%, max(52rem, 72vw));
+  max-width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  background: var(--hn-gray-6);
+  border-left: 1px solid var(--hn-gray-4);
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.6);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: panel-in 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.panel:focus {
+  outline: none;
+}
+@keyframes panel-in {
+  from {
+    transform: translateX(2.5rem);
+    opacity: 0;
+  }
+}
+.panel button {
+  min-height: 44px;
+  padding: 0 1.15rem;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+}
+.panel button.go {
+  padding-inline: 1.4rem;
+  border: 0;
+  background: var(--hn-white);
+  color: var(--hn-black);
+  font-weight: 600;
+}
+.panel button.go:hover:not(:disabled) {
+  color: var(--hn-black);
+  background: var(--hn-gray-1);
+}
+.panel button.plain {
+  border-color: #3a3a40;
+  color: var(--hn-white);
+}
+.panel button.ghost {
+  border-color: transparent;
+  color: var(--hn-gray-2);
+}
+.panel button.amber {
+  border: 0;
+  background: var(--amber);
+  color: var(--hn-black);
+  font-weight: 700;
+}
+.panel button.amber:hover:not(:disabled) {
+  color: var(--hn-black);
+  background: var(--amber-text);
+}
+.panel button[aria-pressed='true'] {
+  border-color: var(--hn-white);
+  background: var(--hn-white);
+  color: var(--hn-black);
+}
+.panel button.ghost[aria-pressed='true'] {
+  border-color: var(--hn-gray-2);
+  background: var(--hn-gray-4);
+  color: var(--hn-white);
+}
+.panel .small {
+  font-size: 0.8125rem;
+}
+.panel .quiet {
+  color: var(--hn-gray-3);
+}
+
+.panel-head {
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.75rem var(--panel-pad) 1.25rem;
+  border-bottom: 1px solid var(--hn-gray-5);
+}
+.panel-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem 0.75rem;
+}
+.panel-state {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.panel-bar .quiet {
+  color: var(--hn-gray-2);
+}
+.panel button.link-button {
+  min-height: 44px;
+  padding: 0 0.5rem;
+  border: 0;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--hn-gray-2);
+}
+.panel button.close {
+  width: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: var(--hn-gray-4);
+  color: var(--hn-gray-1);
+}
+.mission {
+  margin: 0;
+  max-width: 34ch;
+  font-size: clamp(1.5rem, 3vw, 1.875rem);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* The state pill: a word and a shape. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--hn-gray-1);
+  background: var(--hn-gray-5);
+}
+.pill svg {
+  flex: none;
+}
+.pill-approval,
+.pill-asks {
+  color: var(--hn-white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--hn-pink) 55%, transparent);
+}
+.pill-approval svg,
+.pill-asks svg {
+  color: var(--hn-pink);
+}
+.pill-stalled {
+  background: var(--amber-low);
+  color: var(--amber-text);
+}
+.pill-stalled svg {
+  color: var(--amber);
+}
+.pill-running svg {
+  color: var(--station);
+}
+.pill-done {
+  color: var(--hn-white);
+}
+
+/* The station track: where the work is. */
+.track {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+}
+.track-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.track-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--hn-gray-2);
+}
+.track-join {
+  width: 2.5rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--hn-gray-4);
+}
+.track-join-on {
+  background: var(--hn-gray-2);
+}
+.track-mark {
+  flex: none;
+}
+.track-mark .track-fill {
+  fill: var(--hn-lead);
+}
+.track-mark .track-line {
+  stroke: var(--hn-lead);
+}
+.track-ahead .track-name {
+  color: var(--hn-gray-3);
+}
+.track-here .track-name,
+.track-stopped .track-name {
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--hn-gray-4);
+  color: var(--hn-white);
+  font-weight: 500;
+}
+.track-here .track-mark .track-fill {
+  fill: var(--station);
+}
+.track-here .track-mark .track-line {
+  stroke: var(--station);
+}
+.track-stopped .track-name {
+  border: 1px dashed var(--amber);
+}
+.track-stopped .track-mark .track-line {
+  stroke: var(--amber);
+}
+.track-done:last-child .track-mark .track-fill {
+  fill: var(--hn-white);
+}
+
+/* Below the header: the work on the left, its history on the right, or below on a phone. */
+.panel-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+}
+.panel-main {
+  flex: 999 1 30rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.75rem var(--panel-pad) 2.5rem;
+}
+.panel-main > .notice,
+.panel-main > p {
+  margin: 0;
+}
+
+/* The one thing to do. */
+.ask-box {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.25rem 1.4rem;
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 16px;
+  background: var(--hn-gray-5);
+}
+.ask-box h2 {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.ask-box p {
+  margin: 0;
+  line-height: 1.6;
+}
+.ask-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+.ask-head .quiet {
+  font-size: 0.8125rem;
+  color: var(--hn-gray-2);
+}
+.reasons {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--hn-gray-1);
+}
+.note-box {
+  display: grid;
+  gap: 0.6rem;
+}
+.note-box label,
+.reply label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--hn-gray-1);
+}
+.panel textarea {
+  padding: 0.85rem 1rem;
+  border-color: #3a3a40;
+  border-radius: 12px;
+  background: var(--hn-black);
+  line-height: 1.5;
+}
+.caution {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--amber);
+  border-radius: 12px;
+  background: var(--amber-ground);
+}
+.caution p {
+  font-size: 0.875rem;
+  color: var(--amber-soft);
+}
+.ended,
+.restarted {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 14px;
+}
+.ended p {
+  margin: 0;
+  flex: 1 1 18rem;
+  line-height: 1.55;
+}
+.restarted svg {
+  flex: none;
+  color: var(--hn-gray-2);
+}
+.restarted span {
+  flex: 1 1 16rem;
+  line-height: 1.5;
+}
+.button-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 1rem;
+  border: 1px solid #3a3a40;
+  border-radius: 10px;
+  color: var(--hn-white);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.button-link:hover {
+  border-color: var(--hn-pink);
+}
+
+/* An agent's question, as a message, with the reply under it. */
+.question {
+  display: grid;
+  gap: 1.5rem;
+}
+.question .lead {
+  margin: 0;
+  color: var(--hn-gray-2);
+}
+.ask {
+  display: grid;
+  gap: 0.9rem;
+}
+.said {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+.avatar {
+  flex: 0 0 2.25rem;
+  height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--station);
+  color: var(--hn-black);
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+.said-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+.said-body strong {
+  color: var(--hn-white);
+  font-weight: 600;
+}
+.bubble {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 4px 16px 16px 16px;
+  background: var(--hn-gray-5);
+  color: var(--hn-white);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+.reply {
+  display: grid;
+  gap: 0.5rem;
+  margin-left: 3.15rem;
+}
+.sign-offs {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--hn-gray-5);
+}
+.sign-offs p {
+  margin: 0;
+}
+.sign-off {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--hn-gray-4);
+  border-radius: 14px;
+}
+.sign-off-what {
+  flex: 1 1 16rem;
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.sign-off-tool {
+  font-weight: 600;
+  color: var(--hn-white);
+}
+.sign-off code {
+  padding: 0;
+  border: 0;
+  color: var(--hn-gray-3);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.panel-label {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--hn-gray-3);
+}
+
+/* The work itself, as a readable document. */
+.work {
+  display: grid;
+  gap: 1rem;
+  max-width: 47.5rem;
+  padding: 1.75rem clamp(1rem, 3vw, 2rem);
+  border: 1px solid var(--hn-gray-5);
+  border-radius: 16px;
+}
+.work-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--hn-gray-3);
+}
+.work-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--station);
+}
+.doc {
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--hn-gray-1);
+  overflow-wrap: anywhere;
+}
+.doc > :first-child {
+  margin-top: 0;
+}
+.doc > :last-child {
+  margin-bottom: 0;
+}
+.doc h1,
+.doc h2 {
+  margin: 1.5rem 0 0.6rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.doc h2 {
+  font-size: 1.125rem;
+}
+.doc h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.doc p,
+.doc ul,
+.doc ol {
+  margin: 0 0 0.9rem;
+}
+.doc ul,
+.doc ol {
+  padding-left: 1.25rem;
+}
+.doc li + li {
+  margin-top: 0.3rem;
+}
+.doc pre {
+  overflow-x: auto;
+  padding: 0.9rem 1rem;
+  border-radius: 10px;
+  background: var(--hn-black);
+}
+
+/* History: a timeline, newest first. */
+.history {
+  flex: 1 1 17.5rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 1.75rem var(--panel-pad) 2.5rem;
+  border-left: 1px solid var(--hn-gray-5);
+}
+.timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.event {
+  position: relative;
+  display: flex;
+  gap: 0.75rem;
+  padding-bottom: 1.1rem;
+}
+.event:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1rem;
+  bottom: 0;
+  width: 2px;
+  background: var(--hn-gray-4);
+}
+.event-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 0.25rem;
+  border-radius: 50%;
+  background: var(--hn-lead);
+}
+.event-waiting .event-dot {
+  background: var(--hn-pink);
+}
+.event-gate .event-dot,
+.event-attempt .event-dot,
+.event-done .event-dot {
+  background: var(--station);
+}
+.event-review .event-dot,
+.event-evidence .event-dot {
+  background: var(--hn-gray-6);
+  border: 2px solid var(--station);
+}
+.event-answer .event-dot {
+  background: var(--hn-white);
+}
+.event-stalled .event-dot,
+.event-failed .event-dot,
+.event-ended .event-dot {
+  border-radius: 2px;
+  background: var(--amber);
+  transform: rotate(45deg) scale(0.8);
+}
+.event-restarted .event-dot {
+  background: var(--hn-gray-6);
+  border: 2px solid var(--hn-gray-1);
+}
+.event-body {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+.event-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--hn-white);
+}
+.event-detail {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--hn-gray-2);
+  overflow-wrap: anywhere;
+}
+.event-meta {
+  font-size: 0.75rem;
+  color: var(--hn-gray-3);
+}
+.event-body a {
+  font-size: 0.8125rem;
+}
+.technical {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--hn-gray-5);
+}
+.technical summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--hn-gray-2);
+}
+.technical p {
+  margin: 0.25rem 0 0;
+  font-family: var(--hn-font-mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--hn-gray-3);
+  overflow-wrap: anywhere;
+}
+.technical code {
+  padding: 0;
+  border: 0;
+  color: inherit;
+}
+
+/* When the panel is as narrow as a phone, history sits below the work. */
+@media (max-width: 52rem) {
+  .history {
+    border-left: 0;
+    border-top: 1px solid var(--hn-gray-5);
+  }
+  .reply {
+    margin-left: 0;
+  }
+}
