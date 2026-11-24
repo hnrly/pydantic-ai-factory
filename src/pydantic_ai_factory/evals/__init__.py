@@ -33,6 +33,7 @@ from ._contract import (
     sha256_of,
 )
 from ._events import Event, EventKind, EventLog
+from ._experiment import Arm, ArmContext, Judge, Suite, regrade, run_experiment
 from ._facts import (
     ChallengeClass,
     ChecklistItem,
@@ -47,6 +48,7 @@ from ._graded import Graded, GradedRun, MissingVerdicts, grade_run
 from ._grading import SUCCESSES, FactResult, Grade, Outcome, QuestionMeasures, grade
 from ._harness import Case, RunPorts, WorkspaceError, WorkspaceFor, read_record, run_case
 from ._port_tools import port_server, serve_ports
+from ._report import CardItem, Estimate, PassK, RunCard, SuccessRate, estimate
 from ._sandbox import (
     WORKSPACE,
     Allowed,
@@ -75,7 +77,10 @@ __all__ = (
     "Allowed",
     "ApprovalLog",
     "Approved",
+    "Arm",
+    "ArmContext",
     "Brief",
+    "CardItem",
     "Case",
     "ChallengeClass",
     "ChecklistItem",
@@ -83,6 +88,7 @@ __all__ = (
     "ClaudeCodeSystem",
     "Coverage",
     "Delivery",
+    "Estimate",
     "Event",
     "EventKind",
     "EventLog",
@@ -94,8 +100,10 @@ __all__ = (
     "Graded",
     "GradedRun",
     "ItemVerdict",
+    "Judge",
     "MissingVerdicts",
     "Outcome",
+    "PassK",
     "Pick",
     "Ports",
     "QuestionMeasures",
@@ -103,6 +111,7 @@ __all__ = (
     "RecordingModel",
     "Reply",
     "ReportEnd",
+    "RunCard",
     "RunPorts",
     "RunRecord",
     "RunReport",
@@ -113,6 +122,8 @@ __all__ = (
     "Stakeholder",
     "StationSystem",
     "Status",
+    "SuccessRate",
+    "Suite",
     "SystemAdapter",
     "WorkspaceError",
     "WorkspaceFor",
@@ -127,13 +138,16 @@ __all__ = (
     "coverage",
     "docker_available",
     "docker_sandbox",
+    "estimate",
     "grade",
     "grade_run",
     "load_fact_sheet",
     "picker_agent",
     "port_server",
     "read_record",
+    "regrade",
     "run_case",
+    "run_experiment",
     "scan",
     "scripted_judge",
     "scripted_picker",
