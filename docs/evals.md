@@ -114,6 +114,8 @@ Each case belongs to a class: `critical-ambiguity`, where the system must ask; `
 
 **The checklist.** Stating every critical fact decides the outcome; it does not say whether the work took the right direction. A scored case's checklist holds three to six items. Pydantic Evals' own judge reads one item and the delivered text in each call, with the suite's instructions, and passes or fails it. Its reason must quote the passage that shows the item, and plain code keeps a pass only when that quote is an exact run of the text. Each verdict is stored beside the run with the hash of the text it read, so grading a run again calls no judge. Coverage sits beside the outcome and never changes it.
 
+**The report.** Each arm's runs are one Pydantic Evals `Dataset`, graded by the `Graded` evaluator. Its report evaluators give the success rate across cases, `SuccessRate`, and reliability, `PassK`. The case is the unit of analysis, because repeats of one case are not independent: a rate is each case's own rate, averaged across cases, with a 95 per cent interval from the spread between cases. `pydantic_ai_factory.evals.stats` holds the statistics, with no statistics library.
+
 ## Factories, stations and Claude Code
 
 | System | What it runs |
@@ -124,6 +126,70 @@ Each case belongs to a class: `critical-ambiguity`, where the system must ask; `
 
 A factory or station system answers what the factory waits on as a person at the ports would. A round of questions from `ask_user_question` goes to the stakeholder port. The factory's own approval, and any escalation, is given, and noted in the event log. When rework runs out, the last output is delivered as `blocked`. A passing output is delivered as text, by default through the last station's own `show`.
 
+## Write a suite
+
+A `Suite` says what an experiment measures: its splits and cases, how to load a case's fact sheet, its arms, its judge, its pinned picker model and its limits. It may also build each case's workspace, and print a report of its own. `run_experiment` runs it, and `regrade` grades its runs again with stored verdicts only.
+
+```python
+import json
+from pathlib import Path
+
+from pydantic_ai_factory.evals import (
+    Arm,
+    Case,
+    ChecklistJudge,
+    FactSheet,
+    Suite,
+    run_experiment,
+    scripted_system,
+)
+
+Path("tasks.json").write_text(
+    json.dumps(
+        {
+            "case_name": "tasks",
+            "challenge_class": "complete",
+            "canary": "canary-1234abcd5678",
+            "fallback_reply": "I don't have anything to add on that.",
+            "approval_reply": "I can't sign anything off here.",
+            "scored": False,
+            "facts": [],
+        }
+    )
+)
+
+
+def sheet_for(name: str) -> FactSheet:
+    return FactSheet.model_validate_json(Path(f"{name}.json").read_text())
+
+
+suite = Suite(
+    name="tasks",
+    splits=("dev",),
+    cases=lambda split: [Case(name="tasks", request="Build a to-do page.")],
+    sheet_for=sheet_for,
+    arms=(
+        Arm(
+            name="scripted-correct",
+            build=lambda case, sheet, context: scripted_system("correct", sheet),
+            real=False,
+        ),
+    ),
+    judge_for=lambda sheet: ChecklistJudge("anthropic:claude-sonnet-5-5", "Judge the plan."),
+    picker_model="anthropic:claude-haiku-5-5",
+    model="anthropic:claude-opus-5-5",
+    cap_usd=0.50,
+    time_limit_seconds=600.0,
+)
+
+code = run_experiment(suite, ["scripted-correct"], "dev", 1, Path("experiment"), offline=True)
+#> scripted-correct  tasks  repeat 1  verified  turns 0  needless 0  checklist -
+print(code)
+#> 0
+```
+
+An experiment continues where it stopped: it counts the records already in its folder and runs only what is missing. It stops after three runs in a row end as an infrastructure error. Offline, it runs the scripted picker and the scripted judge, so it calls no model.
+
 ## Plug in a system
 
-Any system can be measured. Write a class with a `name` and an `async run(brief, ports)` that asks through `ports.ask_stakeholder` and ends with `ports.deliver`. The contract imports nothing from the factory; in the framework, only the factory and station systems do.
+Any system can be measured. Write a class with a `name` and an `async run(brief, ports)` that asks through `ports.ask_stakeholder` and ends with `ports.deliver`, and build it in an `Arm`. The contract imports nothing from the factory; in the framework, only the factory and station systems do.
