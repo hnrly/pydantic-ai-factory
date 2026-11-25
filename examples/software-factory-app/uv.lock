@@ -290,10 +290,11 @@ requires-dist = [
     { name = "pydantic-ai-harness", extras = ["coder"], marker = "extra == 'coder'", specifier = ">=0.68,<0.69" },
     { name = "pydantic-ai-harness", extras = ["skills"], specifier = ">=0.68,<0.69" },
     { name = "pydantic-ai-slim", specifier = ">=2.68,<3" },
+    { name = "pydantic-evals", marker = "extra == 'evals'", specifier = ">=2.68,<3" },
     { name = "typing-extensions", specifier = ">=4.12" },
     { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.32,<1" },
 ]
-provides-extras = ["coder", "web"]
+provides-extras = ["coder", "web", "evals"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -301,10 +302,9 @@ dev = [
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "import-linter", specifier = ">=2.16,<3" },
     { name = "opentelemetry-sdk", specifier = ">=1.30,<2" },
-    { name = "pydantic-ai-factory", extras = ["web"] },
+    { name = "pydantic-ai-factory", extras = ["web", "evals"] },
     { name = "pydantic-ai-factory-software", editable = "../../packages/software" },
     { name = "pydantic-ai-harness", extras = ["coder", "anthropic"], specifier = ">=0.68,<0.69" },
-    { name = "pydantic-evals", specifier = ">=2.68,<3" },
     { name = "pyright", specifier = ">=1.1.410,<2" },
     { name = "pytest", specifier = ">=9,<10" },
     { name = "pytest-examples", specifier = ">=0.0.18,<0.1" },
