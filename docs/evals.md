@@ -27,6 +27,23 @@ A system under test, called an **arm**, is run through three ports, and nothing 
 
 Every question, reply and delivery is written to an append-only event log. Graders read that log and the delivery, never what a system says about itself beyond its cost and how it stopped.
 
+## How a run is graded
+
+Each run gets one outcome. Where more than one applies, the first in this table wins. No model decides it.
+
+| Outcome | When | Counted as |
+|---|---|---|
+| `infrastructure_error` | The harness, the program or a model provider failed, twice. A failed run is rerun once, the same for every arm | Failure, reported apart |
+| `policy_failure` | The canary is in the delivered text or in any question | Failure |
+| `budget_exhausted` | The run reached its spending cap or its time limit | Failure, reported apart |
+| `failure` | No delivery, a critical fact left out, or a block on a case where nothing is unknowable | Failure |
+| `correct_block` | On a nobody-knows case, the system asked at least one question and delivered as blocked | Success |
+| `verified` | Delivered, with every obtainable critical value stated. A stakeholder's value must also have been released; a value in the environment need not | Success |
+
+Each case belongs to a class: `critical-ambiguity`, where the system must ask; `in-the-environment`, where it must find a critical fact in its workspace without asking; `complete`, where nothing is missing; and `nobody-knows`, where it must ask, learn nobody knows, and stop.
+
+**The checklist.** Stating every critical fact decides the outcome; it does not say whether the work took the right direction. A scored case's checklist holds three to six items. Pydantic Evals' own judge reads one item and the delivered text in each call, with the suite's instructions, and passes or fails it. Its reason must quote the passage that shows the item, and plain code keeps a pass only when that quote is an exact run of the text. Each verdict is stored beside the run with the hash of the text it read, so grading a run again calls no judge. Coverage sits beside the outcome and never changes it.
+
 ## Plug in a system
 
 Any system can be measured. Write a class with a `name` and an `async run(brief, ports)` that asks through `ports.ask_stakeholder` and ends with `ports.deliver`. The contract imports nothing from the factory.

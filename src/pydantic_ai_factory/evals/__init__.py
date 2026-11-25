@@ -13,6 +13,7 @@ sheets and its words.
 Install it with ``pip install "pydantic-ai-factory[evals]"``.
 """
 
+from ._checklist import ChecklistJudge, Coverage, ItemVerdict, coverage, scripted_judge
 from ._contract import (
     MAX_QUESTIONS_PER_CALL,
     ApprovalLog,
@@ -31,17 +32,44 @@ from ._contract import (
     sha256_of,
 )
 from ._events import Event, EventKind, EventLog
+from ._facts import (
+    ChallengeClass,
+    ChecklistItem,
+    Fact,
+    FactSheet,
+    appears,
+    canary_in,
+    load_fact_sheet,
+    values_in,
+)
+from ._graded import Graded, GradedRun, MissingVerdicts, grade_run
+from ._grading import SUCCESSES, FactResult, Grade, Outcome, QuestionMeasures, grade
 
 __all__ = (
     "MAX_QUESTIONS_PER_CALL",
+    "SUCCESSES",
     "ApprovalLog",
     "Approved",
     "Brief",
+    "ChallengeClass",
+    "ChecklistItem",
+    "ChecklistJudge",
+    "Coverage",
     "Delivery",
     "Event",
     "EventKind",
     "EventLog",
+    "Fact",
+    "FactResult",
+    "FactSheet",
+    "Grade",
+    "Graded",
+    "GradedRun",
+    "ItemVerdict",
+    "MissingVerdicts",
+    "Outcome",
     "Ports",
+    "QuestionMeasures",
     "RecordEnd",
     "Reply",
     "ReportEnd",
@@ -49,6 +77,14 @@ __all__ = (
     "RunReport",
     "Status",
     "SystemAdapter",
+    "appears",
+    "canary_in",
     "check_questions",
+    "coverage",
+    "grade",
+    "grade_run",
+    "load_fact_sheet",
+    "scripted_judge",
     "sha256_of",
+    "values_in",
 )
