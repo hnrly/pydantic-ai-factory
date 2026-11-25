@@ -1,0 +1,31 @@
+"""Elephant Goldfish: Google's method for design-driven development, as one capability.
+
+The method's code is in ``_method``. Its skills, and the loader that reads them, sit beside
+it in this package.
+"""
+
+from ._method import (
+    Answer,
+    ElephantGoldfish,
+    Finding,
+    Goldfish,
+    GoldfishFailed,
+    GoldfishReport,
+    GoldfishResult,
+    Severity,
+    Stage,
+    Standard,
+)
+
+__all__ = [
+    "Answer",
+    "ElephantGoldfish",
+    "Finding",
+    "Goldfish",
+    "GoldfishFailed",
+    "GoldfishReport",
+    "GoldfishResult",
+    "Severity",
+    "Stage",
+    "Standard",
+]
