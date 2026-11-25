@@ -28,7 +28,7 @@ The first delivery is complete. It is the core contract and one real station. Re
 | Serve a factory as a board, with its work done by a separate worker | [Serving a factory as a board](board.md) |
 | Run a factory behind a web page, with its work done by a separate worker | [Deploying a factory](deploying.md) |
 
-What "complete" does not mean: the API may still change before 1.0. The getting-started path is run against a real model by hand before each release, with the `live` test marker. The evaluation set has been run against a real model once, on 16 November 2026.
+What "complete" does not mean: the API may still change before 1.0. The getting-started path is run against a real model by hand before each release, with the `live` test marker.
 
 ## Next
 

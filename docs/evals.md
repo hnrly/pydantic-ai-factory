@@ -13,6 +13,8 @@ It is built on `pydantic-evals`, the evaluation library that comes with [Pydanti
 pip install "pydantic-ai-factory[evals]"
 ```
 
+[Software Factory Evals](measuring.md) is the first suite. It measures the software factory's Design station against Claude Code.
+
 ## How a run works
 
 A **case** is a request and a **fact sheet**. A system sees the request, and a workspace when the suite gives one. The fact sheet stays on the grader side. It holds the hidden facts, a canary and, for scored cases, a checklist. Every fact a delivery must get right carries a value nobody could guess, such as "47 days", so plain code can tell whether a delivery states it.
@@ -109,6 +111,8 @@ Each run gets one outcome. Where more than one applies, the first in this table 
 | `failure` | No delivery, a critical fact left out, or a block on a case where nothing is unknowable | Failure |
 | `correct_block` | On a nobody-knows case, the system asked at least one question and delivered as blocked | Success |
 | `verified` | Delivered, with every obtainable critical value stated. A stakeholder's value must also have been released; a value in the environment need not | Success |
+
+A suite may label the outcomes in its own words: Software Factory Evals calls a verified run a verified design.
 
 Each case belongs to a class: `critical-ambiguity`, where the system must ask; `in-the-environment`, where it must find a critical fact in its workspace without asking; `complete`, where nothing is missing; and `nobody-knows`, where it must ask, learn nobody knows, and stop.
 
