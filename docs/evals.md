@@ -27,6 +27,8 @@ A system under test, called an **arm**, is run through three ports, and nothing 
 
 **The stakeholder.** No model writes a word a system sees. A small model, pinned by the suite, picks which facts a question asks about. Plain code then sends those facts' statements, word for word. A question about nothing on the sheet gets the sheet's fallback reply, and a request for sign-off gets its approval reply.
 
+**The workspace.** A suite that gives files to read builds a snapshot for each run and scans it for every hidden value and canary of every case, so a case that leaks its answers ends as an infrastructure error before any system sees it. A system that reads files runs in a Docker container, with the snapshot mounted read-only.
+
 Every question, reply and delivery is written to an append-only event log. Graders read that log and the delivery, never what a system says about itself beyond its cost and how it stopped.
 
 ## Run one case

@@ -46,6 +46,19 @@ from ._graded import Graded, GradedRun, MissingVerdicts, grade_run
 from ._grading import SUCCESSES, FactResult, Grade, Outcome, QuestionMeasures, grade
 from ._harness import Case, RunPorts, WorkspaceError, WorkspaceFor, read_record, run_case
 from ._port_tools import port_server, serve_ports
+from ._sandbox import (
+    WORKSPACE,
+    Allowed,
+    SandboxError,
+    SnapshotLeak,
+    allowed_for,
+    build_image,
+    build_snapshot,
+    check_clean,
+    container_args,
+    docker_available,
+    scan,
+)
 from ._scripted import KINDS as SCRIPTED_KINDS
 from ._scripted import Kind as ScriptedKind
 from ._scripted import ScriptedSystem, scripted_system
@@ -56,6 +69,8 @@ __all__ = (
     "PICKER_PROMPT",
     "SCRIPTED_KINDS",
     "SUCCESSES",
+    "WORKSPACE",
+    "Allowed",
     "ApprovalLog",
     "Approved",
     "Brief",
@@ -86,17 +101,25 @@ __all__ = (
     "RunPorts",
     "RunRecord",
     "RunReport",
+    "SandboxError",
     "ScriptedKind",
     "ScriptedSystem",
+    "SnapshotLeak",
     "Stakeholder",
     "Status",
     "SystemAdapter",
     "WorkspaceError",
     "WorkspaceFor",
+    "allowed_for",
     "appears",
+    "build_image",
+    "build_snapshot",
     "canary_in",
+    "check_clean",
     "check_questions",
+    "container_args",
     "coverage",
+    "docker_available",
     "grade",
     "grade_run",
     "load_fact_sheet",
@@ -104,6 +127,7 @@ __all__ = (
     "port_server",
     "read_record",
     "run_case",
+    "scan",
     "scripted_judge",
     "scripted_picker",
     "scripted_system",
