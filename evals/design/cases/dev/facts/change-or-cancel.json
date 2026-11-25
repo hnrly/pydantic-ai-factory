@@ -1,0 +1,48 @@
+{
+  "case_name": "change-or-cancel",
+  "challenge_class": "in-the-environment",
+  "canary": "canary-777dfd8a2e30",
+  "fallback_reply": "I don't have anything to add on that.",
+  "approval_reply": "I can't sign anything off here.",
+  "facts": [
+    {
+      "id": "change-fee",
+      "value": "£37.40",
+      "criticality": "critical",
+      "obtainable": true,
+      "source": "environment",
+      "held_by": "revenue team",
+      "statement": "Changing a booking to another flight costs a fee of £37.40, plus any difference in fare.",
+      "direct_question": "How much does it cost to change a booking to another flight?",
+      "keywords": ["fee", "cost"]
+    },
+    {
+      "id": "cut-off",
+      "value": "19 hours",
+      "criticality": "critical",
+      "obtainable": true,
+      "source": "environment",
+      "held_by": "revenue team",
+      "statement": "No booking can be changed or cancelled within 19 hours of departure.",
+      "direct_question": "How close to departure can a booking still be changed or cancelled?",
+      "keywords": ["departure", "cut-off"]
+    },
+    {
+      "id": "refund-time",
+      "value": "6 working days",
+      "criticality": "low",
+      "obtainable": true,
+      "held_by": "finance team",
+      "statement": "A refund reaches the card within 6 working days.",
+      "direct_question": "How long does a refund take to arrive?",
+      "keywords": ["refund", "refunds"]
+    }
+  ],
+  "checklist": [
+    {"id": "reads-rules", "item": "Takes the change fee and the cut-off from the fare rules already in the code."},
+    {"id": "owner-only", "item": "Lets only the account that made a booking change or cancel it."},
+    {"id": "frees-seat", "item": "Frees the old seat when a booking moves to another flight or is cancelled."},
+    {"id": "sold-once", "item": "Keeps a seat from being sold twice when a booking moves to another flight."},
+    {"id": "fare-difference", "item": "Charges any difference in fare on top of the change fee."}
+  ]
+}
