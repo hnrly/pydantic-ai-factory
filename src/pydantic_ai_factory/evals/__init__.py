@@ -14,6 +14,7 @@ Install it with ``pip install "pydantic-ai-factory[evals]"``.
 """
 
 from ._checklist import ChecklistJudge, Coverage, ItemVerdict, coverage, scripted_judge
+from ._claude_code import ClaudeCodeSystem
 from ._contract import (
     MAX_QUESTIONS_PER_CALL,
     ApprovalLog,
@@ -79,6 +80,7 @@ __all__ = (
     "ChallengeClass",
     "ChecklistItem",
     "ChecklistJudge",
+    "ClaudeCodeSystem",
     "Coverage",
     "Delivery",
     "Event",
