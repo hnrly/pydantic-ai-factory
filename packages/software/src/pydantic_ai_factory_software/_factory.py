@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
 
 from pydantic_ai_factory import Factory, FactoryDefinitionError, Rework, Station
@@ -26,6 +28,10 @@ class SoftwareFactory(Factory):
     that passes waits for a person to approve it. Before drafting, or during review, the
     designer may ask you questions with :class:`~pydantic_ai_factory.AskPerson`.
 
+    ``workspace``, a capability that supplies one such as ``LocalWorkspace(path)``, is the
+    code the design is grounded in, read-only. It is passed to the Design station this
+    factory builds; a ``design`` you pass keeps the workspace you gave it.
+
     It takes one keyword for each station, never a method: to change the review, pass
     ``design=design_station(model, method=...)``.
 
@@ -37,6 +43,7 @@ class SoftwareFactory(Factory):
         self,
         model: Model | str,
         *,
+        workspace: AbstractCapability[Any] | None = None,
         design: Station[str, Design] | None = None,
         repairs: int = 2,
         accept: Accept | None = None,
@@ -47,7 +54,7 @@ class SoftwareFactory(Factory):
                 ["give it a model, such as SoftwareFactory('anthropic:claude-opus-5-5')"],
             )
         if design is None:
-            design = design_station(model)
+            design = design_station(model, workspace=workspace)
         super().__init__(
             "software",
             [design],
