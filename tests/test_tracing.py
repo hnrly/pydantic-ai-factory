@@ -408,7 +408,7 @@ async def test_goldfish_reviewing_a_draft_trace_inside_the_station_that_ran_the_
     goldfish = [s for s in EXPORTER.get_finished_spans() if "goldfish-newcomer" in s.name]
     assert goldfish
     assert all("station designer" in ancestors(span) for span in goldfish)
-    assert attributes(one("agent designer"))["factory.methodologies"] == ("elephant-goldfish@1",)
-    assert attributes(one("station designer"))["factory.methodologies"] == ("elephant-goldfish@1",)
+    assert attributes(one("agent designer"))["factory.methodologies"] == ("elephant-goldfish@2",)
+    assert attributes(one("station designer"))["factory.methodologies"] == ("elephant-goldfish@2",)
     evidence = attributes(one("station designer"))["factory.station.evidence"]
     assert evidence == tuple(ref.digest for ref in run.steps[0].evidence)

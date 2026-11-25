@@ -264,7 +264,7 @@ def test_the_factory_names_its_station_agent_and_methodology_before_a_run() -> N
     assert [station.name for station in software.stations] == ["design"]
     assert software.stations[0].approval
     assert [agent.name for agent in software.agents()["design"]] == ["designer"]
-    assert [str(m.ref) for m in software.methodologies()["design"]] == ["elephant-goldfish@1"]
+    assert [str(m.ref) for m in software.methodologies()["design"]] == ["elephant-goldfish@2"]
     assert (software.rounds, software.repairs) == (2, 2)
     assert software.goldfish == DESIGN_GOLDFISH
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import warnings
 from collections.abc import Iterator
 
@@ -15,15 +16,25 @@ models.ALLOW_MODEL_REQUESTS = False
 # Pydantic AI prints a banner on an agent's first run; keep test output clean.
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
+POSIX_ONLY = "Pydantic AI's LocalWorkspace runs only on POSIX"
+"""Why a test marked ``posix_only`` is skipped on Windows."""
+
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """Skip tests marked ``live`` unless they were asked for with ``-m live``."""
-    if "live" in (config.getoption("markexpr") or ""):
-        return
-    skip = pytest.mark.skip(reason="makes real, paid model requests; select it with -m live")
+    """Skip tests marked ``live`` unless they were asked for with ``-m live``.
+
+    Tests marked ``posix_only`` are skipped on Windows: they build a ``LocalWorkspace``, or
+    something built on one, and Pydantic AI's ``LocalWorkspaceBackend`` refuses to start there.
+    """
+    live_asked = "live" in (config.getoption("markexpr") or "")
+    on_windows = sys.platform == "win32"
+    live = pytest.mark.skip(reason="makes real, paid model requests; select it with -m live")
+    posix = pytest.mark.skip(reason=POSIX_ONLY)
     for item in items:
-        if "live" in item.keywords:
-            item.add_marker(skip)
+        if "live" in item.keywords and not live_asked:
+            item.add_marker(live)
+        if "posix_only" in item.keywords and on_windows:
+            item.add_marker(posix)
 
 
 @pytest.fixture

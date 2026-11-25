@@ -109,6 +109,7 @@ pythonpath = ["."]
 addopts = "-ra --strict-config --strict-markers"
 markers = [
   "live: makes real, paid model requests; skipped unless selected with -m live",
+  "posix_only: builds a LocalWorkspace, directly or through the library; skipped on Windows",
 ]
 filterwarnings = ["error"]
 
