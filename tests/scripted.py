@@ -106,8 +106,15 @@ DESIGN_WITH_BLANK = DESIGN + " Pressing Enter on a blank task adds nothing."
 REVIEW = "The page matches the design. Nothing is wrong."
 SCENARIO = "Given an empty list, when I press Enter on a blank task, then nothing is added."
 PARAPHRASE = "A one-page to-do list: you type tasks in, and tick them off when they are done."
+EXPLAIN_BACK = {
+    "problem": "Keeping track of tasks.",
+    "who": "One person with tasks to do.",
+    "approach": PARAPHRASE,
+}
+"""How a comprehension goldfish explains the to-do list back."""
 BLANK_TASK = {
     "severity": "Major",
+    "kind": "gap",
     "issue": "It does not say what happens when you press Enter on a blank task.",
 }
 
@@ -236,7 +243,11 @@ def _work(messages: list[ModelMessage]) -> str:
 
 def critique(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     """Finds the missing blank-task rule, and nothing else."""
-    found = [] if "blank" in _work(messages) else [{"severity": "Major", "issue": BLANK_ISSUE}]
+    found = (
+        []
+        if "blank" in _work(messages)
+        else [{"severity": "Major", "kind": "gap", "issue": BLANK_ISSUE}]
+    )
     return _output(info, {"findings": found})
 
 
@@ -244,14 +255,19 @@ def readiness(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
     """Asks where the styles go in a one-file page that does not say."""
     work = _work(messages)
     found = "one file" in work and "styles" not in work
-    return _output(info, {"findings": [{"severity": "Major", "issue": STYLES}] if found else []})
+    return _output(
+        info,
+        {
+            "findings": [{"severity": "Major", "kind": "decision_left_to_builder", "issue": STYLES}]
+            if found
+            else []
+        },
+    )
 
 
 SOFTWARE: Script = {
     "designer": [software_designer],
-    "goldfish-comprehension": [
-        {"paraphrase": "A to-do list in the browser: add tasks, tick them off.", "findings": []}
-    ],
+    "goldfish-comprehension": [{"explain_back": EXPLAIN_BACK, "findings": []}],
     "goldfish-critique": [critique],
     "goldfish-readiness": [readiness],
 }
@@ -305,12 +321,12 @@ SCRIPTS: dict[str, Script] = {
     "docs/missions.md": {"designer": [DESIGN], "builder": ["Built index.html."]},
     "docs/elephant-goldfish.md": {
         "designer": [DESIGN, DESIGN_WITH_BLANK],
-        "goldfish-comprehension": [{"paraphrase": PARAPHRASE, "findings": []}],
+        "goldfish-comprehension": [{"explain_back": EXPLAIN_BACK, "findings": []}],
         "goldfish-critique": [{"findings": [BLANK_TASK]}, {"findings": []}],
         "goldfish-readiness": [{"findings": []}],
     },
     "docs/methodologies.md": {
-        "goldfish-comprehension": [{"paraphrase": PARAPHRASE, "findings": []}],
+        "goldfish-comprehension": [{"explain_back": EXPLAIN_BACK, "findings": []}],
         "goldfish-critique": [{"findings": [BLANK_TASK]}, {"findings": []}],
         "goldfish-readiness": [{"findings": []}],
         "designer": [

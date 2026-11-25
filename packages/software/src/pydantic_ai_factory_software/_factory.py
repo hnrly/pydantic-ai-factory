@@ -2,54 +2,43 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 
-from pydantic_ai import Agent
 from pydantic_ai.models import Model
 
-from pydantic_ai_factory import Factory, FactoryDefinitionError, Rework, station
+from pydantic_ai_factory import Factory, FactoryDefinitionError, Rework, Station
 from pydantic_ai_factory.factory import Accept
-from pydantic_ai_factory.methodologies import ElephantGoldfish, Goldfish
 
-from ._design import DESIGN_GOLDFISH, DESIGNER_INSTRUCTIONS, Design, design_is_buildable
+from ._design import Design
+from ._station import design_station
 
 
 @dataclass(frozen=True, init=False, eq=False, kw_only=True)
 class SoftwareFactory(Factory):
     """A ready-made factory for building software. Today it has one station, Design.
 
-    Run it with a mission, or a string that becomes one. In the Design station a designer
-    agent drafts a :class:`Design` under the Elephant Goldfish method: ``goldfish`` read
-    each draft, for up to ``rounds`` rounds, and the designer revises in the same
-    conversation. A design a builder could not follow, such as one with open questions or
-    an acceptance criterion no check proves, fails :func:`design_is_buildable` and is
-    sent back to the designer up to ``repairs`` times; after that a person decides. A
-    design that passes waits for a person to approve it. Before drafting, or during
-    review, the designer may ask you questions through the
-    :class:`~pydantic_ai_factory.AskPerson` that Elephant Goldfish brings.
+    Run it with a mission, or a string that becomes one. ``design`` is its Design
+    station; by default :func:`design_station` ``(model)``, where a designer agent drafts a
+    :class:`Design` under :func:`design_review`, Elephant Goldfish tuned for software
+    designs. A design a builder could not follow, such as one with open questions or an
+    acceptance criterion no check proves, fails :func:`design_is_buildable` and is sent
+    back to the designer up to ``repairs`` times; after that a person decides. A design
+    that passes waits for a person to approve it. Before drafting, or during review, the
+    designer may ask you questions with :class:`~pydantic_ai_factory.AskPerson`.
 
-    ``model`` drafts the design. ``review_model`` runs the goldfish; by default they use
-    ``model``. ``accept`` reads signals, as for any :class:`Factory`.
+    It takes one keyword for each station, never a method: to change the review, pass
+    ``design=design_station(model, method=...)``.
 
     It is a :class:`Factory`, so everything a factory does, such as ``run_sync``,
     ``resume_sync``, ``intake`` and ``agents()``, works on it unchanged.
     """
 
-    model: Model | str
-    rounds: int
-    repairs: int
-    goldfish: tuple[Goldfish, ...]
-    review_model: Model | str | None
-
     def __init__(
         self,
         model: Model | str,
         *,
-        rounds: int = 2,
+        design: Station[str, Design] | None = None,
         repairs: int = 2,
-        goldfish: Sequence[Goldfish] = DESIGN_GOLDFISH,
-        review_model: Model | str | None = None,
         accept: Accept | None = None,
     ) -> None:
         if not isinstance(model, (Model, str)) or not model:  # pyright: ignore[reportUnnecessaryIsInstance]
@@ -57,27 +46,8 @@ class SoftwareFactory(Factory):
                 "factory 'software'",
                 ["give it a model, such as SoftwareFactory('anthropic:claude-opus-5-5')"],
             )
-        review = ElephantGoldfish(goldfish=goldfish, rounds=rounds, model=review_model)
-        designer = Agent(
-            model,
-            name="designer",
-            output_type=Design,
-            instructions=DESIGNER_INSTRUCTIONS,
-            capabilities=[review],
-            # Each review round resends the whole conversation, so cache it.
-            model_settings={"cache": True},
-        )
-        design = station(
-            designer, name="design", version="2", gate=design_is_buildable, approval=True
-        )
-        for label, value in (
-            ("model", model),
-            ("rounds", rounds),
-            ("repairs", repairs),
-            ("goldfish", tuple(review.goldfish)),
-            ("review_model", review_model),
-        ):
-            object.__setattr__(self, label, value)
+        if design is None:
+            design = design_station(model)
         super().__init__(
             "software",
             [design],

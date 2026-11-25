@@ -117,6 +117,30 @@ The words used below each have a page under Concepts, starting with [factories](
 
 **Rejected.** Sending every contested finding to a person, as 0.1 does, for the software factory's own review. It stops a run for questions code can answer. Also rejected: a contest that settles without a citation code can check. Then a model would wave its own finding through.
 
+## Elephant Goldfish uses its skills by default
+
+**Decided.** The method's guidance is written as four Agent Skills that ship with Elephant Goldfish, in the core distribution: `design-interview` and `design-resolve` for the author, `goldfish-comprehension` and `goldfish-critique` for two goldfish. They speak of "the work" and "the request", never of software. The author is always offered its two through Pydantic AI Harness's `Skills`, and loads one when it needs it. `goldfish` defaults to `ElephantGoldfish.GOLDFISH`, comprehension and critique built from their skills with `Goldfish.from_skill`; each goldfish gets its skill's body as its instructions. `goldfish=()` means no review, and the author is still offered the skills. Elephant Goldfish offers only its own skills. This is the one core default that changes from 0.1, where `goldfish` was required.
+
+**Why.** A person can read, review and change the method as documents, without touching Python, and share them with the plugins they came from. The method belongs to Elephant Goldfish, so a factory for briefs or reports gets the same interview and the same goldfish as the software factory. A goldfish whose whole job is one skill must not depend on a model choosing to load it, or it would review by no standard while the round still counts.
+
+**Rejected.** Keeping the method as Python strings: it can only be read and changed in Python. Keeping the skills in the software package: the method would belong to one use of it. Letting each goldfish load its own skill on demand. A switch to turn the skills off: a team that passes its own goldfish gets exactly its own.
+
+## A method belongs to a station, not a factory
+
+**Decided.** The software package publishes `design_station(model, *, method=...)` and `design_review(model=None)`. `method` defaults to `design_review()`, Elephant Goldfish with the three design goldfish, `rounds=4`, `clean_rounds=2`, `settle_contests=True` and `to_text=render_markdown`; `None` gives a designer with no method. `SoftwareFactory(model, *, design=None, repairs=2, accept=None)` takes one keyword for each station, never a method. Its 0.1 keywords `rounds`, `goldfish` and `review_model`, and the attributes that copied its settings, are removed with no deprecation period: before 1.0 the better shape wins over compatibility.
+
+**Why.** A factory will have several stations, each with its own review or none. A factory-wide method would either apply to every station or quietly to one. The same parts compose a factory of your own, `Factory("ours", [design_station(model), build])`, and the simple designer that Factory Evals compares, `design_station(model, method=ElephantGoldfish(goldfish=()))`, with nothing assembled by hand.
+
+**Rejected.** `SoftwareFactory(model, method=...)`, one keyword that swaps the review: see Why.
+
+## Skills sit on the designer
+
+**Decided.** Skills are project context, so they sit on the designer, not inside the method. `design_station` gives the designer a plain `Skills` over the software package's `design-read-code` and `design-doc`, beside its method, so the designer is offered exactly four skills with review or without it. The third software skill, `goldfish-readiness`, builds the readiness goldfish. The method is attached before the designer's `Skills`, which has `duplicate_names="keep_first"`. Two `Skills` on one agent combine into one catalogue, Elephant Goldfish's included, and the first wins a name, so no later skill replaces a method skill. Goldfish never load the designer's skills.
+
+**Why.** The software package's skills are not the method, and a designer without review still needs them. Pydantic AI Harness combines two `Skills` on one agent into one catalogue; this release checks that it does so with Elephant Goldfish's catalogue too, and that `keep_first` keeps the method's skill when a later catalogue has the same name. Attached the other way round, the run fails on the duplicate name.
+
+**Rejected.** Routing the designer's skills through the method, `ElephantGoldfish(skills=...)`. It would need an off switch, and a separate function for a designer without review.
+
 ## The type is `Artifact`
 
 **Decided.** The type is spelled `Artifact`, and these pages use "artifact" as a defined term. All other prose is British.

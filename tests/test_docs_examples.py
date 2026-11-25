@@ -16,7 +16,6 @@ Only ``.md`` files are searched, so an ``.mdx`` page must not hold a Python samp
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -40,8 +39,18 @@ def python_samples(*paths: str | Path) -> list[CodeExample]:
 
 DOC_SAMPLES = python_samples(*(str(ROOT / source) for source in SOURCES))
 
+POSIX_ONLY_NAMES = ("LocalWorkspace",)
+"""Names a sample builds a ``LocalWorkspace`` with, so a sample that uses any is POSIX only."""
 
-@pytest.mark.parametrize("example", DOC_SAMPLES, ids=str)
+
+def _posix_only(example: CodeExample) -> list[pytest.MarkDecorator]:
+    return [pytest.mark.posix_only] if any(n in example.source for n in POSIX_ONLY_NAMES) else []
+
+
+@pytest.mark.parametrize(
+    "example",
+    [pytest.param(example, marks=_posix_only(example), id=str(example)) for example in DOC_SAMPLES],
+)
 def test_a_documentation_sample_runs_and_prints_what_it_says(
     example: CodeExample,
     eval_example: EvalExample,
@@ -51,8 +60,6 @@ def test_a_documentation_sample_runs_and_prints_what_it_says(
     # Each `#>` comment in a sample is compared with what the line above really printed.
     # Run `uv run pytest --update-examples` to rewrite them after an intended change.
     # Printed lines are compared whole, however long, as a reader sees them.
-    if sys.platform == "win32" and "LocalWorkspace" in example.source:
-        pytest.skip("Pydantic AI Harness's LocalWorkspace runs only on POSIX systems")
     eval_example.set_config(line_length=200)
     page = Path(example.path).relative_to(ROOT).as_posix()
     monkeypatch.chdir(tmp_path)

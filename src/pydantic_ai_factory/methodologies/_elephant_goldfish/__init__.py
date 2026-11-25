@@ -16,16 +16,20 @@ from ._method import (
     Stage,
     Standard,
 )
+from ._skills import ExplainBack, PackageFolder, packaged_skills
 
 __all__ = [
     "Answer",
     "ElephantGoldfish",
+    "ExplainBack",
     "Finding",
     "Goldfish",
     "GoldfishFailed",
     "GoldfishReport",
     "GoldfishResult",
+    "PackageFolder",
     "Severity",
     "Stage",
     "Standard",
+    "packaged_skills",
 ]

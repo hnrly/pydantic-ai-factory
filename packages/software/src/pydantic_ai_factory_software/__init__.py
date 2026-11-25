@@ -1,12 +1,11 @@
 """The software factory for Pydantic AI Factory.
 
 ``SoftwareFactory(model)`` turns a mission into a reviewed design that a person approves.
-Its first station is Design. Build, Quality and Release follow.
+Its first station is Design, which ``design_station`` builds for a factory of your own.
+Build, Quality and Release follow.
 """
 
 from ._design import (
-    DESIGN_GOLDFISH,
-    DESIGN_STANDARDS,
     Alternative,
     Change,
     Check,
@@ -20,10 +19,18 @@ from ._design import (
 )
 from ._factory import SoftwareFactory
 from ._offline import offline_model
+from ._station import (
+    DESIGN_GOLDFISH,
+    DESIGN_STANDARDS,
+    DESIGNER_INSTRUCTIONS,
+    design_review,
+    design_station,
+)
 
 __version__ = "0.1.1"
 
 __all__ = [
+    "DESIGNER_INSTRUCTIONS",
     "DESIGN_GOLDFISH",
     "DESIGN_STANDARDS",
     "Alternative",
@@ -37,6 +44,8 @@ __all__ = [
     "Step",
     "__version__",
     "design_is_buildable",
+    "design_review",
+    "design_station",
     "offline_model",
     "render_markdown",
 ]

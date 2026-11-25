@@ -389,7 +389,11 @@ async def test_goldfish_reviewing_a_draft_trace_inside_the_station_that_ran_the_
     def pond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         reply: dict[str, Any] = {"findings": []}
         if "comprehension" in (info.instructions or "").lower():
-            reply["paraphrase"] = "A page that keeps a list of tasks you can tick off."
+            reply["explain_back"] = {
+                "problem": "Keeping track of tasks.",
+                "who": "One person.",
+                "approach": "A page that keeps a list of tasks you can tick off.",
+            }
         return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, reply)])
 
     method = ElephantGoldfish(
