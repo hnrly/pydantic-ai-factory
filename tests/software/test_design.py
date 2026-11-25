@@ -9,28 +9,42 @@ import pytest
 from pydantic_ai import ModelMessage, ModelRequest, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.profiles import ModelProfile
+from scripted import PLAN
 
 import pydantic_ai_factory_software as software_package
-from pydantic_ai_factory import Factory, FactoryDefinitionError, MemoryStore, Mission, to_markdown
+from pydantic_ai_factory import (
+    Artifact,
+    Evidence,
+    Factory,
+    FactoryDefinitionError,
+    MemoryStore,
+    Mission,
+    Verdict,
+)
 from pydantic_ai_factory.methodologies import Goldfish, GoldfishReport
 from pydantic_ai_factory_software import (
     DESIGN_GOLDFISH,
     DESIGN_STANDARDS,
+    Check,
     Design,
     SoftwareFactory,
+    design_is_buildable,
+    render_markdown,
 )
 from pydantic_ai_factory_software._design import DESIGNER_INSTRUCTIONS
+from pydantic_ai_factory_software._offline import offline_model
 
 MISSION = "A to-do list web page where I can add tasks and tick them off."
 TODO: dict[str, Any] = {
     "title": "To-do list",
-    "goal": "Keep track of tasks in a browser.",
+    "summary": "Keep track of tasks in a browser.",
     "behaviour": ["Type a task and press Enter to add it.", "Tick a task's box to mark it done."],
     "acceptance_criteria": [
         "A task typed and entered appears in the list.",
         "Ticked tasks stay ticked after a reload.",
     ],
-    "exclusions": ["Accounts"],
+    "non_goals": ["Accounts"],
+    **PLAN,
 }
 BLANK = "Pressing Enter on a blank task adds nothing."
 BLANK_FINDING = {
@@ -212,7 +226,7 @@ def test_a_design_with_open_questions_is_sent_back_then_a_person_decides() -> No
     assert run.reworked == {"design": 2}
     assert run.waiting is not None and run.waiting.kind == "escalation"
     assert run.waiting.reasons[0] == "rework ran out"
-    assert "no_open_questions: open question: Should ticked tasks move to the bottom?" in (
+    assert "design_is_buildable: open question: Should ticked tasks move to the bottom?" in (
         run.waiting.reasons
     )
     assert "Should ticked tasks move to the bottom?" in said(designer.seen[-1])
@@ -308,12 +322,283 @@ def test_the_design_goldfish_read_in_order_each_held_to_its_own_standard() -> No
 def test_a_design_is_shown_as_markdown_with_a_section_per_field() -> None:
     design = Design.model_validate(TODO)
 
-    text = to_markdown(design)
+    text = render_markdown(design)
 
-    assert text.startswith("# To-do list\n\n## Goal\n\nKeep track of tasks in a browser.\n")
-    assert "## Acceptance criteria\n\n- " in text
-    assert "## Open questions\n\nNone.\n" in text
-    assert to_markdown(Design.model_validate(TODO)) == text
+    assert text.startswith("# To-do list\n\nKeep track of tasks in a browser.\n")
+    assert "- **AC2** Ticked tasks stay ticked after a reload." in text
+    assert "## Open Questions\nNone.\n" in text
+    assert "## The Problem\nNone.\n" in text
+    assert render_markdown(Design.model_validate(TODO)) == text
+
+
+FULL: dict[str, Any] = {
+    **TODO,
+    "problem": "Tasks live on paper and get lost.",
+    "goals": ["Add and tick tasks in a browser."],
+    "open_questions": ["Should ticked tasks move to the bottom?"],
+    "assumptions": ["One person uses the page."],
+    "journeys": [
+        {
+            "title": "Add a task",
+            "given": "an empty list",
+            "when": "Ada types a task and presses Enter",
+            "then": "the task appears in the list",
+        }
+    ],
+    "architecture": "One page, with its script inline.",
+    "decisions": [
+        {"topic": "Storage", "choice": "Local storage", "reason": "No server.", "source": "person"}
+    ],
+    "alternatives": [
+        {
+            "title": "A server",
+            "pros": "Shared lists.",
+            "cons": "Hosting.",
+            "rejected_because": "Out of scope.",
+            "rejected_by": "person",
+        },
+        {
+            "title": "A desktop app",
+            "pros": "Works offline.",
+            "cons": "An install.",
+            "rejected_because": "A page needs nothing installed.",
+            "rejected_by": "drafting",
+        },
+    ],
+    "risks": [{"risk": "Storage is cleared.", "mitigation": "Say so on the page."}],
+    "changes": [
+        {"path": "index.html", "action": "create", "what": "The page.", "why": "It is the app."},
+        {"path": "app.js", "action": "create", "what": "The script.", "why": "It keeps tasks."},
+    ],
+    "steps": [
+        {"title": "Write the page", "changes": ["index.html"], "done_when": "It opens."},
+        {
+            "title": "Keep the tasks",
+            "changes": ["app.js"],
+            "depends_on": ["Write the page"],
+            "done_when": "AC2 holds.",
+        },
+    ],
+    "verification": [
+        {"kind": "e2e", "check": "Add a task and reload.", "proves": [1, 2]},
+        {"kind": "lint", "check": "Lint the script", "proves": []},
+    ],
+}
+"""A design with something in every field, to show every heading and line format."""
+
+HEADINGS = (
+    "# To-do list",
+    "## The Problem",
+    "## Goals",
+    "## Non-Goals",
+    "## Open Questions",
+    "## Assumptions",
+    "## Critical User Journeys",
+    "## Behaviour",
+    "## Acceptance Criteria",
+    "## Technical Plan",
+    "### Decisions this plan rests on",
+    "## Alternatives Considered",
+    "## Risks",
+    "## Detailed Implementation Plan",
+    "### Changes",
+    "### Order of Work",
+    "## Verification Plan",
+)
+
+
+def test_render_markdown_writes_every_heading_once_in_the_fixed_order() -> None:
+    lines = render_markdown(Design.model_validate(FULL)).splitlines()
+
+    fixed = [line for line in lines if line in HEADINGS]
+
+    assert fixed == list(HEADINGS)
+
+
+@pytest.mark.parametrize(
+    "section",
+    [
+        "# To-do list\n\nKeep track of tasks in a browser.\n\n## The Problem\n"
+        "Tasks live on paper and get lost.\n",
+        "## Goals\n- Add and tick tasks in a browser.\n",
+        "## Non-Goals\n- Accounts\n",
+        "## Open Questions\n- Should ticked tasks move to the bottom?\n",
+        "## Assumptions\n- One person uses the page.\n",
+        "## Critical User Journeys\n### Add a task\n- **Given** an empty list\n"
+        "- **When** Ada types a task and presses Enter\n- **Then** the task appears in the list\n",
+        "## Behaviour\n- Type a task and press Enter to add it.\n",
+        "## Acceptance Criteria\n- **AC1** A task typed and entered appears in the list.\n"
+        "- **AC2** Ticked tasks stay ticked after a reload.\n",
+        "## Technical Plan\nOne page, with its script inline.\n",
+        "### Decisions this plan rests on\n| Topic | Decision | Reason | Source |\n"
+        "|---|---|---|---|\n| Storage | Local storage | No server. | person |\n",
+        "## Alternatives Considered\n### A server\n- **Pros**: Shared lists.\n"
+        "- **Cons**: Hosting.\n- **Reason for rejection**: Rejected by author: Out of scope.\n",
+        "- **Reason for rejection**: Rejected in drafting: A page needs nothing installed.\n",
+        "## Risks\n- Storage is cleared. **Mitigation**: Say so on the page.\n",
+        "## Detailed Implementation Plan\n### Changes\n"
+        "- create `index.html`: The page. **Why**: It is the app.\n",
+        "### Order of Work\n1. **Write the page**. Changes: `index.html`. Depends on: nothing. "
+        "Done when: It opens.\n2. **Keep the tasks**. Changes: `app.js`. Depends on: Write the "
+        "page. Done when: AC2 holds.\n",
+        "## Verification Plan\n- e2e: Add a task and reload. Proves: AC1, AC2\n"
+        "- lint: Lint the script. Proves: nothing\n",
+    ],
+)
+def test_render_markdown_writes_each_section_in_its_fixed_line_format(section: str) -> None:
+    assert section in render_markdown(Design.model_validate(FULL))
+
+
+def test_render_markdown_keeps_a_table_cell_on_one_line_and_escapes_its_bars() -> None:
+    decision = {"topic": "A | B", "choice": "A\nonly", "reason": "Simpler.", "source": "default"}
+    design = Design.model_validate({**TODO, "decisions": [decision]})
+
+    assert "| A \\| B | A only | Simpler. | default |" in render_markdown(design)
+
+
+def test_a_stored_design_with_goal_and_exclusions_loads() -> None:
+    stored = {
+        "title": "To-do list",
+        "goal": "Keep track of tasks in a browser.",
+        "behaviour": ["Type a task and press Enter to add it."],
+        "acceptance_criteria": ["A task typed and entered appears in the list."],
+        "exclusions": ["Accounts"],
+        "open_questions": [],
+    }
+
+    design = Design.model_validate(stored)
+
+    assert design.summary == "Keep track of tasks in a browser."
+    assert design.non_goals == ["Accounts"]
+    assert "goal" not in design.model_dump() and "exclusions" not in design.model_dump()
+
+
+def test_a_verification_item_may_name_a_criterion_as_ac_and_its_number() -> None:
+    check = Check.model_validate({"kind": "unit", "check": "Run the tests.", "proves": ["AC2", 1]})
+
+    assert check.proves == [2, 1]
+
+
+def judge(design: dict[str, Any]) -> Verdict:
+    return design_is_buildable.check(Artifact.create(Design.model_validate(design)), Evidence())
+
+
+def test_a_design_a_builder_can_follow_passes_the_gate() -> None:
+    verdict = judge(TODO)
+
+    assert verdict.judgement == "passed"
+    assert verdict.reasons == ("a builder can follow the design",)
+
+
+def test_the_gate_fails_a_design_with_an_open_question() -> None:
+    verdict = judge({**TODO, "open_questions": ["Should ticked tasks move to the bottom?"]})
+
+    assert verdict.judgement == "failed"
+    assert verdict.reasons == ("open question: Should ticked tasks move to the bottom?",)
+
+
+ONE_STEP = PLAN["steps"][0]
+ONE_CHANGE = PLAN["changes"][0]
+
+
+@pytest.mark.parametrize(
+    ("broken", "reasons"),
+    [
+        pytest.param(
+            {"verification": [{"kind": "e2e", "check": "Add a task.", "proves": [1, 3]}]},
+            [
+                "AC2 is proved by no verification item",
+                "verification 'Add a task.' proves AC3, which does not exist",
+            ],
+            id="1-every-criterion-is-proved-and-exists",
+        ),
+        pytest.param(
+            {
+                "steps": [{**ONE_STEP, "changes": ["index.html", "app.js"]}],
+                "changes": [ONE_CHANGE, {**ONE_CHANGE, "path": "style.css"}],
+            },
+            [
+                "step 'Write the page' changes `app.js`, which is not in changes",
+                "change `style.css` is in no step",
+            ],
+            id="2-steps-and-changes-name-the-same-paths",
+        ),
+        pytest.param(
+            {
+                "steps": [
+                    {**ONE_STEP, "depends_on": ["Test it"]},
+                    {"title": "Test it", "depends_on": ["Write the page"]},
+                    {"title": "Ship it", "depends_on": ["Deploy it"]},
+                ]
+            },
+            [
+                "step 'Ship it' depends on 'Deploy it', which is not a step",
+                "the steps depend on each other in a loop: Write the page, Test it, Write the page",
+            ],
+            id="3-steps-depend-on-steps-that-exist-with-no-loop",
+        ),
+        pytest.param(
+            {"decisions": [{"topic": "Storage", "choice": "Local storage"}]},
+            ["decision 'Storage' has no reason", "decision 'Storage' has no source"],
+            id="4-every-decision-has-a-reason-and-a-source",
+        ),
+        pytest.param(
+            {"alternatives": []},
+            ["the design records no alternative it rejected"],
+            id="5-at-least-one-alternative",
+        ),
+        pytest.param(
+            {"alternatives": [{"title": "A server"}]},
+            ["alternative 'A server' has no reason for rejection"],
+            id="5-each-alternative-has-a-reason-for-rejection",
+        ),
+        pytest.param(
+            {"problem": "Tbd.", "steps": [{**ONE_STEP, "done_when": "todo: say"}]},
+            ["`problem` holds Tbd", "`steps[0].done_when` holds todo"],
+            id="6-no-field-says-tbd-or-todo",
+        ),
+        pytest.param(
+            {
+                "changes": [ONE_CHANGE, {**ONE_CHANGE, "action": "modify"}],
+            },
+            ["`index.html` appears 2 times in changes"],
+            id="7-no-path-is-changed-twice",
+        ),
+    ],
+)
+def test_the_gate_fails_a_design_that_breaks_one_of_its_checks_and_names_the_item(
+    broken: dict[str, Any], reasons: list[str]
+) -> None:
+    verdict = judge({**TODO, **broken})
+
+    assert verdict.judgement == "failed"
+    assert list(verdict.reasons) == reasons
+
+
+def test_a_to_do_list_design_is_not_a_placeholder() -> None:
+    verdict = judge({**TODO, "title": "Todos and to-do lists"})
+
+    assert verdict.judgement == "passed"
+
+
+def test_the_offline_design_passes_the_gate() -> None:
+    software = SoftwareFactory(offline_model())
+
+    run = software.run_sync(MISSION, store=MemoryStore())
+
+    assert run.waiting is not None and run.waiting.kind == "approval"
+    assert isinstance(run.waiting.output, Design)
+    assert judge(run.waiting.output.model_dump()).judgement == "passed"
+
+
+def test_the_software_factory_judges_its_design_with_the_new_gate_at_version_2() -> None:
+    software = SoftwareFactory(FunctionModel(Designer(TODO)))
+
+    station = software.stations[0]
+    assert station.gate is not None
+    assert (station.gate.name, station.gate.version) == ("design_is_buildable", "1")
+    assert station.version == "2"
+    assert software.version == "2"
 
 
 def test_a_design_needs_behaviour_and_acceptance_criteria() -> None:
@@ -326,10 +611,19 @@ def test_the_package_exports_only_the_factory_its_design_parts_and_its_scripted_
         [
             "DESIGN_GOLDFISH",
             "DESIGN_STANDARDS",
+            "Alternative",
+            "Change",
+            "Check",
+            "Decision",
             "Design",
+            "Journey",
+            "Risk",
             "SoftwareFactory",
+            "Step",
             "__version__",
             "offline_model",
+            "design_is_buildable",
+            "render_markdown",
         ]
     )
 

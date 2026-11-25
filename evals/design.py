@@ -291,8 +291,8 @@ class SettlesTheUnsaid(Evaluator[str, DesignResult, Expectation]):
 
 
 def statements_of(design: Design) -> list[str]:
-    """Every statement a design makes: its behaviour, criteria and exclusions."""
-    return [*design.behaviour, *design.acceptance_criteria, *design.exclusions]
+    """Every statement a design makes: its behaviour, criteria and non-goals."""
+    return [*design.behaviour, *design.acceptance_criteria, *design.non_goals]
 
 
 @dataclass

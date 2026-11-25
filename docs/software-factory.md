@@ -56,7 +56,7 @@ print(run.waiting.output.title)
 |---|---|---|
 | `model` | required | The model that drafts the design. |
 | `rounds` | 2 | Rounds of review before what is left goes to a person. |
-| `repairs` | 2 | How many times a design that still has open questions is sent back to the designer before a person decides. |
+| `repairs` | 2 | How many times a design that fails its gate, [`design_is_buildable`](design-station.md#the-gate), is sent back to the designer before a person decides. |
 | `goldfish` | `DESIGN_GOLDFISH` | The reviewers. |
 | `review_model` | `model` | The model the reviewers use. |
 | `accept` | none | A function that reads [signals](missions.md#signals) and returns a mission, as for any factory. |
