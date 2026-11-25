@@ -25,7 +25,75 @@ A system under test, called an **arm**, is run through three ports, and nothing 
 | The stakeholder | One to four questions in a call; one reply for each |
 | Delivery | The work as text, with a status of `delivered` or `blocked`. A system with a typed output also hands that over, as JSON |
 
+**The stakeholder.** No model writes a word a system sees. A small model, pinned by the suite, picks which facts a question asks about. Plain code then sends those facts' statements, word for word. A question about nothing on the sheet gets the sheet's fallback reply, and a request for sign-off gets its approval reply.
+
 Every question, reply and delivery is written to an append-only event log. Graders read that log and the delivery, never what a system says about itself beyond its cost and how it stopped.
+
+## Run one case
+
+Four scripted systems come with the framework, as test fixtures: `correct`, `silent`, `asks-everything` and `leaks-canary`. They need no model, so they show a run end to end:
+
+```python
+from pathlib import Path
+
+import anyio
+
+from pydantic_ai_factory.evals import (
+    Case,
+    FactSheet,
+    grade,
+    run_case,
+    scripted_picker,
+    scripted_system,
+)
+
+sheet = FactSheet.model_validate(
+    {
+        "case_name": "tasks",
+        "challenge_class": "critical-ambiguity",
+        "canary": "canary-1234abcd5678",
+        "fallback_reply": "I don't have anything to add on that.",
+        "approval_reply": "I can't sign anything off here.",
+        "scored": False,
+        "facts": [
+            {
+                "id": "retention",
+                "value": "47 days",
+                "criticality": "critical",
+                "obtainable": True,
+                "held_by": "product owner",
+                "statement": "Ticked tasks are kept for 47 days.",
+                "direct_question": "How long are ticked tasks kept?",
+                "keywords": ["kept"],
+            }
+        ],
+    }
+)
+case = Case(name="tasks", request="Build a to-do page.")
+
+
+async def run(kind: str):
+    record = await run_case(
+        scripted_system(kind, sheet),
+        case,
+        sheet,
+        arm=f"scripted-{kind}",
+        out=Path("evals-out"),
+        picker=scripted_picker(sheet),
+        cap_usd=0.50,
+        time_limit_seconds=60.0,
+    )
+    return grade(record, sheet)
+
+
+for kind in ("correct", "silent"):
+    graded = anyio.run(run, kind)
+    print(kind, graded.outcome, graded.turns)
+    #> correct verified 1
+    #> silent failure 0
+```
+
+Each run gets its own folder, `<out>/<arm>/<case>/<n>/`, with its event log and its record.
 
 ## How a run is graded
 

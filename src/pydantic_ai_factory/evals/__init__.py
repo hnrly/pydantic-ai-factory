@@ -44,13 +44,22 @@ from ._facts import (
 )
 from ._graded import Graded, GradedRun, MissingVerdicts, grade_run
 from ._grading import SUCCESSES, FactResult, Grade, Outcome, QuestionMeasures, grade
+from ._harness import Case, RunPorts, WorkspaceError, WorkspaceFor, read_record, run_case
+from ._port_tools import port_server, serve_ports
+from ._scripted import KINDS as SCRIPTED_KINDS
+from ._scripted import Kind as ScriptedKind
+from ._scripted import ScriptedSystem, scripted_system
+from ._simulator import PICKER_PROMPT, Pick, Stakeholder, picker_agent, scripted_picker
 
 __all__ = (
     "MAX_QUESTIONS_PER_CALL",
+    "PICKER_PROMPT",
+    "SCRIPTED_KINDS",
     "SUCCESSES",
     "ApprovalLog",
     "Approved",
     "Brief",
+    "Case",
     "ChallengeClass",
     "ChecklistItem",
     "ChecklistJudge",
@@ -68,15 +77,22 @@ __all__ = (
     "ItemVerdict",
     "MissingVerdicts",
     "Outcome",
+    "Pick",
     "Ports",
     "QuestionMeasures",
     "RecordEnd",
     "Reply",
     "ReportEnd",
+    "RunPorts",
     "RunRecord",
     "RunReport",
+    "ScriptedKind",
+    "ScriptedSystem",
+    "Stakeholder",
     "Status",
     "SystemAdapter",
+    "WorkspaceError",
+    "WorkspaceFor",
     "appears",
     "canary_in",
     "check_questions",
@@ -84,7 +100,14 @@ __all__ = (
     "grade",
     "grade_run",
     "load_fact_sheet",
+    "picker_agent",
+    "port_server",
+    "read_record",
+    "run_case",
     "scripted_judge",
+    "scripted_picker",
+    "scripted_system",
+    "serve_ports",
     "sha256_of",
     "values_in",
 )

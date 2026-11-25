@@ -37,7 +37,8 @@ coder = ["pydantic-ai-harness[coder]>=0.68,<0.69"]
 # The board's web process: `board_app` in `pydantic_ai_factory.serve`.
 web = ["fastapi>=0.115,<1", "uvicorn>=0.32,<1"]
 # Measuring factories and stations: `pydantic_ai_factory.evals`, built on Pydantic Evals.
-evals = ["pydantic-evals>=2.68,<3"]
+# `mcp` and `uvicorn` serve the port tools to a system that runs as its own program.
+evals = ["pydantic-evals>=2.68,<3", "mcp>=2.3,<3", "uvicorn>=0.54,<1"]
 
 [project.urls]
 Homepage = "https://github.com/hnrly/pydantic-ai-factory"
